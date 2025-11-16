@@ -1802,8 +1802,8 @@ func TestMainIntegratesDefaultDependencies(t *testing.T) {
 			switch req.URL.Path {
 			case "/opc/v2/instance/region":
 				_, _ = writer.Write([]byte("us-denver-1"))
-			case "/opc/v2/instance/regionInfo":
-				_, _ = writer.Write([]byte(`{"canonicalRegionName":"us-denver-1"}`))
+			case "/opc/v2/instance/", "/opc/v2/instance":
+				_, _ = writer.Write([]byte(`{"regionInfo":{"canonicalRegionName":"us-denver-1"}}`))
 			case "/opc/v2/instance/id":
 				_, _ = writer.Write([]byte("ocid1.instance.oc1..main"))
 			case "/opc/v2/instance/compartmentId":

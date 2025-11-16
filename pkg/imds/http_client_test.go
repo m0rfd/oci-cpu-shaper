@@ -21,7 +21,7 @@ const (
 	regionResourcePath          = "/opc/v2/instance/region"
 	instanceIDResourcePath      = "/opc/v2/instance/id"
 	shapeConfigResourcePath     = "/opc/v2/instance/shape-config"
-	canonicalRegionResourcePath = "/opc/v2/instance/regionInfo"
+	canonicalRegionResourcePath = "/opc/v2/instance/"
 	compartmentIDResourcePath   = "/opc/v2/instance/compartmentId"
 	metadataAuthHeaderValue     = "Bearer Oracle"
 	authorizationHeaderKey      = "Authorization"
@@ -43,11 +43,11 @@ func TestHTTPClientHappyPath(t *testing.T) {
 	shapeBody := `{"ocpus":4,"memoryInGBs":64,` +
 		`"baselineOcpuUtilization":"BASELINE_1_1","baselineOcpus":4,` +
 		`"threadsPerCore":2,"networkingBandwidthInGbps":10,"maxVnicAttachments":2}`
-	regionInfoBody := `{"canonicalRegionName":"` + canonicalRegion + `","regionIdentifier":"phx"}`
+	instanceBody := `{"regionInfo":{"canonicalRegionName":"` + canonicalRegion + `","regionIdentifier":"phx"}}`
 
 	responses := map[string]string{
 		regionResourcePath:          region,
-		canonicalRegionResourcePath: regionInfoBody,
+		canonicalRegionResourcePath: instanceBody,
 		instanceIDResourcePath:      instanceID,
 		compartmentIDResourcePath:   compartmentID,
 		shapeConfigResourcePath:     shapeBody,

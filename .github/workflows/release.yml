@@ -11,7 +11,19 @@ permissions:
 
 jobs:
   release:
+    name: Publish ${{ matrix.image_tag }} image
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: nonroot
+            image_tag: nonroot
+            tag_suffix: ""
+            include_latest: true
+          - target: rootful
+            image_tag: rootful
+            tag_suffix: ",suffix=-rootful"
+            include_latest: false
     env:
       REGISTRY: ghcr.io
       IMAGE_NAME: oci-cpu-shaper
@@ -32,38 +44,60 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Capture build metadata
+        id: buildmeta
+        run: |
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$GITHUB_OUTPUT"
+
+      - name: Compose tag manifest
+        id: tagset
+        shell: bash
+        run: |
+          {
+            echo 'tags<<EOF'
+            echo "type=raw,value=${{ matrix.image_tag }}"
+            if [[ "${{ matrix.include_latest }}" == "true" ]]; then
+              echo "type=raw,value=latest"
+            fi
+            echo "type=ref,event=tag${{ matrix.tag_suffix }}"
+            echo 'EOF'
+          } >>"$GITHUB_OUTPUT"
+
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v5.9.0
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=tag
-            type=raw,value=latest
+          tags: ${{ steps.tagset.outputs.tags }}
 
-      - name: Build and push multi-arch image
+      - name: Build and push multi-arch image (${{ matrix.image_tag }})
         uses: docker/build-push-action@v6.18.0
         with:
           context: .
           file: Dockerfile
+          target: ${{ matrix.target }}
           platforms: linux/amd64,linux/arm64
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ steps.buildmeta.outputs.date }}
 
-      - name: Generate SBOM
+      - name: Generate SBOM (${{ matrix.image_tag }})
         id: sbom
         uses: anchore/sbom-action@v0.20.9
         with:
-          image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
-          output-file: sbom-${{ github.ref_name }}.spdx.json
+          image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
+          output-file: sbom-${{ github.ref_name }}-${{ matrix.image_tag }}.spdx.json
           format: spdx-json
 
-      - name: Upload SBOM artifact
+      - name: Upload SBOM artifact (${{ matrix.image_tag }})
         uses: actions/upload-artifact@v5.0.0
         with:
-          name: sbom-${{ github.ref_name }}
-          path: sbom-${{ github.ref_name }}.spdx.json
+          name: sbom-${{ github.ref_name }}-${{ matrix.image_tag }}
+          path: sbom-${{ github.ref_name }}-${{ matrix.image_tag }}.spdx.json
           retention-days: 7
