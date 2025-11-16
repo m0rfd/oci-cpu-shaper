@@ -287,7 +287,7 @@ jobs:
             local cgroup_file="$run_dir/${name}-cgroup"
             local rel_path
 
-            if ! docker cp "$name":/proc/self/cgroup "$cgroup_file"; then
+            if ! docker exec "$name" cat /proc/self/cgroup >"$cgroup_file"; then
               echo "::error::unable to fetch /proc/self/cgroup for $name" >&2
               return 1
             fi
