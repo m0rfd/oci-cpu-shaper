@@ -1,7 +1,7 @@
 # §6 Komodo Compose
 
 ## §6.1 Distroless images
-The multi-stage [`deploy/Dockerfile`](../deploy/Dockerfile) publishes two distroless targets:
+The multi-stage [`Dockerfile`](../Dockerfile) publishes two distroless targets:
 `nonroot` wraps `gcr.io/distroless/static:nonroot` while `rootful` uses the root-enabled
 `gcr.io/distroless/static:latest` image. Build metadata is injected with the `VERSION`,
 `GIT_COMMIT`, and `BUILD_DATE` build arguments, ensuring `internal/buildinfo` reports accurate
@@ -14,7 +14,7 @@ docker buildx build \
   --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
   --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   -t oci-cpu-shaper:nonroot \
-  -f deploy/Dockerfile .
+  -f Dockerfile .
 
 docker buildx build \
   --target rootful \
@@ -22,7 +22,7 @@ docker buildx build \
   --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
   --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   -t oci-cpu-shaper:rootful \
-  -f deploy/Dockerfile .
+  -f Dockerfile .
 ```
 
 ## §6.2 Rootless Mode A stack

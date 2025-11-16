@@ -165,7 +165,7 @@ jobs:
           docker build \
             --target rootful \
             -t oci-cpu-shaper:integration-rootful \
-            -f deploy/Dockerfile \
+            -f Dockerfile \
             .
 
       - name: Exercise CPU weight containers and collect cgroup stats
