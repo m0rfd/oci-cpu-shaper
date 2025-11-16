@@ -285,21 +285,50 @@ jobs:
           record_stats() {
             local name=$1
             local cgroup_file="$run_dir/${name}-cgroup"
-            local rel_path
+            local rel_path=""
             local pid
+            local container_id
 
             pid=$(docker inspect -f '{{.State.Pid}}' "$name" 2>/dev/null || echo "")
-            if [ -z "$pid" ] || [ "$pid" = "0" ]; then
-              echo "::error::unable to determine host PID for $name" >&2
-              return 1
+            container_id=$(docker inspect -f '{{.Id}}' "$name" 2>/dev/null || echo "")
+
+            if [ -n "$pid" ] && [ "$pid" != "0" ] && [ -r "/proc/$pid/cgroup" ]; then
+              if ! cat "/proc/$pid/cgroup" >"$cgroup_file"; then
+                echo "::error::unable to fetch /proc/$pid/cgroup for $name" >&2
+                return 1
+              fi
+              rel_path=$(awk -F: '$1=="0" {print $3}' "$cgroup_file")
             fi
 
-            if ! cat "/proc/$pid/cgroup" >"$cgroup_file"; then
-              echo "::error::unable to fetch /proc/$pid/cgroup for $name" >&2
-              return 1
+            if [ -z "$rel_path" ] && [ -n "$container_id" ]; then
+              local short_id="${container_id:0:12}"
+              local parent=$(docker inspect -f '{{.HostConfig.CgroupParent}}' "$name" 2>/dev/null || echo "")
+              parent="${parent#/}"
+              if [ -n "$parent" ] && [ "${parent: -1}" = "/" ]; then
+                parent="${parent%/}"
+              fi
+
+              local candidates=(
+                "/docker/$container_id"
+                "/docker/$short_id"
+                "/system.slice/docker-$container_id.scope"
+                "/system.slice/docker-$short_id.scope"
+              )
+
+              if [ -n "$parent" ]; then
+                candidates+=("/${parent}/$container_id")
+                candidates+=("/${parent}/$short_id")
+              fi
+
+              for candidate in "${candidates[@]}"; do
+                if [ -d "/sys/fs/cgroup${candidate}" ]; then
+                  rel_path="$candidate"
+                  printf '0::%s\n' "$rel_path" >"$cgroup_file"
+                  break
+                fi
+              done
             fi
 
-            rel_path=$(awk -F: '$1=="0" {print $3}' "$cgroup_file")
             if [ -z "$rel_path" ]; then
               echo "::error::unable to resolve cgroup path for $name" >&2
               return 1
