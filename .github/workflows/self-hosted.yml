@@ -223,7 +223,6 @@ jobs:
           high_name="cpu-weight-high-$(date +%s%N)"
           low_name="cpu-weight-low-$(date +%s%N)"
 
-          gotraceback="crash"
           echo "Launching high weight container: $high_name"
           docker run \
             --detach \
@@ -231,7 +230,6 @@ jobs:
             --cpuset-cpus=0 \
             --cpu-shares 1024 \
             -v "$hog_binary:/hog:ro,Z" \
-            -e GOTRACEBACK="$gotraceback" \
             --entrypoint /hog \
             alpine:3.20 \
             -duration=40s \
@@ -244,7 +242,6 @@ jobs:
             --cpuset-cpus=0 \
             --cpu-shares 2 \
             -v "$hog_binary:/hog:ro,Z" \
-            -e GOTRACEBACK="$gotraceback" \
             --entrypoint /hog \
             oci-cpu-shaper:integration-rootful \
             -duration=40s \
@@ -270,6 +267,20 @@ jobs:
 
           echo "Allowing workloads to collect CPU usage"
           sleep 30
+
+          ensure_still_running() {
+            local name=$1
+            if [ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null || echo false)" != "true" ]; then
+              echo "::error::container $name stopped before stat collection" >&2
+              docker logs "$name" >&2 || true
+              docker inspect --format 'state={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}}' "$name" >&2 || true
+              return 1
+            fi
+            return 0
+          }
+
+          ensure_still_running "$high_name"
+          ensure_still_running "$low_name"
 
           record_stats() {
             local name=$1
