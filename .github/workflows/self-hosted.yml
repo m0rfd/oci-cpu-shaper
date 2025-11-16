@@ -213,8 +213,12 @@ jobs:
           trap cleanup EXIT
 
           echo "Building cpu-hog helper"
-          GOARCH=$(go env GOARCH)
-          CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" go build -o "$hog_binary" ./tests/integration/cmd/cpu-hog
+          case "$host_arch" in
+            x86_64) go_arch=amd64 ;;
+            arm64|aarch64) go_arch=arm64 ;;
+            *) go_arch="$host_arch" ;;
+          esac
+          CGO_ENABLED=0 GOOS=linux GOARCH="$go_arch" go build -o "$hog_binary" ./tests/integration/cmd/cpu-hog
 
           high_name="cpu-weight-high-$(date +%s%N)"
           low_name="cpu-weight-low-$(date +%s%N)"
