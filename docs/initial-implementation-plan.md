@@ -86,6 +86,7 @@ We support two documented modes. Rootless is first-class but not exclusive.
 * **Go** (latest), static build. Single binary.
 * Image: `gcr.io/distroless/static:nonroot` by default; for Mode B publish a `-rootful` image variant that runs as UID 0.
 * Target arch: `linux/amd64, linux/arm64`.
+* Ampere A1 Flex instances are Armv8 (`GOARCH=arm64`), so Go ignores `GOARM`; Buildx still forwards `TARGETVARIANT` for possible future `linux/arm/v*` targets, which the Dockerfile maps to `GOARM=${TARGETVARIANT#v}` automatically—no bespoke workflow args are needed.
 * RSS target: ≤ 10–15 MiB steady.
 
 ---
