@@ -195,7 +195,6 @@ jobs:
           mkdir -p "$run_dir"
 
           hog_binary="$run_dir/cpu-hog"
-          cgroup_reader="$run_dir/cgroup-reader"
           high_name=""
           low_name=""
 
@@ -208,7 +207,7 @@ jobs:
                 docker rm -f "$name" >/dev/null 2>&1 || true
               fi
             done
-            rm "$hog_binary" "$cgroup_reader"
+            rm "$hog_binary"
             exit $status
           }
           trap cleanup EXIT
@@ -220,7 +219,6 @@ jobs:
             *) go_arch="$host_arch" ;;
           esac
           CGO_ENABLED=0 GOOS=linux GOARCH="$go_arch" go build -o "$hog_binary" ./tests/integration/cmd/cpu-hog
-          CGO_ENABLED=0 GOOS=linux GOARCH="$go_arch" go build -o "$cgroup_reader" ./tests/integration/cmd/cgroup-reader
 
           high_name="cpu-weight-high-$(date +%s%N)"
           low_name="cpu-weight-low-$(date +%s%N)"
@@ -232,7 +230,6 @@ jobs:
             --cpuset-cpus=0 \
             --cpu-shares 1024 \
             -v "$hog_binary:/hog:ro,Z" \
-            -v "$cgroup_reader:/cgroup-reader:ro,Z" \
             --entrypoint /hog \
             alpine:3.20 \
             -duration=40s \
@@ -245,7 +242,6 @@ jobs:
             --cpuset-cpus=0 \
             --cpu-shares 2 \
             -v "$hog_binary:/hog:ro,Z" \
-            -v "$cgroup_reader:/cgroup-reader:ro,Z" \
             --entrypoint /hog \
             oci-cpu-shaper:integration-rootful \
             -duration=40s \
@@ -288,26 +284,41 @@ jobs:
 
           record_stats() {
             local name=$1
+            local cgroup_file="$run_dir/${name}-cgroup"
             local rel_path
 
-            rel_path=$(docker exec "$name" /cgroup-reader path | tr -d $'\\r\\n')
+            if ! docker cp "$name":/proc/self/cgroup "$cgroup_file"; then
+              echo "::error::unable to fetch /proc/self/cgroup for $name" >&2
+              return 1
+            fi
+
+            rel_path=$(awk -F: '$1=="0" {print $3}' "$cgroup_file")
             if [ -z "$rel_path" ]; then
               echo "::error::unable to resolve cgroup path for $name" >&2
               return 1
             fi
 
-            if ! docker exec "$name" /cgroup-reader stat >"$run_dir/${name}-cpu.stat"; then
-              echo "::error::unable to capture cpu.stat for $name" >&2
+            local cg_path="/sys/fs/cgroup${rel_path}"
+            if [ ! -d "$cg_path" ]; then
+              echo "::error::cgroup path $cg_path missing for $name" >&2
               return 1
             fi
-            if ! docker exec "$name" /cgroup-reader weight >"$run_dir/${name}-cpu.weight"; then
-              echo "::error::unable to capture cpu.weight for $name" >&2
+
+            if ! docker cp "$name":/sys/fs/cgroup/cpu.stat "$run_dir/${name}-cpu.stat"; then
+              echo "::error::unable to retrieve cpu.stat for $name" >&2
               return 1
             fi
-            if ! docker exec "$name" /cgroup-reader max >"$run_dir/${name}-cpu.max"; then
+            if ! docker cp "$name":/sys/fs/cgroup/cpu.weight "$run_dir/${name}-cpu.weight"; then
+              echo "::error::unable to retrieve cpu.weight for $name" >&2
+              return 1
+            fi
+            if docker cp "$name":/sys/fs/cgroup/cpu.max "$run_dir/${name}-cpu.max" >/dev/null 2>&1; then
+              :
+            else
               rm -f "$run_dir/${name}-cpu.max"
             fi
-            printf '%s %s\n' "$name" "$rel_path" >>"$run_dir/cgroup-paths.txt"
+
+            printf '%s %s\n' "$name" "$cg_path" >>"$run_dir/cgroup-paths.txt"
           }
 
           record_stats "$high_name"
