@@ -176,8 +176,7 @@ jobs:
           run_dir="$LOG_ROOT/run-$(date --utc +%Y%m%dT%H%M%SZ)"
           mkdir -p "$run_dir"
 
-          tmpdir=$(mktemp -d)
-          hog_binary="$tmpdir/cpu-hog"
+          hog_binary="$run_dir/cpu-hog"
           high_name=""
           low_name=""
 
@@ -190,7 +189,7 @@ jobs:
                 docker rm -f "$name" >/dev/null 2>&1 || true
               fi
             done
-            rm -rf "$tmpdir"
+            rm "$hog_binary"
             exit $status
           }
           trap cleanup EXIT
@@ -206,7 +205,7 @@ jobs:
           echo "Checking permissions of mounted $hog_binary"
           docker run \
             --rm \
-            -v "$hog_binary:/hog:ro,Z" \
+            -v "$hog_binary:/hog:ro" \
             alpine:3.20 \
             ls -lan /hog
             
@@ -216,7 +215,7 @@ jobs:
             --name "$high_name" \
             --cpuset-cpus=0 \
             --cpu-shares 1024 \
-            -v "$hog_binary:/hog:ro,Z" \
+            -v "$hog_binary:/hog:ro" \
             --entrypoint /hog \
             alpine:3.20 \
             -duration=40s \
@@ -228,7 +227,7 @@ jobs:
             --name "$low_name" \
             --cpuset-cpus=0 \
             --cpu-shares 2 \
-            -v "$hog_binary:/hog:ro,Z" \
+            -v "$hog_binary:/hog:ro" \
             --entrypoint /hog \
             oci-cpu-shaper:integration-rootful \
             -duration=40s \
