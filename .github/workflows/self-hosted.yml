@@ -231,6 +231,7 @@ jobs:
             alpine:3.20 \
             ls -lan /hog
 
+          gotraceback="crash"
           echo "Launching high weight container: $high_name"
           docker run \
             --detach \
@@ -238,6 +239,7 @@ jobs:
             --cpuset-cpus=0 \
             --cpu-shares 1024 \
             -v "$hog_binary:/hog:ro" \
+            -e GOTRACEBACK="$gotraceback" \
             --entrypoint /hog \
             alpine:3.20 \
             -duration=40s \
@@ -250,6 +252,7 @@ jobs:
             --cpuset-cpus=0 \
             --cpu-shares 2 \
             -v "$hog_binary:/hog:ro" \
+            -e GOTRACEBACK="$gotraceback" \
             --entrypoint /hog \
             oci-cpu-shaper:integration-rootful \
             -duration=40s \
