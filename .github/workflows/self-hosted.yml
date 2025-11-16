@@ -284,21 +284,32 @@ jobs:
 
           record_stats() {
             local name=$1
-            local cp_base=/sys/fs/cgroup
+            local cgroup_file="$run_dir/${name}-cgroup"
+            local rel_path
 
-            if ! docker cp "$name":"$cp_base/cpu.stat" "$run_dir/${name}-cpu.stat"; then
-              echo "::error::unable to retrieve cpu.stat for $name" >&2
+            if ! docker cp "$name":/proc/self/cgroup "$cgroup_file"; then
+              echo "::error::unable to fetch /proc/self/cgroup for $name" >&2
               return 1
             fi
-            if ! docker cp "$name":"$cp_base/cpu.weight" "$run_dir/${name}-cpu.weight"; then
-              echo "::error::unable to retrieve cpu.weight for $name" >&2
+
+            rel_path=$(awk -F: '$1=="0" {print $3}' "$cgroup_file")
+            if [ -z "$rel_path" ]; then
+              echo "::error::unable to resolve cgroup path for $name" >&2
               return 1
             fi
-            if ! docker cp "$name":"$cp_base/cpu.max" "$run_dir/${name}-cpu.max" >/dev/null 2>&1; then
-              rm -f "$run_dir/${name}-cpu.max"
+
+            local cg_path="/sys/fs/cgroup${rel_path}"
+            if [ ! -d "$cg_path" ]; then
+              echo "::error::cgroup path $cg_path missing for $name" >&2
+              return 1
             fi
 
-            printf '%s %s\n' "$name" "$cp_base" >>"$run_dir/cgroup-paths.txt"
+            cat "$cg_path/cpu.stat" >"$run_dir/${name}-cpu.stat"
+            cat "$cg_path/cpu.weight" >"$run_dir/${name}-cpu.weight"
+            if [ -f "$cg_path/cpu.max" ]; then
+              cat "$cg_path/cpu.max" >"$run_dir/${name}-cpu.max"
+            fi
+            printf '%s %s\n' "$name" "$cg_path" >>"$run_dir/cgroup-paths.txt"
           }
 
           record_stats "$high_name"
