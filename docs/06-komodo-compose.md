@@ -31,7 +31,9 @@ Compose deployments for Mode A live in `deploy/compose/`. The rootless manifest
 `deploy/compose/mode-a.env.example`). Key knobs include:
 
 - `SHAPER_IMAGE` – image tag (`oci-cpu-shaper:nonroot` by default).
-- `SHAPER_CONFIG_PATH` – host path to mount at `/etc/oci-cpu-shaper/config.yaml`.
+- `SHAPER_CONFIG_PATH` – container path passed to `--config`. Defaults to
+  `/etc/oci-cpu-shaper/configs/mode-a.yaml`, which is baked into the image.
+  Bind-mount a host manifest to that path when overriding the defaults.
 - `HTTP_ADDR` – overrides the Prometheus listener bind address (defaults to `:9108` and must match the exposed port below).
 - `SHAPER_CPU_SHARES` – defaults to `128`, matching the architecture plan’s low-weight guidance now that rootless Docker honours
   delegated cgroup v2 CPU weights.
@@ -46,9 +48,13 @@ docker compose \
   up --detach
 ```
 
-`mode-a.rootless.yaml` publishes `/metrics` via `${SHAPER_METRICS_BIND:-127.0.0.1:9108}:9108`, so Prometheus scrapes can stay on
-the host loopback while the container binds to `HTTP_ADDR` inside the sandbox. Override `SHAPER_METRICS_BIND` when collectors run
-outside the host or to expose TLS-terminating sidecars.
+`mode-a.rootless.yaml` publishes `/metrics` via
+`${SHAPER_METRICS_BIND:-127.0.0.1:9108}:9108`, so Prometheus scrapes can stay on
+the host loopback while the container binds to `HTTP_ADDR` inside the sandbox.
+Override `SHAPER_METRICS_BIND` when collectors run outside the host or to expose
+TLS-terminating sidecars. With the configs copied into the image, the stack can
+start immediately using `/etc/oci-cpu-shaper/configs/mode-a.yaml`; mount a
+custom manifest over that path if tenancy-specific tuning is required.
 
 ## §6.3 Rootful Mode B stack
 
@@ -59,7 +65,10 @@ manifest defaults to the `oci-cpu-shaper:rootful` image, runs as UID 0, and add
 mirror the plan snippet: `cpu_shares` maps to cgroup v2 `cpu.weight` and stays at
 `128` by default, while `# cpus` remains commented for hosts that want a hard
 quota. Tweak `SHAPER_CAP_SYS_NICE` or `SHAPER_CPUS` in
-`deploy/compose/mode-b.env.example` to change those defaults.
+`deploy/compose/mode-b.env.example` to change those defaults. The manifest feeds
+`--config ${SHAPER_CONFIG_PATH:-/etc/oci-cpu-shaper/configs/mode-b.yaml}` so the
+Mode B YAML shipped in the image is used unless you mount a host manifest to that
+path.
 
 The rootful stack pins `network_mode: host` so Prometheus scraping reuses the
 node’s address and the container honours whatever `HTTP_ADDR` the binary is
@@ -87,8 +96,9 @@ Podman Quadlet users can apply the same tuning by copying
 `deploy/compose/mode-b.rootful.container` into
 `~/.config/containers/systemd/`. The unit adds `SYS_NICE`, sets
 `CPUWeight=128`, retains the optional `# CPUS=0.30` line for hard caps, and
-mounts `/etc/oci-cpu-shaper/config.yaml` read-only by default. After updating
-paths and flags to match the target host, enable it with:
+defaults to `/etc/oci-cpu-shaper/configs/mode-b.yaml`. Uncomment the provided
+`Volume=` line to bind-mount a host manifest over the baked-in default. After
+updating paths and flags to match the target host, enable it with:
 
 ```bash
 systemctl --user enable --now mode-b.rootful.container
@@ -99,10 +109,15 @@ Two helper scripts under `deploy/scripts/` wrap `docker run`:
 
 - `run-rootless.sh` pins `--cpu-shares=${SHAPER_CPU_SHARES:-128}` and hardens the container with
   read-only and `no-new-privileges` flags, wiring `${HTTP_ADDR:-:9108}` through to the
-  container so the `/metrics` listener matches the published port mapping.
+  container so the `/metrics` listener matches the published port mapping. Override
+  `SHAPER_CONFIG_PATH` to select a different baked-in manifest and
+  `SHAPER_CONFIG_HOST_PATH` to bind-mount a host file over that target when
+  running Mode A outside Compose.
 - `run-rootful.sh` targets the `rootful` image, retaining the default `--cpu-shares=1024` while
   exposing optional `SHAPER_CPU_PERIOD` and `SHAPER_CPU_QUOTA` overrides for hosts that need
-  stricter scheduling control.
+  stricter scheduling control. The same `SHAPER_CONFIG_PATH`/`SHAPER_CONFIG_HOST_PATH`
+  variables make it easy to swap between the default Mode B YAML and tenancy-specific
+  manifests.
 
 Both scripts respect `SHAPER_IMAGE`, `SHAPER_MODE`, `SHAPER_LOG_LEVEL`, and `SHAPER_ENV_FILE` for
 consistent execution outside Compose.

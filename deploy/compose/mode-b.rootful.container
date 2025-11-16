@@ -13,10 +13,11 @@ AddCapability=SYS_NICE
 CPUWeight=128
 # CPUS=0.30
 Network=host
-Volume=/etc/oci-cpu-shaper/config.yaml:/etc/oci-cpu-shaper/config.yaml:ro
+# Uncomment to bind-mount a custom config over the baked-in sample.
+# Volume=/path/to/config.yaml:/etc/oci-cpu-shaper/configs/mode-b.yaml:ro
 ReadOnly=true
 Tmpfs=/tmp
-Exec=/shaper --config /etc/oci-cpu-shaper/config.yaml --mode dry-run --log-level info
+Exec=/shaper --config /etc/oci-cpu-shaper/configs/mode-b.yaml --mode dry-run --log-level info
 EnvironmentFile=/etc/sysconfig/oci-cpu-shaper.env
 Restart=always
 

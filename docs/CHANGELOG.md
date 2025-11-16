@@ -61,6 +61,10 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% 
 - Distroless image builds now reference the repository-root `Dockerfile` and ship the
   offline smoke-test config from `configs/offline-smoke.yaml`, consolidating Komodo,
   CI, and release workflows on a single path (§6).
+- The distroless targets now copy the Mode A/Mode B manifests into
+  `/etc/oci-cpu-shaper/configs/` and the Compose/Quadlet/docker-run helpers default
+  to those paths, letting deployments start with baked-in YAML while retaining the
+  option to bind-mount overrides (§§6, 8).
 - Runtime metadata resolution now prefers IMDS compartment/region lookups and only
   falls back to YAML/environment overrides when the platform APIs fail or when
   `oci.offline` is set. Updated unit tests cover the IMDS-first and override fallback
