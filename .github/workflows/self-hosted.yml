@@ -30,7 +30,7 @@ jobs:
           base_url="http://169.254.169.254/opc/v2"
 
           instance_json=$(curl -sS -H "$header" "$base_url/instance/")
-          region_json=$(curl -sS -H "$header" "$base_url/regionInfo/")
+          region_json=$(echo "$instance_json" | jq -c '.regionInfo // {}')
           vnic_json=$(curl -sS -H "$header" "$base_url/vnics/0/")
 
           echo "instance=$instance_json"
