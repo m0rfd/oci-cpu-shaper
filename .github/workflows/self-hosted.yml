@@ -230,7 +230,7 @@ jobs:
             --name "$high_name" \
             --cpuset-cpus=0 \
             --cpu-shares 1024 \
-            -v "$hog_binary:/hog:ro" \
+            -v "$hog_binary:/hog:ro,Z" \
             -e GOTRACEBACK="$gotraceback" \
             --entrypoint /hog \
             alpine:3.20 \
@@ -243,7 +243,7 @@ jobs:
             --name "$low_name" \
             --cpuset-cpus=0 \
             --cpu-shares 2 \
-            -v "$hog_binary:/hog:ro" \
+            -v "$hog_binary:/hog:ro,Z" \
             -e GOTRACEBACK="$gotraceback" \
             --entrypoint /hog \
             oci-cpu-shaper:integration-rootful \
