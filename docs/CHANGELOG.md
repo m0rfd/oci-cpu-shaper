@@ -58,6 +58,18 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 
 ### Changed
 _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._
+- Distroless image builds now reference the repository-root `Dockerfile` and ship the
+  offline smoke-test config from `configs/offline-smoke.yaml`, consolidating Komodo,
+  CI, and release workflows on a single path (§6).
+- Runtime metadata resolution now prefers IMDS compartment/region lookups and only
+  falls back to YAML/environment overrides when the platform APIs fail or when
+  `oci.offline` is set. Updated unit tests cover the IMDS-first and override fallback
+  behaviours so the ≥95% statement coverage floor remains intact (§§5, 11).
+- Mode A/Mode B sample configs adopt less aggressive controller targets (0.20–0.32),
+  smaller step adjustments, slower estimator cadence, and only two worker threads
+  so production deployments consume less CPU while staying near the documented
+  thresholds. The manifests also drop hard-coded OCIDs and rely on IMDS by default
+  (§§3, 5).
 - Rootless Mode A manifests, runtime script, and docs now restore the `SHAPER_CPU_SHARES` default to `128`, reflecting that rootless
   Docker honours delegated cgroup v2 CPU weight overrides (§6).
 - Refreshed `docs/00-overview.md` to document the current CLI flag surface, configuration layout, and navigation map, including forthcoming quick-start and CLI references (§§0, 5, 9).

@@ -43,6 +43,7 @@ const (
 	maxUint32         = ^uint32(0)
 	stubCompartmentID = "ocid1.compartment.oc1..test"
 	stubRegion        = "us-ashburn-1"
+	overrideRegion    = "us-chicago-1"
 	imdsAuthHeaderKey = "Authorization"
 	imdsAuthHeaderVal = "Bearer Oracle"
 	metricsServerWait = time.Second
@@ -1406,7 +1407,7 @@ func TestMainPropagatesNonZeroExitCode(t *testing.T) { //nolint:paralleltest // 
 
 func TestDefaultIMDSFactoryUsesEnvironmentEndpoint(t *testing.T) {
 	responses := map[string]string{
-		"/opc/v2/instance/region":       "us-chicago-1",
+		"/opc/v2/instance/region":       overrideRegion,
 		"/opc/v2/instance/id":           "ocid1.instance.oc1..exampleuniqueID",
 		"/opc/v2/instance/shape-config": `{"ocpus":2,"memoryInGBs":32}`,
 	}
@@ -1435,7 +1436,7 @@ func TestDefaultIMDSFactoryUsesEnvironmentEndpoint(t *testing.T) {
 		t.Fatalf("Region() returned error: %v", err)
 	}
 
-	if region != "us-chicago-1" {
+	if region != overrideRegion {
 		t.Fatalf("unexpected region %q", region)
 	}
 
@@ -1532,9 +1533,9 @@ func TestLogIMDSMetadataUsesOverrideInstanceID(t *testing.T) {
 	logger := zap.New(core)
 
 	client := newLoggingStubIMDS(
-		"us-chicago-1",
+		overrideRegion,
 		nil,
-		"us-chicago-1",
+		overrideRegion,
 		nil,
 		"",
 		nil,
@@ -1555,7 +1556,7 @@ func TestLogIMDSMetadataUsesOverrideInstanceID(t *testing.T) {
 		ctrl,
 		"  ocid1.instance.oc1..override  ",
 		stubCompartmentID,
-		"us-chicago-1",
+		overrideRegion,
 		false,
 	)
 
@@ -1564,7 +1565,7 @@ func TestLogIMDSMetadataUsesOverrideInstanceID(t *testing.T) {
 	entry := requireSingleDebugEntry(t, observed)
 	requireLogFieldString(t, entry, "controllerState", adapt.StateNormal.String())
 	requireLogFieldString(t, entry, "instanceID", "ocid1.instance.oc1..override")
-	requireLogFieldString(t, entry, "canonicalRegion", "us-chicago-1")
+	requireLogFieldString(t, entry, "canonicalRegion", overrideRegion)
 	requireLogFieldString(t, entry, "compartmentID", stubCompartmentID)
 
 	warns := observed.FilterLevelExact(zapcore.WarnLevel).All()
@@ -1642,22 +1643,22 @@ func TestResolveCompartmentAndRegionRequiresIMDSOnline(t *testing.T) {
 	}
 }
 
-func TestResolveCompartmentAndRegionUsesOverrides(t *testing.T) {
+func TestResolveCompartmentAndRegionFallsBackToOverrides(t *testing.T) {
 	t.Parallel()
 
 	cfg := defaultRuntimeConfig()
 	cfg.OCI.CompartmentID = "  ocid1.compartment.oc1..override  "
-	cfg.OCI.Region = "  us-chicago-1  "
+	cfg.OCI.Region = "  " + overrideRegion + "  "
 
 	client := newLoggingStubIMDS(
-		"ignored",
+		"",
 		errRegionDown,
-		"ignored",
+		"",
 		errRegionDown,
 		"",
 		nil,
 		"",
-		nil,
+		errInstanceDown,
 		stubShapeConfig(0, 0),
 		nil,
 	)
@@ -1671,16 +1672,16 @@ func TestResolveCompartmentAndRegionUsesOverrides(t *testing.T) {
 		t.Fatalf("unexpected compartment id %q", metadata.CompartmentID)
 	}
 
-	if metadata.Region != "us-chicago-1" {
+	if metadata.Region != overrideRegion {
 		t.Fatalf("unexpected region %q", metadata.Region)
 	}
 
-	if client.compartmentCalls != 0 {
-		t.Fatalf("expected overrides to skip compartment lookup, got %d", client.compartmentCalls)
+	if client.compartmentCalls != 1 {
+		t.Fatalf("expected compartment lookup despite overrides, got %d", client.compartmentCalls)
 	}
 
-	if client.regionCalls != 0 {
-		t.Fatalf("expected overrides to skip region lookup, got %d", client.regionCalls)
+	if client.regionCalls != 1 {
+		t.Fatalf("expected region lookup despite overrides, got %d", client.regionCalls)
 	}
 }
 
@@ -1723,6 +1724,40 @@ func TestResolveCompartmentAndRegionFetchesFromIMDS(t *testing.T) {
 
 	if client.regionCalls != 1 {
 		t.Fatalf("expected single region lookup, got %d", client.regionCalls)
+	}
+}
+
+func TestResolveCompartmentAndRegionPrefersIMDSValues(t *testing.T) {
+	t.Parallel()
+
+	cfg := defaultRuntimeConfig()
+	cfg.OCI.CompartmentID = "ocid1.compartment.oc1..override"
+	cfg.OCI.Region = overrideRegion
+
+	client := newLoggingStubIMDS(
+		stubRegion,
+		nil,
+		stubRegion,
+		nil,
+		"",
+		nil,
+		stubCompartmentID,
+		nil,
+		stubShapeConfig(0, 0),
+		nil,
+	)
+
+	metadata, err := resolveCompartmentAndRegion(t.Context(), cfg, client)
+	if err != nil {
+		t.Fatalf("resolveCompartmentAndRegion returned error: %v", err)
+	}
+
+	if metadata.CompartmentID != stubCompartmentID {
+		t.Fatalf("expected compartment %q, got %q", stubCompartmentID, metadata.CompartmentID)
+	}
+
+	if metadata.Region != stubRegion {
+		t.Fatalf("expected region %s, got %q", stubRegion, metadata.Region)
 	}
 }
 
@@ -2119,6 +2154,7 @@ func loadConfigStub() func(string) (runtimeConfig, error) {
 		cfg := defaultRuntimeConfig()
 		cfg.OCI.CompartmentID = stubCompartmentID
 		cfg.OCI.Region = "us-phoenix-1"
+		cfg.OCI.Offline = true
 
 		return cfg, nil
 	}

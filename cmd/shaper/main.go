@@ -625,46 +625,75 @@ func resolveCompartmentAndRegion(
 	cfg runtimeConfig,
 	imdsClient imds.Client,
 ) (ociMetadata, error) {
-	metadata := ociMetadata{
-		CompartmentID: strings.TrimSpace(cfg.OCI.CompartmentID),
-		Region:        strings.TrimSpace(cfg.OCI.Region),
-	}
+	compartmentOverride := strings.TrimSpace(cfg.OCI.CompartmentID)
+	regionOverride := strings.TrimSpace(cfg.OCI.Region)
 
 	if cfg.OCI.Offline {
-		return metadata, nil
+		return ociMetadata{
+			CompartmentID: compartmentOverride,
+			Region:        regionOverride,
+		}, nil
 	}
 
 	if imdsClient == nil {
 		return ociMetadata{}, errControllerIMDSRequired
 	}
 
-	if metadata.CompartmentID == "" {
-		compartmentID, err := imdsClient.CompartmentID(ctx)
-		if err != nil {
-			return ociMetadata{}, fmt.Errorf("lookup compartment ocid: %w", err)
-		}
+	compartmentID, compartmentErr := imdsClient.CompartmentID(ctx)
+	region, regionErr := imdsClient.Region(ctx)
 
-		metadata.CompartmentID = strings.TrimSpace(compartmentID)
+	var metadata ociMetadata
+
+	value, err := preferMetadataValue(
+		compartmentID,
+		compartmentErr,
+		compartmentOverride,
+		errControllerCompartmentRequired,
+		"lookup compartment ocid",
+	)
+	if err != nil {
+		return ociMetadata{}, err
 	}
 
-	if metadata.Region == "" {
-		region, err := imdsClient.Region(ctx)
-		if err != nil {
-			return ociMetadata{}, fmt.Errorf("lookup instance region: %w", err)
-		}
+	metadata.CompartmentID = value
 
-		metadata.Region = strings.TrimSpace(region)
+	value, err = preferMetadataValue(
+		region,
+		regionErr,
+		regionOverride,
+		errControllerRegionRequired,
+		"lookup instance region",
+	)
+	if err != nil {
+		return ociMetadata{}, err
 	}
 
-	if metadata.CompartmentID == "" {
-		return ociMetadata{}, errControllerCompartmentRequired
-	}
-
-	if metadata.Region == "" {
-		return ociMetadata{}, errControllerRegionRequired
-	}
+	metadata.Region = value
 
 	return metadata, nil
+}
+
+func preferMetadataValue(
+	fetched string,
+	fetchErr error,
+	override string,
+	missingErr error,
+	errPrefix string,
+) (string, error) {
+	trimmedFetched := strings.TrimSpace(fetched)
+	if trimmedFetched != "" {
+		return trimmedFetched, nil
+	}
+
+	if override != "" {
+		return override, nil
+	}
+
+	if fetchErr != nil {
+		return "", fmt.Errorf("%s: %w", errPrefix, fetchErr)
+	}
+
+	return "", missingErr
 }
 
 func prepareRunMetadata(

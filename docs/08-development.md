@@ -53,7 +53,7 @@ The lint configuration enables checks such as `staticcheck`, `ineffassign`, `gof
 
 ## Container Smoke and SBOM Checks
 
-Every pull request also exercises the container delivery path. The CI workflow builds the image with `docker buildx build` using the `deploy/Dockerfile`, reuses GitHub Actions cache-backed layers for faster rebuilds, and tags the result locally as `oci-cpu-shaper:test`. A dry-run smoke test executes the packaged binary:
+Every pull request also exercises the container delivery path. The CI workflow builds the image with `docker buildx build` using the repository-root `Dockerfile`, reuses GitHub Actions cache-backed layers for faster rebuilds, and tags the result locally as `oci-cpu-shaper:test`. A dry-run smoke test executes the packaged binary:
 
 ```bash
 docker run --rm oci-cpu-shaper:test --mode dry-run --log-level debug --shutdown-after=4s
