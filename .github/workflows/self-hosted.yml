@@ -262,6 +262,7 @@ jobs:
             done
             echo "::error::container $name did not reach running state" >&2
             docker ps -a >&2 || true
+            docker logs "$name" >&2 || true
             docker inspect --format 'state={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}}' "$name" >&2 || true
             return 1
           }
