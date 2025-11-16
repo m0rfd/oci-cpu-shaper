@@ -286,9 +286,16 @@ jobs:
             local name=$1
             local cgroup_file="$run_dir/${name}-cgroup"
             local rel_path
+            local pid
 
-            if ! docker exec "$name" cat /proc/self/cgroup >"$cgroup_file"; then
-              echo "::error::unable to fetch /proc/self/cgroup for $name" >&2
+            pid=$(docker inspect -f '{{.State.Pid}}' "$name" 2>/dev/null || echo "")
+            if [ -z "$pid" ] || [ "$pid" = "0" ]; then
+              echo "::error::unable to determine host PID for $name" >&2
+              return 1
+            fi
+
+            if ! cat "/proc/$pid/cgroup" >"$cgroup_file"; then
+              echo "::error::unable to fetch /proc/$pid/cgroup for $name" >&2
               return 1
             fi
 
@@ -304,15 +311,15 @@ jobs:
               return 1
             fi
 
-            if ! docker cp "$name":/sys/fs/cgroup/cpu.stat "$run_dir/${name}-cpu.stat"; then
+            if ! cp "$cg_path/cpu.stat" "$run_dir/${name}-cpu.stat"; then
               echo "::error::unable to retrieve cpu.stat for $name" >&2
               return 1
             fi
-            if ! docker cp "$name":/sys/fs/cgroup/cpu.weight "$run_dir/${name}-cpu.weight"; then
+            if ! cp "$cg_path/cpu.weight" "$run_dir/${name}-cpu.weight"; then
               echo "::error::unable to retrieve cpu.weight for $name" >&2
               return 1
             fi
-            if docker cp "$name":/sys/fs/cgroup/cpu.max "$run_dir/${name}-cpu.max" >/dev/null 2>&1; then
+            if cp "$cg_path/cpu.max" "$run_dir/${name}-cpu.max" >/dev/null 2>&1; then
               :
             else
               rm -f "$run_dir/${name}-cpu.max"
