@@ -160,7 +160,15 @@ jobs:
         run: |
           set -euo pipefail
 
+          host_arch=$(uname -m)
+          case "$host_arch" in
+            x86_64) target_arch=amd64 ;;
+            arm64|aarch64) target_arch=arm64 ;;
+            *) target_arch=$host_arch ;;
+          esac
+
           docker build \
+            --build-arg TARGETARCH="$target_arch" \
             --target rootful \
              --load \
             -t oci-cpu-shaper:integration-rootful \
