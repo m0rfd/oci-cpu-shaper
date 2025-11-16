@@ -75,19 +75,27 @@ func (s *IMDSServer) serveHTTP(writer http.ResponseWriter, req *http.Request) {
 	s.mu.Unlock()
 
 	switch strings.TrimPrefix(req.URL.Path, "/") {
-	case "opc/v2/region":
+	case "opc/v2/instance/region":
 		s.writeText(writer, s.cfg.Region)
-	case "opc/v2/regionInfo":
+	case "opc/v2/instance", "opc/v2/instance/":
 		payload := struct {
-			CanonicalRegionName string `json:"canonicalRegionName"`
-		}{CanonicalRegionName: s.cfg.CanonicalRegion}
+			RegionInfo struct {
+				CanonicalRegionName string `json:"canonicalRegionName"`
+			} `json:"regionInfo"`
+		}{
+			RegionInfo: struct {
+				CanonicalRegionName string `json:"canonicalRegionName"`
+			}{
+				CanonicalRegionName: s.cfg.CanonicalRegion,
+			},
+		}
 
 		s.writeJSON(writer, payload)
-	case "opc/v2/id":
+	case "opc/v2/instance/id":
 		s.writeText(writer, s.cfg.InstanceID)
-	case "opc/v2/compartmentId":
+	case "opc/v2/instance/compartmentId":
 		s.writeText(writer, s.cfg.CompartmentID)
-	case "opc/v2/shape-config":
+	case "opc/v2/instance/shape-config":
 		s.writeJSON(writer, s.cfg.Shape)
 	default:
 		http.NotFound(writer, req)

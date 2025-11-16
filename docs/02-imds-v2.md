@@ -9,12 +9,12 @@ The client targets the following resources relative to the configured base URL (
 | Resource | Method | Description |
 | -------- | ------ | ----------- |
 | `/instance/region` | `GET` | Returns the canonical home region for the running instance as plain text. |
-| `/instance/regionInfo` | `GET` | Returns a JSON document containing the canonical region name, realm metadata, and region key. |
+| `/instance/` | `GET` | Returns a JSON document containing the canonical `regionInfo`, realm metadata, region key, and other instance details. |
 | `/instance/id` | `GET` | Returns the instance OCID as plain text. |
 | `/instance/compartmentId` | `GET` | Returns the compartment OCID for the running instance as plain text. |
 | `/instance/shape-config` | `GET` | Returns a JSON document describing the shape attributes (OCPU count, memory, baseline utilisation, and networking limits). |
 
-Every call includes the IMDSv2 authorisation header (`Authorization: Bearer Oracle`) before dispatch. The client trims trailing whitespace for text resources, decodes the shape payload into `pkg/imds.ShapeConfig`, and parses the canonical region from `/instance/regionInfo` so downstream consumers receive normalised identifiers. Unknown fields are preserved by the JSON decoder so future metadata additions remain forward compatible.
+Every call includes the IMDSv2 authorisation header (`Authorization: Bearer Oracle`) before dispatch. The client trims trailing whitespace for text resources, decodes the shape payload into `pkg/imds.ShapeConfig`, and parses the canonical region from the `regionInfo` block exposed by `/instance/` so downstream consumers receive normalised identifiers. Unknown fields are preserved by the JSON decoder so future metadata additions remain forward compatible.
 
 ## 2.2 Retries and timeouts
 
