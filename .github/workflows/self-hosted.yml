@@ -162,6 +162,7 @@ jobs:
 
           docker build \
             --target rootful \
+             --load \
             -t oci-cpu-shaper:integration-rootful \
             -f deploy/Dockerfile \
             .
