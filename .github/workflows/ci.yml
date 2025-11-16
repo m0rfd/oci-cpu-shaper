@@ -284,7 +284,7 @@ jobs:
           while [ "$attempt" -le "$RETRY_ATTEMPTS" ]; do
             echo "[build] attempt ${attempt}/${RETRY_ATTEMPTS}"
             if docker buildx build \
-              --file deploy/Dockerfile \
+              --file Dockerfile \
               --platform linux/amd64 \
               --tag oci-cpu-shaper:test \
               --load \

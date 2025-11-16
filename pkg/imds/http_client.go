@@ -120,14 +120,14 @@ func (c *HTTPClient) Region(ctx context.Context) (string, error) {
 
 // CanonicalRegion returns the canonical region name for the running instance.
 func (c *HTTPClient) CanonicalRegion(ctx context.Context) (string, error) {
-	var info regionInfo
+	var metadata instanceMetadata
 
-	err := c.getJSON(ctx, "regionInfo", &info)
+	err := c.getJSON(ctx, "", &metadata)
 	if err != nil {
 		return "", err
 	}
 
-	return strings.TrimSpace(info.CanonicalRegionName), nil
+	return strings.TrimSpace(metadata.RegionInfo.CanonicalRegionName), nil
 }
 
 // InstanceID returns the OCID for the running instance.
@@ -314,4 +314,8 @@ func metadataRequest(ctx context.Context, method, url string) (*http.Request, er
 
 type regionInfo struct {
 	CanonicalRegionName string `json:"canonicalRegionName"`
+}
+
+type instanceMetadata struct {
+	RegionInfo regionInfo `json:"regionInfo"`
 }

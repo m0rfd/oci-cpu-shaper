@@ -74,7 +74,7 @@ jobs:
         uses: docker/build-push-action@v6.18.0
         with:
           context: .
-          file: deploy/Dockerfile
+          file: Dockerfile
           target: ${{ matrix.target }}
           platforms: linux/amd64,linux/arm64
           push: true
