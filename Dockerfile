@@ -36,6 +36,7 @@ LABEL org.opencontainers.image.title="oci-cpu-shaper" \
 
 COPY --from=builder /out/oci-cpu-shaper /usr/local/bin/oci-cpu-shaper
 COPY configs/offline-smoke.yaml /etc/oci-cpu-shaper/config.yaml
+COPY configs /etc/oci-cpu-shaper/configs
 
 USER nonroot:nonroot
 
@@ -51,6 +52,7 @@ LABEL org.opencontainers.image.title="oci-cpu-shaper" \
 
 COPY --from=builder /out/oci-cpu-shaper /usr/local/bin/oci-cpu-shaper
 COPY configs/offline-smoke.yaml /etc/oci-cpu-shaper/config.yaml
+COPY configs /etc/oci-cpu-shaper/configs
 
 USER 0:0
 
