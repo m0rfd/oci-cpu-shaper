@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"math"
+	"os"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -19,6 +22,17 @@ func main() {
 	workers := flag.Int("workers", runtime.NumCPU(), "number of busy loop workers to launch")
 
 	flag.Parse()
+
+	debug.SetTraceback("all")
+
+	fmt.Fprintf(
+		os.Stderr,
+		"cpu-hog start duration=%s workers=%d goarch=%s\n",
+		duration,
+		*workers,
+		runtime.GOARCH,
+	)
+	defer fmt.Fprintf(os.Stderr, "cpu-hog exit\n")
 
 	if *workers <= 0 {
 		*workers = 1
