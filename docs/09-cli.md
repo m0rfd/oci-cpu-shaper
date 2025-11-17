@@ -134,15 +134,19 @@ Smoke tests introduced in §11 now cover the dependency-injected entrypoint as w
 
 Local contributors can validate the CLI wiring the same way: run `make lint` and `make test` before checking in changes and finish with `make coverage MIN_COVERAGE=95` to confirm the documentation’s QA promise remains true.
 
-Rootful binaries built with `-tags rootful` log a warning if the kernel rejects the
-`SCHED_IDLE` request emitted when the worker pool starts (§§6, 9). Hosts running
-the Compose or Quadlet stacks must grant `CAP_SYS_NICE`/`SYS_NICE` so the
+Rootful binaries built with `-tags rootful` now issue their
+`sched_setscheduler(0, SCHED_IDLE, ...)` request as soon as the worker pool is
+constructed, before goroutines start consuming CPU (§§6, 9). Hosts running the
+Compose or Quadlet stacks must grant `CAP_SYS_NICE`/`SYS_NICE` so the
 `worker failed to enter sched_idle` warning remains informational rather than a
-permanent indicator that the downgrade could not be applied.
+permanent indicator that the downgrade could not be applied; `EPERM` rejections
+are silently ignored when the capability is intentionally withheld.
 
 ## 9.5 Metrics Exporter
 
 `cmd/shaper` instantiates the lightweight OpenMetrics exporter from `pkg/http/metrics` and serves it at `/metrics` using the `http.bind` configuration (or `HTTP_ADDR` environment override). The listener defaults to `:9108`, matching the Compose port mapping in §6 and the container `EXPOSE 9108` declaration. Production Prometheus servers can scrape the endpoint directly when the rootful stack runs in host-network mode, while rootless deployments forward `${SHAPER_METRICS_BIND:-127.0.0.1:9108}:9108` from the host loopback to the container port.
+
+Binding failures now abort startup: when the requested `http.bind` address is already in use the CLI logs `failed to start metrics server`, exits with a runtime error, and leaves the controller uninitialised so systemd or Kubernetes can retry immediately. Unit coverage in §11 confirms both the fast-fail path and the `/metrics` content-type expectations.
 
 ### Emitted series
 
@@ -192,16 +196,17 @@ Offline mode continues to populate each series so smoke tests and container heal
 ## 9.6 Health Checks
 
 `cmd/shaper` now serves a lightweight JSON status document at `/healthz` on the
-same listener as `/metrics`. The handler reports the controller state machine
-(`"normal"`, `"fallback"`, or `"suppressed"`) alongside the last OCI metrics error
-and most recent estimator error snapshot. Container orchestrators can poll the
-endpoint to surface degraded Monitoring connectivity or estimator stalls while
-the process continues to run.
+same listener as `/metrics`. The handler reports the controller mode (`"noop"`,
+`"dry-run"`, or `"enforce"`), the state machine (`"normal"`, `"fallback"`, or
+`"suppressed"`), and the last OCI metrics plus estimator errors. Container
+orchestrators can poll the endpoint to surface degraded Monitoring connectivity
+or estimator stalls while the process continues to run.
 
 The response mirrors this structure:
 
 ```json
 {
+  "mode": "dry-run",
   "state": "normal",
   "ociError": "",
   "estimatorError": ""

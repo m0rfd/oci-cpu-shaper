@@ -243,6 +243,7 @@ func run(
 	imdsClient := deps.newIMDS()
 
 	metricsExporter := buildMetricsExporter(deps)
+	metricsRecorder := newRecorderLogger(logger, metricsExporter)
 
 	cfg, metadata, metadataErr := prepareRunMetadata(ctx, cfg, imdsClient, opts.mode)
 	if metadataErr != nil {
@@ -258,7 +259,7 @@ func run(
 		opts.mode,
 		cfg,
 		imdsClient,
-		metricsExporter,
+		metricsRecorder,
 	)
 	if buildErr != nil {
 		code := exitCodeForConfigError(buildErr)
@@ -984,6 +985,8 @@ func serveMetrics(
 		shutdownCtx, cancel := context.WithTimeout(ctx, metricsShutdownTimeout)
 		defer cancel()
 
+		logger.Info("stopping metrics server", zap.String("bind", server.Addr))
+
 		err := server.Shutdown(shutdownCtx)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Warn("metrics server shutdown", zap.Error(err))
@@ -994,7 +997,11 @@ func serveMetrics(
 		err := server.Serve(listener)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Warn("metrics server serve", zap.Error(err))
+
+			return
 		}
+
+		logger.Info("metrics server stopped", zap.String("bind", server.Addr))
 	}()
 }
 

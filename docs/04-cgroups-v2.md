@@ -28,6 +28,7 @@ This configuration caps the shaper at 30% of one CPU while still allowing bursts
 - Inspect `/sys/fs/cgroup/<slice>/cpu.weight` and `/sys/fs/cgroup/<slice>/cpu.max` to confirm runtime configuration.
 - Read `/sys/fs/cgroup/<slice>/cpu.stat` for throttling counters and to verify that any configured `cpu.max` value is not hit continuously.
 - Pair these checks with the shaper’s `/metrics` output and MQL queries described in `docs/05-monitoring-mql.md`. The exporter publishes `shaper_target_ratio`, `duty_cycle_ms`, and `worker_count` so operators can spot drift between requested duty cycles and the active worker pool, alongside `shaper_mode`, `shaper_state`, `oci_p95`, `oci_last_success_epoch`, and `host_cpu_percent` for reconciling controller decisions with OCI telemetry and host contention.
+- The `/healthz` endpoint on the same listener now reports both the controller `state` and `mode`, helping teams confirm whether `dry-run` or `enforce` is active while adjusting CPU weights or evaluating suppressed fast-loop behaviour.
 - Structured logs now expose `controllerState` so operators can confirm when the suppressed fast-loop mode engaged alongside OCI feedback. Use the Prometheus sample in §9.5 to validate scrape contents while adjusting weights.
 
 Document any new tunables in this file and `docs/CHANGELOG.md` so operators have a single source of truth for CPU control behaviour.

@@ -3139,6 +3139,32 @@ func TestStartMetricsServerServesRequests(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 }
 
+func TestStartMetricsServerFailsWhenAddressInUse(t *testing.T) {
+	t.Parallel()
+
+	var listenCfg net.ListenConfig
+
+	listener, err := listenCfg.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	defer func() {
+		_ = listener.Close()
+	}()
+
+	addr := listener.Addr().String()
+
+	err = startMetricsServer(context.Background(), zap.NewNop(), addr, http.NewServeMux())
+	if err == nil {
+		t.Fatal("expected error when address is already in use")
+	}
+
+	if !strings.Contains(err.Error(), "listen metrics endpoint") {
+		t.Fatalf("expected listen error, got %v", err)
+	}
+}
+
 func TestConfigureMetricsHandlesNilExporter(t *testing.T) {
 	t.Parallel()
 
@@ -3266,6 +3292,10 @@ func TestConfigureMetricsRegistersHandlers(t *testing.T) {
 	}
 
 	healthBody := healthRecorder.Body.Bytes()
+	if !bytes.Contains(healthBody, []byte("\"mode\":\"dry-run\"")) {
+		t.Fatalf("expected controller mode in health response, got %s", healthBody)
+	}
+
 	if !bytes.Contains(healthBody, []byte("\"state\":\"fallback\"")) {
 		t.Fatalf("expected fallback state in health response, got %s", healthBody)
 	}
@@ -3312,4 +3342,95 @@ func TestConfigureMetricsWithoutController(t *testing.T) {
 	if recorder.Result().StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing health handler, got %d", recorder.Result().StatusCode)
 	}
+}
+
+func TestConfigureMetricsServesPrometheusText(t *testing.T) {
+	t.Parallel()
+
+	exporter := metricshttp.NewExporter()
+	exporter.SetMode("enforce")
+	exporter.SetState("normal")
+	exporter.SetTarget(0.42)
+	exporter.ObserveOCIP95(0.31, time.Unix(1_700_000_333, 0))
+	exporter.ObserveHostCPU(0.55)
+
+	pool := &stubPoolStarter{startCount: 0, workers: 3, quantum: 2 * time.Millisecond}
+	controller := &stubController{
+		mode:        "enforce",
+		runErr:      nil,
+		runCalled:   false,
+		deadline:    time.Time{},
+		deadlineSet: false,
+		state:       adapt.StateNormal,
+		lastErr:     nil,
+		estErr:      nil,
+	}
+
+	handler := configureMetricsHandlerForTest(t, exporter, pool, controller)
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d", recorder.Code)
+	}
+
+	const promContentType = "application/openmetrics-text; version=1.0.0; charset=utf-8"
+	if got := recorder.Header().Get("Content-Type"); got != promContentType {
+		t.Fatalf("expected Prometheus content type, got %q", got)
+	}
+
+	body := recorder.Body.String()
+	for _, snippet := range []string{
+		"# HELP shaper_target_ratio",
+		"shaper_mode{mode=\"enforce\"} 1",
+		"worker_count 3",
+		"duty_cycle_ms 2.000",
+		"oci_last_success_epoch 1700000333",
+	} {
+		if !strings.Contains(body, snippet) {
+			t.Fatalf("expected metrics output to contain %q, got:\n%s", snippet, body)
+		}
+	}
+}
+
+func configureMetricsHandlerForTest(
+	t *testing.T,
+	exporter *metricshttp.Exporter,
+	pool poolStarter,
+	controller adapt.Controller,
+) http.Handler {
+	t.Helper()
+
+	cfg := defaultRuntimeConfig()
+	cfg.HTTP.Bind = testMetricsBind
+
+	var handler http.Handler
+
+	var deps runDeps
+
+	deps.startMetricsServer = func(_ context.Context, _ *zap.Logger, _ string, mux http.Handler) error {
+		handler = mux
+
+		return nil
+	}
+
+	err := configureMetrics(
+		context.Background(),
+		deps,
+		zap.NewNop(),
+		cfg,
+		exporter,
+		pool,
+		controller,
+	)
+	if err != nil {
+		t.Fatalf("configureMetrics returned error: %v", err)
+	}
+
+	if handler == nil {
+		t.Fatal("expected handler to be configured")
+	}
+
+	return handler
 }

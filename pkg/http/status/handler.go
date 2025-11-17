@@ -3,12 +3,14 @@ package status
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"oci-cpu-shaper/pkg/adapt"
 )
 
 // Controller exposes the status surface required by the health handler.
 type Controller interface {
+	Mode() string
 	State() adapt.State
 	LastError() error
 	LastEstimatorError() error
@@ -16,6 +18,7 @@ type Controller interface {
 
 // Snapshot captures the controller status returned by the handler.
 type Snapshot struct {
+	Mode           string `json:"mode"`
 	State          string `json:"state"`
 	LastOCIError   string `json:"ociError"`
 	EstimatorError string `json:"estimatorError"`
@@ -40,6 +43,7 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, _ *http.Request) {
 	}
 
 	snapshot := Snapshot{
+		Mode:           strings.TrimSpace(h.controller.Mode()),
 		State:          h.controller.State().String(),
 		LastOCIError:   "",
 		EstimatorError: "",
