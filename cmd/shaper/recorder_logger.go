@@ -18,6 +18,10 @@ const (
 	hostPercentMultiplier          = 100.0
 	controllerUnknownValue         = "unknown"
 	hostCPUObservationMessage      = "host cpu observation"
+	controllerIntervalLogMessage   = "controller interval updated"
+	controllerErrorObservedMessage = "controller error observed"
+	controllerErrorClearedMessage  = "controller error cleared"
+	controllerNoErrorValue         = "none"
 )
 
 type controllerRecorderLogger struct {
@@ -40,6 +44,11 @@ type controllerRecorderLogger struct {
 	lastHost    float64
 	lastHostLog time.Time
 
+	intervalLogged bool
+	lastInterval   time.Duration
+
+	lastError string
+
 	now func() time.Time
 }
 
@@ -53,9 +62,10 @@ func newRecorderLogger(
 	}
 
 	return &controllerRecorderLogger{ //nolint:exhaustruct // zero-value fields capture prior state lazily
-		logger:   logger,
-		delegate: delegate,
-		now:      time.Now,
+		logger:    logger,
+		delegate:  delegate,
+		lastError: controllerNoErrorValue,
+		now:       time.Now,
 	}
 }
 
@@ -76,7 +86,11 @@ func (r *controllerRecorderLogger) SetMode(mode string) {
 		return
 	}
 
-	r.logger.Info("controller mode configured", zap.String("mode", trimmed))
+	r.logger.Info(
+		"controller mode configured",
+		zap.String("mode", trimmed),
+		zap.Bool("enforcing", adapt.ModeEnforcesTargets(trimmed)),
+	)
 	r.lastMode = trimmed
 }
 
@@ -186,6 +200,59 @@ func (r *controllerRecorderLogger) ObserveHostCPU(utilisation float64) {
 	r.hostLogged = true
 	r.lastHost = utilisation
 	r.lastHostLog = r.now()
+}
+
+func (r *controllerRecorderLogger) SetInterval(interval time.Duration) {
+	if r.delegate != nil {
+		r.delegate.SetInterval(interval)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.intervalLogged && interval == r.lastInterval {
+		return
+	}
+
+	r.logger.Debug(
+		controllerIntervalLogMessage,
+		zap.Duration("interval", interval),
+		zap.Duration("previous", r.lastInterval),
+	)
+	r.intervalLogged = true
+	r.lastInterval = interval
+}
+
+func (r *controllerRecorderLogger) SetLastError(err error) {
+	if r.delegate != nil {
+		r.delegate.SetLastError(err)
+	}
+
+	message := controllerNoErrorValue
+
+	if err != nil {
+		trimmed := strings.TrimSpace(err.Error())
+		if trimmed != "" {
+			message = trimmed
+		} else {
+			message = controllerUnknownValue
+		}
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.lastError == message {
+		return
+	}
+
+	if message == controllerNoErrorValue {
+		r.logger.Info(controllerErrorClearedMessage)
+	} else {
+		r.logger.Warn(controllerErrorObservedMessage, zap.String("error", message))
+	}
+
+	r.lastError = message
 }
 
 func (r *controllerRecorderLogger) shouldLogObservation(

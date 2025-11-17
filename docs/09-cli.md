@@ -33,6 +33,12 @@ Three foundational flags align with §§3.1 and 5.2 of the implementation plan:
 
 Flags remain intentionally minimal so orchestration tools can template them alongside file-based configuration and environment overrides. When `--shutdown-after` is non-zero the CLI installs a context deadline and treats the resulting `context deadline exceeded`/`context canceled` errors as clean shutdowns so smoke tests can rely on exit status `0`.
 
+The CLI also installs `SIGINT`/`SIGTERM` handlers that wrap the run loop in a
+`context.WithCancel`. Delivering either signal now cancels the controller,
+worker pool, and HTTP server contexts just like the time-bounded shutdown,
+letting supervisors stop the process without forcing an unclean exit or leaking
+goroutines.
+
 ## 9.2 Configuration Layout
 
 Bootstrap deployments rely on a compact YAML manifest that mirrors §§3.1 and 5.2 thresholds:
@@ -76,6 +82,7 @@ oci:
   `compartmentId`, `region`, and optional `instanceId` values before entering
   enforce mode.
 - `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed four-hour interval when OCI P95 remains healthy. The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) decide when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools.
+- The loader now enforces the documented ratios and cadences: `targetMin` must remain below `targetMax`, every slow-loop target and goal must fall within that band, and the `interval`, `relaxedInterval`, `stepUp`, `stepDown`, `pool.quantum`, and `pool.workers` values must be positive. Invalid manifests abort startup with an exit status of `2` so operators can fix the config before the controller touches system state (§§3.1, 5.2).
 - Validation now enforces that every slow-loop target or goal remains below both suppression thresholds, so manifests that would immediately re-trigger the fast loop are rejected with an exit status of `2` and a descriptive error message (§§3.1, 5.2).
 - `estimator.interval` controls the fast `/proc/stat` sampler cadence (§5.2) while the worker `pool` exposes quantum sizing that stays within the 1–5 ms duty-cycle budget. `pool.pauseThreshold`/`pool.resumeThreshold` mirror the estimator hysteresis so the worker pool pauses entirely when host utilisation crosses the configured limit and only resumes once the load cools.
 - `http.bind` retains the Prometheus listener address and now backs the `/metrics` exporter described in §9.5, while `oci.compartmentId` supplies the tenancy scope required by the Monitoring client and `oci.region` pins the Monitoring endpoint region when IMDS access is unavailable (for example, CI smoke tests).
@@ -131,7 +138,7 @@ At startup the binary emits a structured log line containing build metadata deri
 
 Invalid flag values are rejected during argument parsing: unknown controller modes surface an error and cause the program to exit with status `2`, unsupported log levels report a structured error before the logger is constructed, and negative `--shutdown-after` durations are rejected. This keeps early runs predictable while new policy engines are still being prototyped.
 
-Configuration validation shares this behaviour: when thresholds conflict with the suppression bounds the CLI prints the descriptive failure and exits with code `2`, preventing partially initialised controllers (§§3.1, 5.2).
+Configuration validation shares this behaviour: when thresholds conflict with the suppression bounds, when targets/goals drift outside `targetMin`/`targetMax`, or when intervals/worker counts fall to zero the CLI prints the descriptive failure and exits with code `2`, preventing partially initialised controllers (§§3.1, 5.2).
 
 Smoke tests introduced in §11 now cover the dependency-injected entrypoint as well as adaptive-controller wiring, ensuring that enforce/dry-run builds start the OCI client, estimator sampler, and worker pool while `noop` preserves the bypass path for validation scenarios. Offline mode keeps this wiring intact by substituting the static metrics client so container smoke tests can run without live tenancy credentials, and new unit coverage exercises the IMDS-backed region/compartment resolver plus its failure modes to keep the ≥95% statement coverage guarantee intact.
 
@@ -147,9 +154,9 @@ are silently ignored when the capability is intentionally withheld.
 
 ## 9.5 Metrics Exporter
 
-`cmd/shaper` instantiates the lightweight OpenMetrics exporter from `pkg/http/metrics` and serves it at `/metrics` using the `http.bind` configuration (or `HTTP_ADDR` environment override). The listener defaults to `:9108`, matching the Compose port mapping in §6 and the container `EXPOSE 9108` declaration. Production Prometheus servers can scrape the endpoint directly when the rootful stack runs in host-network mode, while rootless deployments forward `${SHAPER_METRICS_BIND:-127.0.0.1:9108}:9108` from the host loopback to the container port.
+`cmd/shaper` instantiates the lightweight OpenMetrics exporter from `pkg/http/metrics` and serves it at `/metrics` using the `http.bind` configuration (or `HTTP_ADDR` environment override). The listener defaults to `:9108`, matching the Compose port mapping in §6 and the container `EXPOSE 9108` declaration. Production Prometheus servers can scrape the endpoint directly when the rootful stack runs in host-network mode, while rootless deployments forward `${SHAPER_METRICS_BIND:-127.0.0.1:9108}:9108` from the host loopback to the container port. The CLI now derives a per-run context for the HTTP listener and invokes the returned shutdown hook when the controller exits so `/metrics` follows the process lifecycle even when the ambient context stays open.
 
-Binding failures now abort startup: when the requested `http.bind` address is already in use the CLI logs `failed to start metrics server`, exits with a runtime error, and leaves the controller uninitialised so systemd or Kubernetes can retry immediately. Unit coverage in §11 confirms both the fast-fail path and the `/metrics` content-type expectations.
+Binding failures now abort startup: when the requested `http.bind` address is already in use the CLI logs `failed to start metrics server`, exits with a runtime error, and leaves the controller uninitialised so systemd or Kubernetes can retry immediately. The metrics helper also emits structured `metrics server listen failed`/`metrics server serve` entries when the bind or serve loops encounter errors, making it obvious which phase failed before the controller came up. Unit coverage in §11 confirms the fast-fail path, the graceful shutdown, and the `/metrics` content-type expectations.
 
 ### Emitted series
 

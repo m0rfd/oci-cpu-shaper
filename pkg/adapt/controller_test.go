@@ -450,6 +450,10 @@ func TestAdaptiveControllerEmitsMetricsSignals(t *testing.T) {
 	requireEqual(t, "mode", recorder.mode, "enforce")
 	requireEqual(t, "initialState", recorder.state, StateFallback.String())
 	requireFloatApprox(t, "initialTarget", recorder.target, cfg.FallbackTarget)
+	requireEqual(t, "initialInterval", recorder.interval, cfg.Interval)
+	requirePositiveInt(t, "initialIntervalCalls", recorder.intervalSet)
+	requireEqual(t, "initialLastError", recorder.lastError, nil)
+	requirePositiveInt(t, "initialErrorCalls", recorder.errorCalls)
 
 	feedObservation(controller, 0, 0.75, nil)
 
@@ -468,6 +472,10 @@ func TestAdaptiveControllerEmitsMetricsSignals(t *testing.T) {
 	requireNotZeroTime(t, "ociTime", recorder.ociTime)
 	requireEqual(t, "stateAfterStep", recorder.state, StateNormal.String())
 	requireFloatApprox(t, "targetAfterStep", recorder.target, shaper.Target())
+	requireEqual(t, "intervalAfterStep", recorder.interval, cfg.Interval)
+	requirePositiveInt(t, "intervalCallsAfterStep", recorder.intervalSet)
+	requireEqual(t, "lastErrorAfterStep", recorder.lastError, nil)
+	requireTrue(t, "errorCallsAfterStep", recorder.errorCalls >= 2)
 }
 
 type stubMetricsRecorder struct {
@@ -483,6 +491,10 @@ type stubMetricsRecorder struct {
 	ociCalls    int
 	host        float64
 	hostCalls   int
+	interval    time.Duration
+	intervalSet int
+	lastError   error
+	errorCalls  int
 }
 
 func newStubMetricsRecorder() *stubMetricsRecorder { return new(stubMetricsRecorder) }
@@ -528,6 +540,22 @@ func (s *stubMetricsRecorder) ObserveHostCPU(utilisation float64) {
 	s.hostCalls++
 }
 
+func (s *stubMetricsRecorder) SetInterval(interval time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.interval = interval
+	s.intervalSet++
+}
+
+func (s *stubMetricsRecorder) SetLastError(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.lastError = err
+	s.errorCalls++
+}
+
 func requireEqual[T comparable](t *testing.T, name string, got, want T) {
 	t.Helper()
 
@@ -549,6 +577,14 @@ func requirePositiveInt(t *testing.T, name string, value int) {
 
 	if value <= 0 {
 		t.Fatalf("expected %s to be positive, got %d", name, value)
+	}
+}
+
+func requireTrue(t *testing.T, name string, condition bool) {
+	t.Helper()
+
+	if !condition {
+		t.Fatalf("expected %s to be true", name)
 	}
 }
 
@@ -736,6 +772,115 @@ func TestNormalizeConfigValidatesThresholds(t *testing.T) {
 	_, _, err := normalizeConfig(cfg)
 	if !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("expected ErrInvalidConfig, got %v", err)
+	}
+}
+
+func TestModeEnforcesTargets(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		mode      string
+		enforcing bool
+	}{
+		{name: "dry-run disabled", mode: dryRunModeLabel, enforcing: false},
+		{name: "empty defaults to enforcing", mode: "", enforcing: true},
+		{name: "explicit enforce", mode: "enforce", enforcing: true},
+		{name: "case insensitive", mode: " EnFoRcE ", enforcing: true},
+		{name: "unknown modes enforce", mode: "observe", enforcing: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := ModeEnforcesTargets(tc.mode); got != tc.enforcing {
+				t.Fatalf("expected enforcing=%v for mode %q, got %v", tc.enforcing, tc.mode, got)
+			}
+		})
+	}
+}
+
+func TestAdaptiveControllerDryRunRecordsTargets(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics([]metricResult{{value: 0.20, err: nil}})
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+	cfg.Mode = dryRunModeLabel
+	cfg.Interval = time.Second
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("create controller: %v", err)
+	}
+
+	recorder, ok := controller.shaper.(*recordingDutyCycler)
+	if !ok {
+		t.Fatalf("expected dry-run to wrap duty cycler, got %T", controller.shaper)
+	}
+
+	if len(shaper.calls) != 0 {
+		t.Fatalf("expected dry-run to avoid touching shaper, got %d calls", len(shaper.calls))
+	}
+
+	controller.step(context.Background())
+
+	if len(shaper.calls) != 0 {
+		t.Fatalf("expected dry-run to skip shaper updates, got %d calls", len(shaper.calls))
+	}
+
+	if recorder.Target() == 0 {
+		t.Fatal("expected recorder to capture controller target in dry-run mode")
+	}
+
+	if diff := math.Abs(recorder.Target() - controller.Target()); diff > 1e-9 {
+		t.Fatalf(
+			"expected recorder target %.3f to match controller target %.3f",
+			recorder.Target(),
+			controller.Target(),
+		)
+	}
+
+	recorder.ObserveHostLoad(0.85)
+
+	if len(shaper.calls) != 0 {
+		t.Fatalf(
+			"expected dry-run recorder to ignore host load observations, got %d calls",
+			len(shaper.calls),
+		)
+	}
+}
+
+func TestAdaptiveControllerEnforceModeMutatesDutyCycler(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics([]metricResult{{value: 0.20, err: nil}})
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+	cfg.Mode = "enforce"
+	cfg.Interval = time.Second
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("create controller: %v", err)
+	}
+
+	if _, ok := controller.shaper.(*recordingDutyCycler); ok {
+		t.Fatal("expected enforcing mode to use original duty cycler")
+	}
+
+	if len(shaper.calls) == 0 {
+		t.Fatal("expected enforcing mode to configure fallback target")
+	}
+
+	controller.step(context.Background())
+
+	if len(shaper.calls) < 2 {
+		t.Fatalf(
+			"expected enforcing mode to update shaper on step, got %d calls",
+			len(shaper.calls),
+		)
 	}
 }
 

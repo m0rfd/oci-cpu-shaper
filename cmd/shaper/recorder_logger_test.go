@@ -1,12 +1,18 @@
 package main
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 	metricshttp "oci-cpu-shaper/pkg/http/metrics"
+)
+
+var (
+	errMonitoringUnavailable = errors.New("monitoring unavailable")
+	errEstimatorFailure      = errors.New("estimator error")
 )
 
 func TestNewRecorderLoggerHandlesNilInputs(t *testing.T) {
@@ -52,8 +58,16 @@ func TestControllerRecorderLoggerSetModeLogsChanges(t *testing.T) {
 		t.Fatalf("expected initial mode log to capture dry-run, got %q", got)
 	}
 
+	if enforcing, ok := fieldBool(entries[0].Context, "enforcing"); !ok || enforcing {
+		t.Fatalf("expected dry-run log to mark enforcing=false, got %v (present=%v)", enforcing, ok)
+	}
+
 	if got := fieldString(entries[1].Context, "mode"); got != "enforce" {
 		t.Fatalf("expected second mode log to capture enforce, got %q", got)
+	}
+
+	if enforcing, ok := fieldBool(entries[1].Context, "enforcing"); !ok || !enforcing {
+		t.Fatalf("expected enforce log to mark enforcing=true, got %v (present=%v)", enforcing, ok)
 	}
 }
 
@@ -167,6 +181,70 @@ func TestControllerRecorderLoggerSetTargetLogsWithThreshold(t *testing.T) {
 	second := entries[1]
 	if got := fieldFloat(second.Context, "target"); got != 0.33 {
 		t.Fatalf("expected final target log to capture 0.33, got %f", got)
+	}
+}
+
+func TestControllerRecorderLoggerSetIntervalLogsChanges(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.DebugLevel)
+	logger := zap.New(core)
+	recorder := newRecorderLogger(logger, metricshttp.NewExporter())
+
+	recorder.SetInterval(30 * time.Second)
+	recorder.SetInterval(30 * time.Second)
+	recorder.SetInterval(time.Minute)
+
+	entries := observed.FilterMessage(controllerIntervalLogMessage).All()
+	if len(entries) != 2 {
+		t.Fatalf("expected two interval logs, got %d", len(entries))
+	}
+
+	if interval, ok := fieldDuration(entries[0].Context, "interval"); !ok ||
+		interval != 30*time.Second {
+		t.Fatalf("expected first interval log to capture 30s, got %v (ok=%v)", interval, ok)
+	}
+
+	if interval, ok := fieldDuration(entries[1].Context, "interval"); !ok ||
+		interval != time.Minute {
+		t.Fatalf("expected second interval log to capture 1m, got %v (ok=%v)", interval, ok)
+	}
+}
+
+func TestControllerRecorderLoggerSetLastErrorLogsTransitions(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+	recorder := newRecorderLogger(logger, metricshttp.NewExporter())
+
+	recorder.SetLastError(errMonitoringUnavailable)
+	recorder.SetLastError(errMonitoringUnavailable)
+	recorder.SetLastError(errEstimatorFailure)
+	recorder.SetLastError(nil)
+
+	entries := observed.All()
+	if len(entries) != 3 {
+		t.Fatalf("expected three logs (two errors + clear), got %d", len(entries))
+	}
+
+	first := entries[0]
+	if first.Message != controllerErrorObservedMessage {
+		t.Fatalf("expected first log to report observed error, got %q", first.Message)
+	}
+
+	if got := fieldString(first.Context, "error"); got != "monitoring unavailable" {
+		t.Fatalf("unexpected error label %q", got)
+	}
+
+	second := entries[1]
+	if got := fieldString(second.Context, "error"); got != "estimator error" {
+		t.Fatalf("expected second error log to capture estimator error, got %q", got)
+	}
+
+	third := entries[2]
+	if third.Message != controllerErrorClearedMessage {
+		t.Fatalf("expected final log to clear error, got %q", third.Message)
 	}
 }
 

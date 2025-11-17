@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	integrationImageTag = "oci-cpu-shaper:integration-rootful"
-	hogCmdImportPath    = "./tests/integration/cmd/cpu-hog"
+	integrationRootfulImageTag = "oci-cpu-shaper:integration-rootful"
+	integrationNonrootImageTag = "oci-cpu-shaper:integration-nonroot"
+	hogCmdImportPath           = "./tests/integration/cmd/cpu-hog"
 )
 
 func TestCPUWeightResponsiveness(t *testing.T) {
@@ -35,10 +36,29 @@ func TestCPUWeightResponsiveness(t *testing.T) {
 
 	repoRoot := repositoryRoot(t)
 	hogBinary := buildHogBinary(t, repoRoot)
-	buildIntegrationImage(t, repoRoot)
+	buildIntegrationImage(t, repoRoot, "rootful", integrationRootfulImageTag)
+	buildIntegrationImage(t, repoRoot, "nonroot", integrationNonrootImageTag)
 
-	highWeightName := containerName("cpu-weight-high")
-	lowWeightName := containerName("cpu-weight-low")
+	variants := []struct {
+		name  string
+		image string
+	}{
+		{name: "rootful", image: integrationRootfulImageTag},
+		{name: "nonroot", image: integrationNonrootImageTag},
+	}
+
+	for _, variant := range variants {
+		variant := variant
+		t.Run(variant.name, func(t *testing.T) {
+			assertCPUWeightRatio(t, hogBinary, variant.name, variant.image)
+		})
+	}
+}
+
+func assertCPUWeightRatio(t *testing.T, hogBinary, variantName, lowWeightImage string) {
+	helperSuffix := fmt.Sprintf("cpu-weight-high-%s", variantName)
+	highWeightName := containerName(helperSuffix)
+	lowWeightName := containerName(fmt.Sprintf("cpu-weight-low-%s", variantName))
 
 	runContainer(t, containerConfig{
 		name:       highWeightName,
@@ -50,7 +70,7 @@ func TestCPUWeightResponsiveness(t *testing.T) {
 	})
 	runContainer(t, containerConfig{
 		name:       lowWeightName,
-		image:      integrationImageTag,
+		image:      lowWeightImage,
 		cpuShares:  2,
 		hogBinary:  hogBinary,
 		duration:   45 * time.Second,
@@ -62,23 +82,23 @@ func TestCPUWeightResponsiveness(t *testing.T) {
 	highWeightStats := readCPUStats(t, highWeightName)
 	lowWeightStats := readCPUStats(t, lowWeightName)
 
-	t.Logf("high-weight container usage: %d µs (weight=%d)", highWeightStats.usageMicros, highWeightStats.weight)
-	t.Logf("low-weight container usage: %d µs (weight=%d)", lowWeightStats.usageMicros, lowWeightStats.weight)
+	t.Logf("[%s] high-weight container usage: %d µs (weight=%d)", variantName, highWeightStats.usageMicros, highWeightStats.weight)
+	t.Logf("[%s] low-weight container usage: %d µs (weight=%d)", variantName, lowWeightStats.usageMicros, lowWeightStats.weight)
 
 	if highWeightStats.weight <= lowWeightStats.weight {
-		t.Fatalf("expected high-weight container (%d) to exceed low-weight container (%d)", highWeightStats.weight, lowWeightStats.weight)
+		t.Fatalf("[%s] expected high-weight container (%d) to exceed low-weight container (%d)", variantName, highWeightStats.weight, lowWeightStats.weight)
 	}
 
 	if lowWeightStats.usageMicros == 0 {
-		t.Fatalf("low-weight container reported zero CPU usage; inspect docker logs for %s", lowWeightName)
+		t.Fatalf("[%s] low-weight container reported zero CPU usage; inspect docker logs for %s", variantName, lowWeightName)
 	}
 
 	usageRatio := float64(highWeightStats.usageMicros) / float64(lowWeightStats.usageMicros)
-	t.Logf("observed CPU usage ratio (high/low): %.2f", usageRatio)
+	t.Logf("[%s] observed CPU usage ratio (high/low): %.2f", variantName, usageRatio)
 
 	const minimumExpectedRatio = 5.0
 	if usageRatio < minimumExpectedRatio {
-		t.Fatalf("expected high-weight container to receive at least %.1fx CPU time (got %.2fx)", minimumExpectedRatio, usageRatio)
+		t.Fatalf("[%s] expected high-weight container to receive at least %.1fx CPU time (got %.2fx)", variantName, minimumExpectedRatio, usageRatio)
 	}
 }
 
@@ -147,20 +167,20 @@ func buildHogBinary(t *testing.T, repoRoot string) string {
 	return binaryPath
 }
 
-func buildIntegrationImage(t *testing.T, repoRoot string) {
+func buildIntegrationImage(t *testing.T, repoRoot, target, tag string) {
 	t.Helper()
 
 	cmd := exec.Command(
 		"docker", "build",
-		"--target", "rootful",
-		"-t", integrationImageTag,
+		"--target", target,
+		"-t", tag,
 		"-f", "Dockerfile",
 		".",
 	)
 	cmd.Dir = repoRoot
 
 	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build integration image: %v\n%s", err, output)
+		t.Fatalf("build integration image (target=%s tag=%s): %v\n%s", target, tag, err, output)
 	}
 }
 

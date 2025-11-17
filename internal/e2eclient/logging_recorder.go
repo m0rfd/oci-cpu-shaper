@@ -20,7 +20,7 @@ type loggingRecorder struct {
 // NewLoggingRecorder decorates the provided MetricsRecorder so e2e tests can observe
 // controller state transitions via structured logs.
 //
-//nolint:ireturn // helper intentionally returns interface for wiring flexibility
+//nolint:ireturn // helper exposes interface so tests can wrap any recorder implementation while keeping wiring flexible
 func NewLoggingRecorder(
 	logger *zap.Logger,
 	delegate adapt.MetricsRecorder,
@@ -77,5 +77,17 @@ func (r *loggingRecorder) ObserveOCIP95(value float64, fetchedAt time.Time) {
 func (r *loggingRecorder) ObserveHostCPU(utilisation float64) {
 	if r.delegate != nil {
 		r.delegate.ObserveHostCPU(utilisation)
+	}
+}
+
+func (r *loggingRecorder) SetInterval(interval time.Duration) {
+	if r.delegate != nil {
+		r.delegate.SetInterval(interval)
+	}
+}
+
+func (r *loggingRecorder) SetLastError(err error) {
+	if r.delegate != nil {
+		r.delegate.SetLastError(err)
 	}
 }
