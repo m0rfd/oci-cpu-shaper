@@ -4,19 +4,25 @@ package shape
 
 import (
 	"sync"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
 
 var (
-	schedSetSchedulerMu sync.RWMutex
-	schedSetScheduler   = unix.SchedSetScheduler
+	schedSetAttrMu sync.RWMutex
+	schedSetAttr   = unix.SchedSetAttr
 )
 
 func trySchedIdle() error {
-	schedSetSchedulerMu.RLock()
-	fn := schedSetScheduler
-	schedSetSchedulerMu.RUnlock()
+	schedSetAttrMu.RLock()
+	fn := schedSetAttr
+	schedSetAttrMu.RUnlock()
 
-	return fn(0, unix.SCHED_IDLE, &unix.SchedParam{})
+	attr := &unix.SchedAttr{
+		Size:   uint32(unsafe.Sizeof(unix.SchedAttr{})),
+		Policy: unix.SCHED_IDLE,
+	}
+
+	return fn(0, attr, 0)
 }

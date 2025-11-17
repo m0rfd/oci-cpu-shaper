@@ -12,36 +12,44 @@ import (
 func TestTrySchedIdleSuccess(t *testing.T) {
 	t.Parallel()
 
-	schedSetSchedulerMu.Lock()
-	original := schedSetScheduler
-	schedSetSchedulerMu.Unlock()
+	schedSetAttrMu.Lock()
+	original := schedSetAttr
+	schedSetAttrMu.Unlock()
 
 	t.Cleanup(func() {
-		schedSetSchedulerMu.Lock()
-		schedSetScheduler = original
-		schedSetSchedulerMu.Unlock()
+		schedSetAttrMu.Lock()
+		schedSetAttr = original
+		schedSetAttrMu.Unlock()
 	})
 
 	var called bool
-	schedSetSchedulerMu.Lock()
-	schedSetScheduler = func(pid int, policy int, param *unix.SchedParam) error {
+	schedSetAttrMu.Lock()
+	schedSetAttr = func(pid int, attr *unix.SchedAttr, flags uint) error {
 		called = true
 
 		if pid != 0 {
 			t.Fatalf("expected pid 0, got %d", pid)
 		}
 
-		if policy != unix.SCHED_IDLE {
-			t.Fatalf("expected SCHED_IDLE policy, got %d", policy)
+		if flags != 0 {
+			t.Fatalf("expected zero flags, got %d", flags)
 		}
 
-		if param == nil {
-			t.Fatalf("expected non-nil sched param")
+		if attr == nil {
+			t.Fatalf("expected non-nil sched attr")
+		}
+
+		if attr.Size == 0 {
+			t.Fatalf("expected non-zero attr size")
+		}
+
+		if attr.Policy != unix.SCHED_IDLE {
+			t.Fatalf("expected SCHED_IDLE policy, got %d", attr.Policy)
 		}
 
 		return nil
 	}
-	schedSetSchedulerMu.Unlock()
+	schedSetAttrMu.Unlock()
 
 	if err := trySchedIdle(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -55,21 +63,21 @@ func TestTrySchedIdleSuccess(t *testing.T) {
 func TestTrySchedIdleEPERM(t *testing.T) {
 	t.Parallel()
 
-	schedSetSchedulerMu.Lock()
-	original := schedSetScheduler
-	schedSetSchedulerMu.Unlock()
+	schedSetAttrMu.Lock()
+	original := schedSetAttr
+	schedSetAttrMu.Unlock()
 
 	t.Cleanup(func() {
-		schedSetSchedulerMu.Lock()
-		schedSetScheduler = original
-		schedSetSchedulerMu.Unlock()
+		schedSetAttrMu.Lock()
+		schedSetAttr = original
+		schedSetAttrMu.Unlock()
 	})
 
-	schedSetSchedulerMu.Lock()
-	schedSetScheduler = func(int, int, *unix.SchedParam) error {
+	schedSetAttrMu.Lock()
+	schedSetAttr = func(int, *unix.SchedAttr, uint) error {
 		return unix.EPERM
 	}
-	schedSetSchedulerMu.Unlock()
+	schedSetAttrMu.Unlock()
 
 	err := trySchedIdle()
 
