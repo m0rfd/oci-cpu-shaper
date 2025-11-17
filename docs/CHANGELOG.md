@@ -47,6 +47,7 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - Time-bounded shutdown support via the `--shutdown-after` flag so smoke tests and diagnostics can exercise the adaptive controller without leaving background processes behind; docs cover the workflow alongside the offline configuration shipped in the image (§§5, 9).
 - GitHub Actions workflows covering `golangci-lint` and race-enabled `go test` runs on pull requests (§14).
 - Automated release pipeline publishing multi-architecture images with Syft-generated SPDX SBOM artifacts (§14).
+- Release workflow now installs Cosign, signs each multi-arch image digest with GitHub Actions OIDC keyless certificates, emits SPDX attestations, and uploads the detached signatures/certificates as release assets so operators can verify images offline (§14).
 - Unit coverage for IMDS dummy metadata, controller mode wiring, and CLI bootstrap flows via dependency-injected smoke tests (§§5, 9, 11).
 - Race-enabled `make coverage` target and CI enforcement requiring at least 95% statement coverage before merging (§14).
 - Go vulnerability scanning via `make govulncheck` and a dedicated CI job that restores module/build caches, failing pull requests when published advisories affect the dependency graph (§14).
