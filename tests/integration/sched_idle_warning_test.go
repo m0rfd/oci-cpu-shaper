@@ -30,6 +30,9 @@ func TestSchedIdleWarningTracksSysNiceCapability(t *testing.T) {
 
 	repoRoot := repositoryRoot(t)
 	assetsDir := t.TempDir()
+	if err := os.Chmod(assetsDir, 0o755); err != nil {
+		t.Fatalf("chmod assets dir: %v", err)
+	}
 
 	binaryPath := buildRootfulShaperBinary(t, repoRoot, assetsDir)
 	configPath := copyModeBConfig(t, repoRoot, assetsDir)
@@ -41,9 +44,9 @@ func TestSchedIdleWarningTracksSysNiceCapability(t *testing.T) {
 		user:           nobodyUser,
 	})
 
-if !strings.Contains(missingCapLogs, schedIdleWarningMessage) {
-t.Fatalf("expected sched_idle warning when SYS_NICE is missing. container logs:\n%s", missingCapLogs)
-}
+	if !strings.Contains(missingCapLogs, schedIdleWarningMessage) {
+		t.Fatalf("expected sched_idle warning when SYS_NICE is missing. container logs:\n%s", missingCapLogs)
+	}
 
 	presentCapLogs := runModeBContainer(t, schedIdleContainerConfig{
 		assetsDir:      assetsDir,

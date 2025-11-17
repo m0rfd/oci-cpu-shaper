@@ -27,6 +27,8 @@ The method wraps the OCI Go SDK client, paginates over `opc-next-page` tokens, a
 
 Offline smoke tests rely on `pkg/oci.NewStaticMetricsClient`, which implements the same interface and serves a constant `QueryP95CPU` value without hitting the API. The packaged container enables this mode by default (`oci.offline: true`) so `oci_last_success_epoch` remains zero until tenancy credentials are available, while the adaptive controller continues to exercise its decision loop against the synthetic datapoint.
 
+Prometheus scrapes expose the same datapoints locally: `curl -fsSL ${HTTP_ADDR:-http://127.0.0.1:9108}/metrics` surfaces the Prometheus text export described in §9.5, letting operators confirm that `oci_p95` and `oci_last_success_epoch` match the Monitoring console while validating that `shaper_target_ratio`, `worker_count`, and `host_cpu_percent` stay within the thresholds defined earlier in this section.
+
 ## 5.3 Troubleshooting
 
 - **`ErrNoMetricsData`** – Verify that the instance publishes `CpuUtilization` metrics (enabled by the Compute Agent) and that the queried window contains traffic. Check the Monitoring console for gaps or disablement in the agent plugin.[^oci-compute-agent]

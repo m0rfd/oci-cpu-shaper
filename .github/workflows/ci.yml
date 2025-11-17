@@ -204,6 +204,8 @@ jobs:
 
   coverage:
     name: go test & coverage
+    needs:
+      - integration
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -225,11 +227,19 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-cache-
 
+      - name: Download integration coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: integration-coverage
+          path: artifacts
+
       - name: Run coverage suite
         env:
           MIN_COVERAGE: "95"
           COVERAGE_PROFILE: coverage.out
           COVERAGE_SUMMARY: coverage.txt
+          REUSE_INTEGRATION_COVERAGE: "1"
+          INTEGRATION_COVERAGE_PROFILE: artifacts/integration-coverage.out
         run: |
           set -o errexit
           set -o nounset
@@ -255,6 +265,39 @@ jobs:
           path: |
             coverage.out
             coverage.txt
+          if-no-files-found: error
+
+  benchmarks:
+    name: duty-cycle benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5.0.0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.sum
+
+      - name: Cache Go build artifacts
+        uses: actions/cache@v4
+        with:
+          path: .cache/go
+          key: ${{ runner.os }}-go-cache-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-cache-
+
+      - name: Run duty-cycle benchmarks
+        run: make bench
+
+      - name: Upload benchmark log
+        uses: actions/upload-artifact@v5
+        with:
+          name: duty-cycle-benchmarks
+          path: artifacts/benchmarks/pool-bench.txt
           if-no-files-found: error
 
   container-smoke:
@@ -346,7 +389,7 @@ jobs:
           severity-cutoff: critical
 
   integration:
-    name: integration (cgroup v2)
+    name: integration tests (cgroup v2)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -385,6 +428,7 @@ jobs:
       - name: Run integration tests
         env:
           INTEGRATION_KEEP_LOGS: "1"
+          INTEGRATION_COVERAGE_PROFILE: artifacts/integration-coverage.out
         run: |
           set -o errexit
           set -o nounset
@@ -396,4 +440,11 @@ jobs:
         with:
           name: integration-logs
           path: artifacts/integration.log
+          if-no-files-found: error
+
+      - name: Upload integration coverage
+        uses: actions/upload-artifact@v5
+        with:
+          name: integration-coverage
+          path: artifacts/integration-coverage.out
           if-no-files-found: error

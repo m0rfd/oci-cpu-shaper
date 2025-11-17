@@ -2,6 +2,7 @@ package metrics_test
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -65,6 +66,26 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 
 	if got != expected {
 		t.Fatalf("unexpected metrics output:\nexpected:\n%s\n\nactual:\n%s", expected, got)
+	}
+}
+
+func TestExporterObserveOCIP95TracksTimestamp(t *testing.T) {
+	t.Parallel()
+
+	exporter := metrics.NewExporter()
+	timestamp := time.Unix(1_700_000_111, 0)
+	exporter.ObserveOCIP95(0.45, timestamp)
+
+	data, err := exporter.Render()
+	if err != nil {
+		t.Fatalf("Render() returned error: %v", err)
+	}
+
+	body := string(data)
+
+	want := fmt.Sprintf("oci_last_success_epoch %d", timestamp.Unix())
+	if !strings.Contains(body, want) {
+		t.Fatalf("expected %q in metrics output, got %s", want, body)
 	}
 }
 
