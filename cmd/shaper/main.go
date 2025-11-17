@@ -243,6 +243,7 @@ func run(
 	imdsClient := deps.newIMDS()
 
 	metricsExporter := buildMetricsExporter(deps)
+	metricsRecorder := newRecorderLogger(logger, metricsExporter)
 
 	cfg, metadata, metadataErr := prepareRunMetadata(ctx, cfg, imdsClient, opts.mode)
 	if metadataErr != nil {
@@ -258,7 +259,7 @@ func run(
 		opts.mode,
 		cfg,
 		imdsClient,
-		metricsExporter,
+		metricsRecorder,
 	)
 	if buildErr != nil {
 		code := exitCodeForConfigError(buildErr)
