@@ -61,6 +61,8 @@ type MetricsRecorder interface {
 	SetTarget(target float64)
 	ObserveOCIP95(value float64, fetchedAt time.Time)
 	ObserveHostCPU(utilisation float64)
+	SetInterval(interval time.Duration)
+	SetLastError(err error)
 }
 
 // Estimator exposes the observation stream produced by pkg/est.
@@ -197,6 +199,8 @@ func NewAdaptiveController(
 		recorder.SetMode(mode)
 		recorder.SetState(controller.state.String())
 		recorder.SetTarget(controller.target)
+		recorder.SetInterval(controller.interval)
+		recorder.SetLastError(nil)
 	}
 
 	return controller, nil
@@ -372,26 +376,51 @@ func (c *AdaptiveController) step(ctx context.Context) time.Duration {
 	defer c.mu.Unlock()
 
 	if err != nil {
-		c.slowState = StateFallback
-		c.lastErr = err
-		fallback := clamp(c.cfg.FallbackTarget, c.cfg.TargetMin, c.cfg.TargetMax)
-
-		c.desired = fallback
-		if !c.suppressed {
-			c.applyTargetLocked(fallback)
-		}
-
-		c.updateEffectiveStateLocked()
-
-		return c.cfg.Interval
+		return c.handleStepErrorLocked(err)
 	}
 
+	return c.handleStepSuccessLocked(p95, time.Now())
+}
+
+func (c *AdaptiveController) handleStepErrorLocked(err error) time.Duration {
+	c.slowState = StateFallback
+
+	c.lastErr = err
+	if c.recorder != nil {
+		c.recorder.SetLastError(err)
+	}
+
+	fallback := clamp(c.cfg.FallbackTarget, c.cfg.TargetMin, c.cfg.TargetMax)
+
+	c.desired = fallback
+	if !c.suppressed {
+		c.applyTargetLocked(fallback)
+	}
+
+	c.updateEffectiveStateLocked()
+
+	interval := c.cfg.Interval
+	if c.recorder != nil {
+		c.recorder.SetInterval(interval)
+	}
+
+	return interval
+}
+
+func (c *AdaptiveController) handleStepSuccessLocked(
+	p95 float64,
+	fetchedAt time.Time,
+) time.Duration {
 	c.slowState = StateNormal
+
 	c.lastErr = nil
+	if c.recorder != nil {
+		c.recorder.SetLastError(nil)
+	}
 
 	c.lastP95 = p95
 	if c.recorder != nil {
-		c.recorder.ObserveOCIP95(p95, time.Now())
+		c.recorder.ObserveOCIP95(p95, fetchedAt)
 	}
 
 	nextTarget := c.target
@@ -418,11 +447,16 @@ func (c *AdaptiveController) step(ctx context.Context) time.Duration {
 
 	c.updateEffectiveStateLocked()
 
+	nextInterval := c.cfg.Interval
 	if p95 >= c.cfg.RelaxedThreshold {
-		return c.cfg.RelaxedInterval
+		nextInterval = c.cfg.RelaxedInterval
 	}
 
-	return c.cfg.Interval
+	if c.recorder != nil {
+		c.recorder.SetInterval(nextInterval)
+	}
+
+	return nextInterval
 }
 
 func (c *AdaptiveController) applyTargetLocked(target float64) {

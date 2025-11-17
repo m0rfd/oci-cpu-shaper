@@ -15,7 +15,10 @@ import (
 
 const openMetricsContentType = "application/openmetrics-text; version=1.0.0; charset=utf-8"
 
-var errFailingWriter = errors.New("metrics: failing writer")
+var (
+	errFailingWriter = errors.New("metrics: failing writer")
+	errMonitoringGap = errors.New("monitoring gap")
+)
 
 func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 	t.Parallel()
@@ -25,6 +28,8 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 	exporter.SetState(" fallback ")
 	exporter.SetTarget(0.275)
 	exporter.ObserveOCIP95(0.33, time.Unix(1_700_001_234, 0))
+	exporter.SetInterval(45 * time.Second)
+	exporter.SetLastError(errMonitoringGap)
 	exporter.SetDutyCycle(1500 * time.Microsecond)
 	exporter.SetWorkerCount(4)
 	exporter.ObserveHostCPU(0.6789)
@@ -45,6 +50,12 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 		"# HELP shaper_state Controller state machine output (value set to 1 for the active state).",
 		"# TYPE shaper_state gauge",
 		"shaper_state{state=\"fallback\"} 1",
+		"# HELP controller_interval_seconds Duration until the next controller step (seconds).",
+		"# TYPE controller_interval_seconds gauge",
+		"controller_interval_seconds 45.000000",
+		"# HELP controller_last_error_info Last controller error message (value set to 1 for the active error).",
+		"# TYPE controller_last_error_info gauge",
+		"controller_last_error_info{error=\"monitoring gap\"} 1",
 		"# HELP oci_p95 Last observed OCI CPU P95 ratio.",
 		"# TYPE oci_p95 gauge",
 		"oci_p95 0.330000",
@@ -150,6 +161,8 @@ func TestExporterGuardsAgainstInvalidInputs(t *testing.T) {
 	exporter.SetDutyCycle(-time.Second)
 	exporter.SetWorkerCount(-5)
 	exporter.ObserveHostCPU(math.Inf(1))
+	exporter.SetInterval(-time.Second)
+	exporter.SetLastError(nil)
 
 	data, err := exporter.Render()
 	if err != nil {
@@ -171,6 +184,14 @@ func TestExporterGuardsAgainstInvalidInputs(t *testing.T) {
 
 	if !strings.Contains(output, "worker_count 0") {
 		t.Fatalf("expected worker_count clamped to zero, got %s", output)
+	}
+
+	if !strings.Contains(output, "controller_interval_seconds 0.000000") {
+		t.Fatalf("expected interval to clamp to zero, got %s", output)
+	}
+
+	if !strings.Contains(output, "controller_last_error_info{error=\"none\"} 1") {
+		t.Fatalf("expected last error info to fall back to none, got %s", output)
 	}
 }
 

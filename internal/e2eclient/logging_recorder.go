@@ -79,3 +79,15 @@ func (r *loggingRecorder) ObserveHostCPU(utilisation float64) {
 		r.delegate.ObserveHostCPU(utilisation)
 	}
 }
+
+func (r *loggingRecorder) SetInterval(interval time.Duration) {
+	if r.delegate != nil {
+		r.delegate.SetInterval(interval)
+	}
+}
+
+func (r *loggingRecorder) SetLastError(err error) {
+	if r.delegate != nil {
+		r.delegate.SetLastError(err)
+	}
+}

@@ -441,6 +441,10 @@ func TestAdaptiveControllerEmitsMetricsSignals(t *testing.T) {
 	requireEqual(t, "mode", recorder.mode, "enforce")
 	requireEqual(t, "initialState", recorder.state, StateFallback.String())
 	requireFloatApprox(t, "initialTarget", recorder.target, cfg.FallbackTarget)
+	requireEqual(t, "initialInterval", recorder.interval, cfg.Interval)
+	requirePositiveInt(t, "initialIntervalCalls", recorder.intervalSet)
+	requireEqual(t, "initialLastError", recorder.lastError, nil)
+	requirePositiveInt(t, "initialErrorCalls", recorder.errorCalls)
 
 	feedObservation(controller, 0, 0.75, nil)
 
@@ -459,6 +463,10 @@ func TestAdaptiveControllerEmitsMetricsSignals(t *testing.T) {
 	requireNotZeroTime(t, "ociTime", recorder.ociTime)
 	requireEqual(t, "stateAfterStep", recorder.state, StateNormal.String())
 	requireFloatApprox(t, "targetAfterStep", recorder.target, shaper.Target())
+	requireEqual(t, "intervalAfterStep", recorder.interval, cfg.Interval)
+	requirePositiveInt(t, "intervalCallsAfterStep", recorder.intervalSet)
+	requireEqual(t, "lastErrorAfterStep", recorder.lastError, nil)
+	requireTrue(t, "errorCallsAfterStep", recorder.errorCalls >= 2)
 }
 
 type stubMetricsRecorder struct {
@@ -474,6 +482,10 @@ type stubMetricsRecorder struct {
 	ociCalls    int
 	host        float64
 	hostCalls   int
+	interval    time.Duration
+	intervalSet int
+	lastError   error
+	errorCalls  int
 }
 
 func newStubMetricsRecorder() *stubMetricsRecorder { return new(stubMetricsRecorder) }
@@ -519,6 +531,22 @@ func (s *stubMetricsRecorder) ObserveHostCPU(utilisation float64) {
 	s.hostCalls++
 }
 
+func (s *stubMetricsRecorder) SetInterval(interval time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.interval = interval
+	s.intervalSet++
+}
+
+func (s *stubMetricsRecorder) SetLastError(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.lastError = err
+	s.errorCalls++
+}
+
 func requireEqual[T comparable](t *testing.T, name string, got, want T) {
 	t.Helper()
 
@@ -540,6 +568,14 @@ func requirePositiveInt(t *testing.T, name string, value int) {
 
 	if value <= 0 {
 		t.Fatalf("expected %s to be positive, got %d", name, value)
+	}
+}
+
+func requireTrue(t *testing.T, name string, condition bool) {
+	t.Helper()
+
+	if !condition {
+		t.Fatalf("expected %s to be true", name)
 	}
 }
 

@@ -7,15 +7,18 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	contentType           = "application/openmetrics-text; version=1.0.0; charset=utf-8"
-	millisecondsPerSecond = 1000.0
-	hundredPercent        = 100.0
+	contentType              = "application/openmetrics-text; version=1.0.0; charset=utf-8"
+	millisecondsPerSecond    = 1000.0
+	hundredPercent           = 100.0
+	defaultErrorLabelNone    = "none"
+	defaultErrorLabelUnknown = "unknown"
 )
 
 var (
@@ -40,6 +43,8 @@ type Exporter struct {
 	dutyCycleMillis float64
 	workerCount     float64
 	hostCPUPercent  float64
+	intervalSeconds float64
+	lastError       string
 
 	bufferFactory func() byteBuffer
 }
@@ -108,6 +113,33 @@ func (e *Exporter) ObserveOCIP95(value float64, fetchedAt time.Time) {
 		e.ociLastSuccess = fetchedAt
 	}
 
+	e.mu.Unlock()
+}
+
+// SetInterval records the controller's next interval duration in seconds.
+func (e *Exporter) SetInterval(duration time.Duration) {
+	seconds := duration.Seconds()
+	if seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
+		seconds = 0
+	}
+
+	e.mu.Lock()
+	e.intervalSeconds = seconds
+	e.mu.Unlock()
+}
+
+// SetLastError tracks the last controller error message.
+func (e *Exporter) SetLastError(err error) {
+	message := defaultErrorLabelNone
+	if err != nil {
+		message = strings.TrimSpace(err.Error())
+		if message == "" {
+			message = defaultErrorLabelUnknown
+		}
+	}
+
+	e.mu.Lock()
+	e.lastError = message
 	e.mu.Unlock()
 }
 
@@ -210,6 +242,12 @@ func (e *Exporter) WriteTo(dst io.Writer) (int64, error) {
 		"# HELP shaper_state Controller state machine output (value set to 1 for the active state).\n",
 		"# TYPE shaper_state gauge\n",
 		fmt.Sprintf("shaper_state{state=\"%s\"} 1\n", snapshot.shaperState),
+		"# HELP controller_interval_seconds Duration until the next controller step (seconds).\n",
+		"# TYPE controller_interval_seconds gauge\n",
+		fmt.Sprintf("controller_interval_seconds %.6f\n", snapshot.intervalSeconds),
+		"# HELP controller_last_error_info Last controller error message (value set to 1 for the active error).\n",
+		"# TYPE controller_last_error_info gauge\n",
+		fmt.Sprintf("controller_last_error_info{error=%s} 1\n", strconv.Quote(snapshot.lastError)),
 		"# HELP oci_p95 Last observed OCI CPU P95 ratio.\n",
 		"# TYPE oci_p95 gauge\n",
 		fmt.Sprintf("oci_p95 %.6f\n", snapshot.ociP95),
@@ -251,6 +289,8 @@ type exporterSnapshot struct {
 	dutyCycleMillis     float64
 	workerCount         float64
 	hostCPUPercent      float64
+	intervalSeconds     float64
+	lastError           string
 }
 
 func (e *Exporter) snapshot() exporterSnapshot {
@@ -262,6 +302,11 @@ func (e *Exporter) snapshot() exporterSnapshot {
 		epoch = float64(e.ociLastSuccess.Unix())
 	}
 
+	errorLabel := e.lastError
+	if strings.TrimSpace(errorLabel) == "" {
+		errorLabel = defaultErrorLabelNone
+	}
+
 	return exporterSnapshot{
 		shaperTarget:        e.shaperTarget,
 		shaperMode:          e.shaperMode,
@@ -271,5 +316,7 @@ func (e *Exporter) snapshot() exporterSnapshot {
 		dutyCycleMillis:     e.dutyCycleMillis,
 		workerCount:         e.workerCount,
 		hostCPUPercent:      e.hostCPUPercent,
+		intervalSeconds:     e.intervalSeconds,
+		lastError:           errorLabel,
 	}
 }
