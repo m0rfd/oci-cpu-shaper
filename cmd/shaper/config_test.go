@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"oci-cpu-shaper/pkg/adapt"
-	"oci-cpu-shaper/pkg/shape"
 )
 
 const (
@@ -59,6 +58,18 @@ func TestLoadConfigDefaultsWhenFileMissing(t *testing.T) {
 		cfg.Controller.SuppressResume,
 		adaptDefault().SuppressResume,
 	)
+	assertFloatEqual(
+		t,
+		"poolPauseThreshold",
+		cfg.Pool.PauseThreshold,
+		adaptDefault().SuppressThreshold,
+	)
+	assertFloatEqual(
+		t,
+		"poolResumeThreshold",
+		cfg.Pool.ResumeThreshold,
+		adaptDefault().SuppressResume,
+	)
 }
 
 func TestLoadConfigSamplesMatchDefaults(t *testing.T) {
@@ -99,6 +110,18 @@ func TestLoadConfigSamplesMatchDefaults(t *testing.T) {
 			)
 			assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9108")
 			assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, time.Second)
+			assertFloatEqual(
+				t,
+				"poolPauseThreshold",
+				cfg.Pool.PauseThreshold,
+				defaults.SuppressThreshold,
+			)
+			assertFloatEqual(
+				t,
+				"poolResumeThreshold",
+				cfg.Pool.ResumeThreshold,
+				defaults.SuppressResume,
+			)
 		})
 	}
 }
@@ -146,6 +169,8 @@ func TestLoadConfigAppliesFileOverrides(t *testing.T) {
 
 	assertFloatEqual(t, "suppressThreshold", cfg.Controller.SuppressThreshold, 0.9)
 	assertFloatEqual(t, "suppressResume", cfg.Controller.SuppressResume, 0.6)
+	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, 0.88)
+	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, 0.44)
 }
 
 func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
@@ -156,6 +181,8 @@ func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
 	t.Setenv(envRelaxedInterval, "12h")
 	t.Setenv(envFastInterval, "250ms")
 	t.Setenv(envPoolWorkers, "4")
+	t.Setenv(envPoolPauseThreshold, "0.81")
+	t.Setenv(envPoolResumeThreshold, "0.49")
 	t.Setenv(envHTTPBind, " :9300 ")
 	t.Setenv(envCompartmentID, " "+testCompartmentOverride+" ")
 	t.Setenv(envInstanceID, " ocid1.instance.oc1..override ")
@@ -176,6 +203,8 @@ func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
 	assertDurationEqual(t, "relaxedInterval", cfg.Controller.RelaxedInterval, 12*time.Hour)
 	assertFloatEqual(t, "suppressThreshold", cfg.Controller.SuppressThreshold, 0.88)
 	assertFloatEqual(t, "suppressResume", cfg.Controller.SuppressResume, 0.51)
+	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, 0.81)
+	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, 0.49)
 	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, 250*time.Millisecond)
 	assertIntEqual(t, "workers", cfg.Pool.Workers, 4)
 	assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9300")
@@ -218,6 +247,91 @@ func TestLoadConfigRejectsTargetsExceedingSuppressResume(t *testing.T) {
 	if !strings.Contains(err.Error(), "controller.targetStart") {
 		t.Fatalf("expected error to reference controller.targetStart, got %v", err)
 	}
+}
+
+func TestLoadConfigRejectsInvalidTargetBoundsFromFile(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name   string
+		config string
+		substr string
+	}{
+		{
+			name:   "target bounds",
+			config: "controller:\n  targetMin: 0.45\n  targetMax: 0.30\n",
+			substr: "controller.targetMin",
+		},
+		{
+			name:   "target start above max",
+			config: "controller:\n  targetStart: 0.60\n  targetMax: 0.50\n",
+			substr: "controller.targetStart",
+		},
+		{
+			name:   "goalLow above goalHigh",
+			config: "controller:\n  goalLow: 0.35\n  goalHigh: 0.30\n",
+			substr: "controller.goalLow",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := loadConfig(writeTempConfig(t, testCase.config))
+			assertInvalidRuntimeConfigError(t, err, testCase.substr)
+		})
+	}
+}
+
+func TestLoadConfigRejectsInvalidPositiveValuesFromFile(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name   string
+		config string
+		substr string
+	}{
+		{
+			name:   "zero controller interval",
+			config: "controller:\n  interval: 0s\n",
+			substr: "controller.interval",
+		},
+		{
+			name:   "zero worker count",
+			config: "pool:\n  workers: 0\n",
+			substr: "pool.workers",
+		},
+		{
+			name:   "negative steps",
+			config: "controller:\n  stepUp: -0.01\n  stepDown: -0.02\n",
+			substr: "controller.stepUp",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := loadConfig(writeTempConfig(t, testCase.config))
+			assertInvalidRuntimeConfigError(t, err, testCase.substr)
+		})
+	}
+}
+
+func TestLoadConfigRejectsInvalidRuntimeValuesFromEnv(t *testing.T) {
+	t.Setenv(envTargetMin, "0.60")
+	t.Setenv(envTargetMax, "0.50")
+
+	_, err := loadConfig("")
+	assertInvalidRuntimeConfigError(t, err, "controller.targetMin")
+
+	t.Setenv(envTargetMin, "0.20")
+	t.Setenv(envTargetMax, "0.40")
+	t.Setenv(envSlowInterval, "0s")
+
+	_, err = loadConfig("")
+	assertInvalidRuntimeConfigError(t, err, "controller.interval")
 }
 
 func TestLoadRuntimeConfigOrExitReturnsParseCodeOnValidationError(t *testing.T) {
@@ -444,53 +558,33 @@ func TestEnvBoolEvaluation(t *testing.T) {
 	}
 }
 
-func TestApplyEnvOverridesNormalisesValues(t *testing.T) {
-	t.Setenv(envPoolWorkers, "-3")
-	t.Setenv(envSlowInterval, "-5s")
-	t.Setenv(envRelaxedInterval, "0s")
-	t.Setenv(envFastInterval, "0s")
+func writeTempConfig(t *testing.T, contents string) string {
+	t.Helper()
 
-	cfg := defaultRuntimeConfig()
-	cfg.Pool.Workers = 0
-	cfg.Pool.Quantum = 0
-	cfg.Controller.Interval = 0
-	cfg.Controller.RelaxedInterval = 0
-	cfg.Estimator.Interval = 0
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
 
-	applyEnvOverrides(&cfg)
-
-	defaults := adapt.DefaultConfig()
-
-	if cfg.Pool.Workers != 1 {
-		t.Fatalf("expected workers to normalise to 1, got %d", cfg.Pool.Workers)
+	writeErr := os.WriteFile(path, []byte(contents), 0o600)
+	if writeErr != nil {
+		t.Fatalf("write config: %v", writeErr)
 	}
 
-	if cfg.Pool.Quantum != shape.DefaultQuantum {
-		t.Fatalf(
-			"expected quantum to default to %v, got %v",
-			shape.DefaultQuantum,
-			cfg.Pool.Quantum,
-		)
+	return path
+}
+
+func assertInvalidRuntimeConfigError(t *testing.T, err error, substr string) {
+	t.Helper()
+
+	if err == nil {
+		t.Fatal("expected configuration validation error")
 	}
 
-	if cfg.Controller.Interval != defaults.Interval {
-		t.Fatalf(
-			"expected controller interval to default to %v, got %v",
-			defaults.Interval,
-			cfg.Controller.Interval,
-		)
+	if !errors.Is(err, adapt.ErrInvalidConfig) {
+		t.Fatalf("expected adapt.ErrInvalidConfig, got %v", err)
 	}
 
-	if cfg.Controller.RelaxedInterval != defaults.RelaxedInterval {
-		t.Fatalf(
-			"expected relaxed interval to default to %v, got %v",
-			defaults.RelaxedInterval,
-			cfg.Controller.RelaxedInterval,
-		)
-	}
-
-	if cfg.Estimator.Interval != time.Second {
-		t.Fatalf("expected estimator interval to default to 1s, got %v", cfg.Estimator.Interval)
+	if substr != "" && !strings.Contains(err.Error(), substr) {
+		t.Fatalf("expected error to reference %q, got %v", substr, err)
 	}
 }
 

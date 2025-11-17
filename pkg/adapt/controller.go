@@ -52,6 +52,7 @@ type Controller interface {
 type DutyCycler interface {
 	SetTarget(target float64)
 	Target() float64
+	ObserveHostLoad(utilisation float64)
 }
 
 // MetricsRecorder captures controller observability signals.
@@ -61,6 +62,8 @@ type MetricsRecorder interface {
 	SetTarget(target float64)
 	ObserveOCIP95(value float64, fetchedAt time.Time)
 	ObserveHostCPU(utilisation float64)
+	SetInterval(interval time.Duration)
+	SetLastError(err error)
 }
 
 // Estimator exposes the observation stream produced by pkg/est.
@@ -90,6 +93,7 @@ type Config struct {
 // DefaultConfig mirrors the initial implementation plan for control loop cadence.
 const (
 	defaultModeLabel       = "normal"
+	dryRunModeLabel        = "dry-run"
 	defaultTargetStart     = 0.25
 	defaultTargetMin       = 0.22
 	defaultTargetMax       = 0.40
@@ -126,12 +130,68 @@ func DefaultConfig() Config {
 	}
 }
 
+// ModeEnforcesTargets reports whether the provided controller mode should mutate
+// the worker pool duty cycle.
+func ModeEnforcesTargets(mode string) bool {
+	trimmed := strings.ToLower(strings.TrimSpace(mode))
+
+	return trimmed != dryRunModeLabel
+}
+
 var (
 	errMetricsClientRequired = errors.New("adapt: metrics client is required")
 	errDutyCyclerRequired    = errors.New("adapt: duty cycler is required")
 	// ErrInvalidConfig signals that the supplied controller configuration is invalid.
 	ErrInvalidConfig = errors.New("adapt: invalid config")
 )
+
+type recordingDutyCycler struct {
+	mu     sync.Mutex
+	target float64
+}
+
+//nolint:ireturn // callers require the DutyCycler interface seam for testing.
+func newModeAwareDutyCycler(mode string, shaper DutyCycler) DutyCycler {
+	if shaper == nil {
+		return nil
+	}
+
+	if ModeEnforcesTargets(mode) {
+		return shaper
+	}
+
+	recorder := &recordingDutyCycler{
+		mu:     sync.Mutex{},
+		target: shaper.Target(),
+	}
+
+	return recorder
+}
+
+func (r *recordingDutyCycler) SetTarget(target float64) {
+	if r == nil {
+		return
+	}
+
+	r.mu.Lock()
+	r.target = target
+	r.mu.Unlock()
+}
+
+func (r *recordingDutyCycler) Target() float64 {
+	if r == nil {
+		return 0
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.target
+}
+
+func (r *recordingDutyCycler) ObserveHostLoad(float64) {
+	// dry-run wrapper intentionally ignores host load updates
+}
 
 // AdaptiveController orchestrates the normal/fallback state machine.
 type AdaptiveController struct {
@@ -178,10 +238,12 @@ func NewAdaptiveController(
 		return nil, err
 	}
 
+	wrappedShaper := newModeAwareDutyCycler(mode, shaper)
+
 	controller := new(AdaptiveController)
 	controller.cfg = normalized
 	controller.metrics = metrics
-	controller.shaper = shaper
+	controller.shaper = wrappedShaper
 	controller.estimator = estimator
 	controller.recorder = recorder
 	controller.state = StateFallback
@@ -191,12 +253,14 @@ func NewAdaptiveController(
 	controller.interval = normalized.Interval
 	controller.mode = mode
 
-	shaper.SetTarget(normalized.FallbackTarget)
+	wrappedShaper.SetTarget(normalized.FallbackTarget)
 
 	if recorder != nil {
 		recorder.SetMode(mode)
 		recorder.SetState(controller.state.String())
 		recorder.SetTarget(controller.target)
+		recorder.SetInterval(controller.interval)
+		recorder.SetLastError(nil)
 	}
 
 	return controller, nil
@@ -313,13 +377,17 @@ func (c *AdaptiveController) handleObservation(observation est.Observation) {
 
 	c.lastEstErr = nil
 
-	if c.cfg.SuppressThreshold <= 0 {
-		return
-	}
-
 	utilisation := clamp(observation.Utilisation, 0, 1)
 	if c.recorder != nil {
 		c.recorder.ObserveHostCPU(utilisation)
+	}
+
+	if c.shaper != nil {
+		c.shaper.ObserveHostLoad(utilisation)
+	}
+
+	if c.cfg.SuppressThreshold <= 0 {
+		return
 	}
 
 	c.updateHostLoadLocked(utilisation)
@@ -372,26 +440,51 @@ func (c *AdaptiveController) step(ctx context.Context) time.Duration {
 	defer c.mu.Unlock()
 
 	if err != nil {
-		c.slowState = StateFallback
-		c.lastErr = err
-		fallback := clamp(c.cfg.FallbackTarget, c.cfg.TargetMin, c.cfg.TargetMax)
-
-		c.desired = fallback
-		if !c.suppressed {
-			c.applyTargetLocked(fallback)
-		}
-
-		c.updateEffectiveStateLocked()
-
-		return c.cfg.Interval
+		return c.handleStepErrorLocked(err)
 	}
 
+	return c.handleStepSuccessLocked(p95, time.Now())
+}
+
+func (c *AdaptiveController) handleStepErrorLocked(err error) time.Duration {
+	c.slowState = StateFallback
+
+	c.lastErr = err
+	if c.recorder != nil {
+		c.recorder.SetLastError(err)
+	}
+
+	fallback := clamp(c.cfg.FallbackTarget, c.cfg.TargetMin, c.cfg.TargetMax)
+
+	c.desired = fallback
+	if !c.suppressed {
+		c.applyTargetLocked(fallback)
+	}
+
+	c.updateEffectiveStateLocked()
+
+	interval := c.cfg.Interval
+	if c.recorder != nil {
+		c.recorder.SetInterval(interval)
+	}
+
+	return interval
+}
+
+func (c *AdaptiveController) handleStepSuccessLocked(
+	p95 float64,
+	fetchedAt time.Time,
+) time.Duration {
 	c.slowState = StateNormal
+
 	c.lastErr = nil
+	if c.recorder != nil {
+		c.recorder.SetLastError(nil)
+	}
 
 	c.lastP95 = p95
 	if c.recorder != nil {
-		c.recorder.ObserveOCIP95(p95, time.Now())
+		c.recorder.ObserveOCIP95(p95, fetchedAt)
 	}
 
 	nextTarget := c.target
@@ -418,11 +511,16 @@ func (c *AdaptiveController) step(ctx context.Context) time.Duration {
 
 	c.updateEffectiveStateLocked()
 
+	nextInterval := c.cfg.Interval
 	if p95 >= c.cfg.RelaxedThreshold {
-		return c.cfg.RelaxedInterval
+		nextInterval = c.cfg.RelaxedInterval
 	}
 
-	return c.cfg.Interval
+	if c.recorder != nil {
+		c.recorder.SetInterval(nextInterval)
+	}
+
+	return nextInterval
 }
 
 func (c *AdaptiveController) applyTargetLocked(target float64) {

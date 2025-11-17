@@ -15,26 +15,28 @@ import (
 )
 
 const (
-	envTargetStart       = "SHAPER_TARGET_START"
-	envTargetMin         = "SHAPER_TARGET_MIN"
-	envTargetMax         = "SHAPER_TARGET_MAX"
-	envStepUp            = "SHAPER_STEP_UP"
-	envStepDown          = "SHAPER_STEP_DOWN"
-	envSlowInterval      = "SHAPER_SLOW_INTERVAL"
-	envRelaxedInterval   = "SHAPER_SLOW_INTERVAL_RELAXED"
-	envFastInterval      = "SHAPER_FAST_INTERVAL"
-	envPoolWorkers       = "SHAPER_WORKER_COUNT"
-	envHTTPBind          = "HTTP_ADDR"
-	envCompartmentID     = "OCI_COMPARTMENT_ID"
-	envOCIRegion         = "OCI_REGION"
-	envInstanceID        = "OCI_INSTANCE_ID"
-	envOCIOffline        = "OCI_OFFLINE"
-	envFallbackTarget    = "SHAPER_FALLBACK_TARGET"
-	envRelaxedThreshold  = "SHAPER_RELAXED_THRESHOLD"
-	envGoalLow           = "SHAPER_GOAL_LOW"
-	envGoalHigh          = "SHAPER_GOAL_HIGH"
-	envSuppressThreshold = "SHAPER_SUPPRESS_THRESHOLD"
-	envSuppressResume    = "SHAPER_SUPPRESS_RESUME"
+	envTargetStart         = "SHAPER_TARGET_START"
+	envTargetMin           = "SHAPER_TARGET_MIN"
+	envTargetMax           = "SHAPER_TARGET_MAX"
+	envStepUp              = "SHAPER_STEP_UP"
+	envStepDown            = "SHAPER_STEP_DOWN"
+	envSlowInterval        = "SHAPER_SLOW_INTERVAL"
+	envRelaxedInterval     = "SHAPER_SLOW_INTERVAL_RELAXED"
+	envFastInterval        = "SHAPER_FAST_INTERVAL"
+	envPoolWorkers         = "SHAPER_WORKER_COUNT"
+	envHTTPBind            = "HTTP_ADDR"
+	envCompartmentID       = "OCI_COMPARTMENT_ID"
+	envOCIRegion           = "OCI_REGION"
+	envInstanceID          = "OCI_INSTANCE_ID"
+	envOCIOffline          = "OCI_OFFLINE"
+	envFallbackTarget      = "SHAPER_FALLBACK_TARGET"
+	envRelaxedThreshold    = "SHAPER_RELAXED_THRESHOLD"
+	envGoalLow             = "SHAPER_GOAL_LOW"
+	envGoalHigh            = "SHAPER_GOAL_HIGH"
+	envSuppressThreshold   = "SHAPER_SUPPRESS_THRESHOLD"
+	envSuppressResume      = "SHAPER_SUPPRESS_RESUME"
+	envPoolPauseThreshold  = "SHAPER_POOL_PAUSE_THRESHOLD"
+	envPoolResumeThreshold = "SHAPER_POOL_RESUME_THRESHOLD"
 )
 
 type runtimeConfig struct {
@@ -66,8 +68,10 @@ type estimatorConfig struct {
 }
 
 type poolConfig struct {
-	Workers int
-	Quantum time.Duration
+	Workers         int
+	Quantum         time.Duration
+	PauseThreshold  float64
+	ResumeThreshold float64
 }
 
 type httpConfig struct {
@@ -110,8 +114,10 @@ type estimatorFileConfig struct {
 }
 
 type poolFileConfig struct {
-	Workers *int           `yaml:"workers"`
-	Quantum *time.Duration `yaml:"quantum"`
+	Workers         *int           `yaml:"workers"`
+	Quantum         *time.Duration `yaml:"quantum"`
+	PauseThreshold  *float64       `yaml:"pauseThreshold"`
+	ResumeThreshold *float64       `yaml:"resumeThreshold"`
 }
 
 type httpFileConfig struct {
@@ -152,6 +158,8 @@ func defaultRuntimeConfig() runtimeConfig {
 	}
 
 	cfg.Pool.Quantum = shape.DefaultQuantum
+	cfg.Pool.PauseThreshold = defaults.SuppressThreshold
+	cfg.Pool.ResumeThreshold = defaults.SuppressResume
 
 	cfg.HTTP.Bind = ":9108"
 
@@ -171,7 +179,12 @@ func loadConfig(path string) (runtimeConfig, error) {
 
 	applyEnvOverrides(&cfg)
 
-	err := adapt.ValidateConfig(runtimeToAdaptControllerConfig(cfg))
+	err := validateRuntimeConfig(cfg)
+	if err != nil {
+		return runtimeConfig{}, fmt.Errorf("validate runtime config: %w", err)
+	}
+
+	err = adapt.ValidateConfig(runtimeToAdaptControllerConfig(cfg))
 	if err != nil {
 		return runtimeConfig{}, fmt.Errorf("validate controller config: %w", err)
 	}
@@ -202,6 +215,8 @@ func mergeEstimatorConfig(dst *estimatorConfig, src estimatorFileConfig) {
 func mergePoolConfig(dst *poolConfig, src poolFileConfig) {
 	assignInt(&dst.Workers, src.Workers)
 	assignDuration(&dst.Quantum, src.Quantum)
+	assignFloat(&dst.PauseThreshold, src.PauseThreshold)
+	assignFloat(&dst.ResumeThreshold, src.ResumeThreshold)
 }
 
 func mergeHTTPConfig(dst *httpConfig, src httpFileConfig) {
@@ -234,33 +249,13 @@ func applyEnvOverrides(cfg *runtimeConfig) {
 	cfg.Controller.RelaxedInterval = envDuration(envRelaxedInterval, cfg.Controller.RelaxedInterval)
 	cfg.Estimator.Interval = envDuration(envFastInterval, cfg.Estimator.Interval)
 	cfg.Pool.Workers = envInt(envPoolWorkers, cfg.Pool.Workers)
+	cfg.Pool.PauseThreshold = envFloat(envPoolPauseThreshold, cfg.Pool.PauseThreshold)
+	cfg.Pool.ResumeThreshold = envFloat(envPoolResumeThreshold, cfg.Pool.ResumeThreshold)
 	cfg.HTTP.Bind = envString(envHTTPBind, cfg.HTTP.Bind)
 	cfg.OCI.CompartmentID = envString(envCompartmentID, cfg.OCI.CompartmentID)
 	cfg.OCI.Region = envString(envOCIRegion, cfg.OCI.Region)
 	cfg.OCI.InstanceID = envString(envInstanceID, cfg.OCI.InstanceID)
 	cfg.OCI.Offline = envBool(envOCIOffline, cfg.OCI.Offline)
-
-	defaults := adapt.DefaultConfig()
-
-	if cfg.Pool.Workers <= 0 {
-		cfg.Pool.Workers = 1
-	}
-
-	if cfg.Pool.Quantum <= 0 {
-		cfg.Pool.Quantum = shape.DefaultQuantum
-	}
-
-	if cfg.Controller.Interval <= 0 {
-		cfg.Controller.Interval = defaults.Interval
-	}
-
-	if cfg.Controller.RelaxedInterval <= 0 {
-		cfg.Controller.RelaxedInterval = defaults.RelaxedInterval
-	}
-
-	if cfg.Estimator.Interval <= 0 {
-		cfg.Estimator.Interval = time.Second
-	}
 }
 
 var lookupEnv = os.LookupEnv //nolint:gochecknoglobals // overridden in tests
@@ -405,6 +400,133 @@ func runtimeToAdaptControllerConfig(cfg runtimeConfig) adapt.Config {
 		SuppressThreshold: cfg.Controller.SuppressThreshold,
 		SuppressResume:    cfg.Controller.SuppressResume,
 	}
+}
+
+func validateRuntimeConfig(cfg runtimeConfig) error {
+	err := validatePoolSettings(cfg.Pool)
+	if err != nil {
+		return err
+	}
+
+	err = validateLoopIntervals(cfg.Controller, cfg.Estimator)
+	if err != nil {
+		return err
+	}
+
+	return validateControllerThresholds(cfg.Controller)
+}
+
+func validatePoolSettings(pool poolConfig) error {
+	if pool.Workers <= 0 {
+		return invalidConfigError("pool.workers (%d) must be greater than zero", pool.Workers)
+	}
+
+	return ensurePositiveDuration("pool.quantum", pool.Quantum)
+}
+
+func validateLoopIntervals(controller controllerConfig, estimator estimatorConfig) error {
+	for _, interval := range []struct {
+		name  string
+		value time.Duration
+	}{
+		{"controller.interval", controller.Interval},
+		{"controller.relaxedInterval", controller.RelaxedInterval},
+		{"estimator.interval", estimator.Interval},
+	} {
+		err := ensurePositiveDuration(interval.name, interval.value)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, step := range []struct {
+		name  string
+		value float64
+	}{
+		{"controller.stepUp", controller.StepUp},
+		{"controller.stepDown", controller.StepDown},
+	} {
+		err := ensurePositiveFloat(step.name, step.value)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func validateControllerThresholds(controller controllerConfig) error {
+	if controller.TargetMin >= controller.TargetMax {
+		return invalidConfigError(
+			"controller.targetMin (%.2f) must be less than controller.targetMax (%.2f)",
+			controller.TargetMin,
+			controller.TargetMax,
+		)
+	}
+
+	for _, threshold := range []struct {
+		name  string
+		value float64
+	}{
+		{"controller.targetStart", controller.TargetStart},
+		{"controller.fallbackTarget", controller.FallbackTarget},
+		{"controller.goalLow", controller.GoalLow},
+		{"controller.goalHigh", controller.GoalHigh},
+	} {
+		err := ensureWithinTargetBounds(
+			threshold.name,
+			threshold.value,
+			controller.TargetMin,
+			controller.TargetMax,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	if controller.GoalLow >= controller.GoalHigh {
+		return invalidConfigError(
+			"controller.goalLow (%.2f) must be less than controller.goalHigh (%.2f)",
+			controller.GoalLow,
+			controller.GoalHigh,
+		)
+	}
+
+	return nil
+}
+
+func ensurePositiveDuration(name string, value time.Duration) error {
+	if value <= 0 {
+		return invalidConfigError("%s (%s) must be greater than zero", name, value)
+	}
+
+	return nil
+}
+
+func ensurePositiveFloat(name string, value float64) error {
+	if value <= 0 {
+		return invalidConfigError("%s (%.2f) must be greater than zero", name, value)
+	}
+
+	return nil
+}
+
+func ensureWithinTargetBounds(name string, value, lowerBound, upperBound float64) error {
+	if value < lowerBound || value > upperBound {
+		return invalidConfigError(
+			"%s (%.2f) must be between controller.targetMin (%.2f) and controller.targetMax (%.2f)",
+			name,
+			value,
+			lowerBound,
+			upperBound,
+		)
+	}
+
+	return nil
+}
+
+func invalidConfigError(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", adapt.ErrInvalidConfig, fmt.Sprintf(format, args...))
 }
 
 func mergeRuntimeConfigFile(cfg *runtimeConfig, path string) error {

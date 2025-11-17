@@ -67,7 +67,7 @@ func WithBackoff(delay time.Duration) Option {
 // NewClient constructs an HTTP-backed IMDS client. A nil httpClient uses a
 // private instance with a conservative timeout suitable for link-local access.
 //
-//nolint:ireturn // callers depend on the Client abstraction for substitution.
+//nolint:ireturn // HTTP client exposes the Client interface for dependency injection.
 func NewClient(httpClient *http.Client, opts ...Option) Client {
 	cfg := clientConfig{
 		baseURL:    DefaultEndpoint,

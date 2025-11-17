@@ -10,13 +10,16 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"go.uber.org/zap"
 	"oci-cpu-shaper/internal/buildinfo"
 	"oci-cpu-shaper/pkg/adapt"
+	"oci-cpu-shaper/pkg/cgroup"
 	"oci-cpu-shaper/pkg/est"
 	metricshttp "oci-cpu-shaper/pkg/http/metrics"
 	statushttp "oci-cpu-shaper/pkg/http/status"
@@ -42,10 +45,28 @@ const (
 
 	metricsReadHeaderTimeout = 5 * time.Second
 	metricsShutdownTimeout   = 5 * time.Second
+	cgroupLowWeightBaseline  = 128
 )
 
 func main() {
-	code := run(context.Background(), os.Args[1:], defaultRunDeps(), os.Stderr)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-sigCh:
+			cancel()
+		}
+	}()
+
+	code := run(ctx, os.Args[1:], defaultRunDeps(), os.Stderr)
 	if code != 0 {
 		exitProcess(code)
 	}
@@ -71,8 +92,9 @@ type runDeps struct {
 		logger *zap.Logger,
 		addr string,
 		handler http.Handler,
-	) error
+	) (metricsShutdownFunc, error)
 	versionWriter io.Writer
+	detectCgroup  func() (*cgroup.CPU, error)
 }
 
 type poolStarter interface {
@@ -85,6 +107,8 @@ type poolStarter interface {
 type metricsClientFactory func(compartmentID, region string) (oci.MetricsClient, error)
 
 type metricsClientFactoryKey struct{}
+
+type metricsShutdownFunc func(context.Context)
 
 func withMetricsClientFactory(ctx context.Context, factory metricsClientFactory) context.Context {
 	if ctx == nil {
@@ -117,6 +141,7 @@ var (
 	errControllerRegionRequired = errors.New("controller factory: OCI region is required")
 	errMetricsDelegateNil       = errors.New("metrics client: nil delegate")
 	errMetricsContextRequired   = errors.New("metrics server: context is required")
+	errMetricsServerDisabled    = errors.New("metrics server: disabled")
 )
 
 func buildMetricsExporter(deps runDeps) *metricshttp.Exporter {
@@ -131,14 +156,12 @@ func buildMetricsExporter(deps runDeps) *metricshttp.Exporter {
 }
 
 func configureMetrics(
-	ctx context.Context,
-	deps runDeps,
 	logger *zap.Logger,
-	cfg runtimeConfig,
 	exporter *metricshttp.Exporter,
 	pool poolStarter,
 	controller adapt.Controller,
-) error {
+	cpuInfo *cgroup.CPU,
+) http.Handler {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -165,29 +188,56 @@ func configureMetrics(
 		logger.Debug("worker pool metrics unavailable", zap.String("reason", "pool not configured"))
 	}
 
-	if deps.startMetricsServer == nil {
-		logger.Warn("metrics server disabled", zap.String("reason", "start function missing"))
-
-		return nil
-	}
-
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", exporter)
 
 	if controller != nil {
-		mux.Handle("/healthz", statushttp.NewHandler(controller))
+		mux.Handle("/healthz", statushttp.NewHandler(controller, cpuInfo))
 	}
 
-	bindAddr := strings.TrimSpace(cfg.HTTP.Bind)
-	if bindAddr == "" {
+	return mux
+}
+
+func startMetricsEndpoint(
+	ctx context.Context,
+	deps runDeps,
+	logger *zap.Logger,
+	bindAddr string,
+	handler http.Handler,
+) (metricsShutdownFunc, context.CancelFunc, error) {
+	if handler == nil {
+		return nil, nil, nil
+	}
+
+	if deps.startMetricsServer == nil {
+		logger.Warn("metrics server disabled", zap.String("reason", "start function missing"))
+
+		return nil, nil, nil
+	}
+
+	trimmed := strings.TrimSpace(bindAddr)
+	if trimmed == "" {
 		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
 
-		return nil
+		return nil, nil, nil
 	}
 
-	logger.Info("starting metrics server", zap.String("bind", bindAddr))
+	if ctx == nil {
+		return nil, nil, errMetricsContextRequired
+	}
 
-	return deps.startMetricsServer(ctx, logger, bindAddr, mux)
+	logger.Info("starting metrics server", zap.String("bind", trimmed))
+
+	metricsCtx, cancel := context.WithCancel(ctx)
+
+	shutdown, err := deps.startMetricsServer(metricsCtx, logger, trimmed, handler)
+	if err != nil {
+		cancel()
+
+		return nil, nil, err
+	}
+
+	return shutdown, cancel, nil
 }
 
 // run orchestrates CLI initialization before handing execution to the controller.
@@ -243,6 +293,7 @@ func run(
 	imdsClient := deps.newIMDS()
 
 	metricsExporter := buildMetricsExporter(deps)
+	cgroupInfo := detectAndReportCgroup(deps, logger, metricsExporter)
 	metricsRecorder := newRecorderLogger(logger, metricsExporter)
 
 	cfg, metadata, metadataErr := prepareRunMetadata(ctx, cfg, imdsClient, opts.mode)
@@ -271,11 +322,35 @@ func run(
 
 	logControllerInitialization(logger, cfg, controller, metricsExporter)
 
-	err = configureMetrics(ctx, deps, logger, cfg, metricsExporter, pool, controller)
-	if err != nil {
-		logger.Error("failed to start metrics server", zap.Error(err))
+	metricsHandler := configureMetrics(logger, metricsExporter, pool, controller, cgroupInfo)
+
+	metricsShutdown, metricsCancel, metricsErr := startMetricsEndpoint(
+		ctx,
+		deps,
+		logger,
+		cfg.HTTP.Bind,
+		metricsHandler,
+	)
+	if metricsErr != nil {
+		logger.Error("failed to start metrics server", zap.Error(metricsErr))
 
 		return exitCodeRuntimeError
+	}
+
+	if metricsShutdown != nil {
+		defer func() {
+			if metricsCancel != nil {
+				metricsCancel()
+			}
+
+			shutdownCtx, cancelShutdown := context.WithTimeout(
+				context.WithoutCancel(ctx),
+				metricsShutdownTimeout,
+			)
+			defer cancelShutdown()
+
+			metricsShutdown(shutdownCtx)
+		}()
 	}
 
 	if pool != nil {
@@ -606,6 +681,8 @@ func buildAdaptiveController(
 		return nil, nil, fmt.Errorf("build worker pool: %w", err)
 	}
 
+	pool.SetPauseThresholds(cfg.Pool.PauseThreshold, cfg.Pool.ResumeThreshold)
+
 	sampler := est.NewSampler(nil, cfg.Estimator.Interval)
 
 	controllerCfg := adapt.Config{
@@ -884,6 +961,7 @@ func logControllerInitialization(
 
 	fields := []zap.Field{
 		zap.String("mode", controller.Mode()),
+		zap.Bool("enforcingTargets", adapt.ModeEnforcesTargets(controller.Mode())),
 		zap.String("controllerState", controller.State().String()),
 		zap.Bool("offline", cfg.OCI.Offline),
 		zap.Int("workerCount", cfg.Pool.Workers),
@@ -925,12 +1003,12 @@ func createMetricsClient(
 	return metricsClient, nil
 }
 
-func startMetricsServer(
+func startMetricsServer( //nolint:cyclop,funlen // listener lifecycle requires several guard branches
 	ctx context.Context,
 	logger *zap.Logger,
 	addr string,
 	handler http.Handler,
-) error {
+) (metricsShutdownFunc, error) {
 	trimmed := strings.TrimSpace(addr)
 
 	if logger == nil {
@@ -940,24 +1018,32 @@ func startMetricsServer(
 	if trimmed == "" {
 		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
 
-		return nil
+		return nil, errMetricsServerDisabled
 	}
 
 	if handler == nil {
 		logger.Warn("metrics server disabled", zap.String("reason", "handler missing"))
 
-		return nil
+		return nil, errMetricsServerDisabled
 	}
 
 	if ctx == nil {
-		return errMetricsContextRequired
+		return nil, errMetricsContextRequired
 	}
+
+	baseCtx := context.WithoutCancel(ctx)
 
 	var listenCfg net.ListenConfig
 
 	listener, err := listenCfg.Listen(ctx, "tcp", trimmed)
 	if err != nil {
-		return fmt.Errorf("listen metrics endpoint %q: %w", trimmed, err)
+		logger.Error(
+			"metrics server listen failed",
+			zap.String("bind", trimmed),
+			zap.Error(err),
+		)
+
+		return nil, fmt.Errorf("listen metrics endpoint %q: %w", trimmed, err)
 	}
 
 	server := &http.Server{ //nolint:exhaustruct // only security-critical timeout configured here
@@ -968,41 +1054,48 @@ func startMetricsServer(
 
 	logger.Info("metrics server listening", zap.String("bind", trimmed))
 
-	serveMetrics(ctx, logger, server, listener)
-
-	return nil
-}
-
-func serveMetrics(
-	ctx context.Context,
-	logger *zap.Logger,
-	server *http.Server,
-	listener net.Listener,
-) {
-	go func() {
-		<-ctx.Done()
-
-		shutdownCtx, cancel := context.WithTimeout(ctx, metricsShutdownTimeout)
-		defer cancel()
-
-		logger.Info("stopping metrics server", zap.String("bind", server.Addr))
-
-		err := server.Shutdown(shutdownCtx)
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Warn("metrics server shutdown", zap.Error(err))
-		}
-	}()
+	serveDone := make(chan struct{})
 
 	go func() {
+		defer close(serveDone)
+
 		err := server.Serve(listener)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Warn("metrics server serve", zap.Error(err))
+			logger.Error("metrics server serve", zap.String("bind", trimmed), zap.Error(err))
 
 			return
 		}
 
-		logger.Info("metrics server stopped", zap.String("bind", server.Addr))
+		logger.Info("metrics server stopped", zap.String("bind", trimmed))
 	}()
+
+	shutdown := func(shutdownCtx context.Context) {
+		if shutdownCtx == nil {
+			shutdownCtx = baseCtx
+		}
+
+		logger.Info("stopping metrics server", zap.String("bind", trimmed))
+
+		err := server.Shutdown(shutdownCtx)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Warn("metrics server shutdown", zap.String("bind", trimmed), zap.Error(err))
+		}
+	}
+
+	go func() {
+		<-ctx.Done()
+
+		shutdownCtx, cancel := context.WithTimeout(baseCtx, metricsShutdownTimeout)
+		defer cancel()
+
+		shutdown(shutdownCtx)
+	}()
+
+	return func(shutdownCtx context.Context) {
+		shutdown(shutdownCtx)
+
+		<-serveDone
+	}, nil
 }
 
 type p95CPUQuerier interface {
@@ -1212,5 +1305,124 @@ func isValidMode(mode string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func detectAndReportCgroup(
+	deps runDeps,
+	logger *zap.Logger,
+	exporter *metricshttp.Exporter,
+) *cgroup.CPU {
+	info, err := detectCgroupInfo(deps)
+	if err != nil {
+		if logger != nil {
+			logger.Warn("failed to inspect cgroup cpu settings", zap.Error(err))
+		}
+
+		recordCgroupMetrics(exporter, nil)
+
+		return nil
+	}
+
+	recordCgroupMetrics(exporter, info)
+	logCgroupInfo(logger, info)
+
+	return info
+}
+
+func detectCgroupInfo(deps runDeps) (*cgroup.CPU, error) {
+	if deps.detectCgroup != nil {
+		return deps.detectCgroup()
+	}
+
+	var reader cgroup.Reader
+
+	info, err := reader.Detect()
+	if err != nil {
+		return nil, fmt.Errorf("detect cgroup: %w", err)
+	}
+
+	return info, nil
+}
+
+func recordCgroupMetrics(exporter *metricshttp.Exporter, info *cgroup.CPU) {
+	if exporter == nil {
+		return
+	}
+
+	weight := uint64(0)
+	if info != nil && info.Weight.Err == nil && info.Weight.Available {
+		weight = info.Weight.Value
+	}
+
+	exporter.SetCgroupCPUWeight(weight)
+
+	var (
+		quota  uint64
+		period uint64
+	)
+
+	unlimited := false
+
+	if info != nil && info.Max.Err == nil && info.Max.Available {
+		period = info.Max.Period
+
+		unlimited = info.Max.Unlimited
+		if !info.Max.Unlimited {
+			quota = info.Max.Quota
+		}
+	}
+
+	exporter.SetCgroupCPUMax(quota, period, unlimited)
+}
+
+func logCgroupInfo(logger *zap.Logger, info *cgroup.CPU) {
+	if logger == nil || info == nil {
+		return
+	}
+
+	fields := []zap.Field{zap.String("path", strings.TrimSpace(info.Path))}
+	fields = append(fields, cgroupWeightFields(logger, info.Weight)...)
+	fields = append(fields, cgroupMaxFields(info.Max)...)
+
+	logger.Info("detected cgroup cpu settings", fields...)
+}
+
+func cgroupWeightFields(logger *zap.Logger, weight cgroup.Weight) []zap.Field {
+	switch {
+	case weight.Err != nil:
+		return []zap.Field{zap.String("cpuWeightError", weight.Err.Error())}
+	case weight.Available:
+		field := zap.Uint64("cpuWeight", weight.Value)
+		if logger != nil && weight.Value > cgroupLowWeightBaseline {
+			logger.Warn(
+				"cpu.weight exceeds recommended low-weight baseline",
+				zap.Uint64("weight", weight.Value),
+				zap.Uint64("baseline", cgroupLowWeightBaseline),
+			)
+		}
+
+		return []zap.Field{field}
+	default:
+		return []zap.Field{zap.String("cpuWeightStatus", "unavailable")}
+	}
+}
+
+func cgroupMaxFields(cpuMax cgroup.Max) []zap.Field {
+	switch {
+	case cpuMax.Err != nil:
+		return []zap.Field{zap.String("cpuMaxError", cpuMax.Err.Error())}
+	case cpuMax.Available:
+		fields := []zap.Field{
+			zap.Bool("cpuMaxUnlimited", cpuMax.Unlimited),
+			zap.Uint64("cpuMaxPeriod", cpuMax.Period),
+		}
+		if !cpuMax.Unlimited {
+			fields = append(fields, zap.Uint64("cpuMaxQuota", cpuMax.Quota))
+		}
+
+		return fields
+	default:
+		return []zap.Field{zap.String("cpuMaxStatus", "unavailable")}
 	}
 }

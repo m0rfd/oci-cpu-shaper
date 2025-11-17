@@ -216,10 +216,21 @@ integration:
 	fi; \
 	cgroup_version="$$(docker info --format '{{.CgroupVersion}}' 2>/dev/null || true)"; \
 	if [ "$$cgroup_version" != "2" ]; then \
-		echo "integration suite requires cgroup v2 (detected $${cgroup_version:-unknown})"; \
-		exit 1; \
+	echo "integration suite requires cgroup v2 (detected $${cgroup_version:-unknown})"; \
+	exit 1; \
 	fi; \
 	echo "Docker cgroup version: $$cgroup_version"; \
+	controllers_file="/sys/fs/cgroup/cgroup.controllers"; \
+	if [ ! -r "$$controllers_file" ]; then \
+	echo "cgroup controllers file $$controllers_file is not readable"; \
+	exit 1; \
+	fi; \
+	controllers=$$(tr '\n' ' ' < "$$controllers_file"); \
+	if ! grep -qw cpu "$$controllers_file"; then \
+	echo "integration suite requires the cgroup v2 cpu controller (controllers: $$controllers)"; \
+	exit 1; \
+	fi; \
+	echo "cgroup v2 controllers: $$controllers"; \
 	artifacts_dir="$(ROOT_DIR)/artifacts"; \
 	log_file="$$artifacts_dir/integration.log"; \
 	mkdir -p "$$artifacts_dir" "$(GOCACHE_DIR)"; \

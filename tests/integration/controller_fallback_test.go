@@ -83,6 +83,8 @@ func TestControllerFallbackRecoversAfterMonitoringGap(t *testing.T) {
 	assertMetricContains(t, metrics, fmt.Sprintf("shaper_state{state=\"%s\"} 1", controller.State()))
 	assertNonZeroMetric(t, metrics, "oci_last_success_epoch")
 	assertMetricContains(t, metrics, fmt.Sprintf("oci_p95 %.6f", controller.LastP95()))
+	assertMetricContains(t, metrics, "controller_interval_seconds 0.200000")
+	assertMetricContains(t, metrics, "controller_last_error_info{error=\"none\"} 1")
 
 	if got := shaper.Target(); got != cfg.FallbackTarget && got != controller.Target() {
 		t.Fatalf("unexpected shaper target %.2f (controller target %.2f)", got, controller.Target())
@@ -163,3 +165,5 @@ func (r *recordingShaper) Target() float64 {
 
 	return r.target
 }
+
+func (r *recordingShaper) ObserveHostLoad(float64) {}

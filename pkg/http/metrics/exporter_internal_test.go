@@ -7,9 +7,18 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
-var errFailingBuffer = errors.New("metrics: failing buffer")
+var (
+	errFailingBuffer  = errors.New("metrics: failing buffer")
+	errBlankLastError = errors.New("   ")
+)
+
+const (
+	lastErrorUnknown = "unknown"
+	lastErrorNone    = "none"
+)
 
 type failingBuffer struct{}
 
@@ -84,5 +93,40 @@ func TestExporterObserveHostCPUClampsOutOfRangeValues(t *testing.T) {
 
 	if snapshot := exporter.snapshot(); snapshot.hostCPUPercent != hundredPercent {
 		t.Fatalf("expected utilisation to clamp to 100%%, got %.2f", snapshot.hostCPUPercent)
+	}
+}
+
+func TestExporterSetIntervalClampsInvalidValues(t *testing.T) {
+	t.Parallel()
+
+	exporter := NewExporter()
+
+	exporter.SetInterval(-time.Second)
+
+	if snapshot := exporter.snapshot(); snapshot.intervalSeconds != 0 {
+		t.Fatalf("expected negative interval to clamp to zero, got %.2f", snapshot.intervalSeconds)
+	}
+
+	exporter.SetInterval(1500 * time.Millisecond)
+
+	if snapshot := exporter.snapshot(); math.Abs(snapshot.intervalSeconds-1.5) > 1e-9 {
+		t.Fatalf("expected interval seconds to capture 1.5, got %.6f", snapshot.intervalSeconds)
+	}
+}
+
+func TestExporterSetLastErrorNormalizesMessages(t *testing.T) {
+	t.Parallel()
+
+	exporter := NewExporter()
+	exporter.SetLastError(errBlankLastError)
+
+	if snapshot := exporter.snapshot(); snapshot.lastError != lastErrorUnknown {
+		t.Fatalf("expected blank error to normalize to unknown, got %q", snapshot.lastError)
+	}
+
+	exporter.SetLastError(nil)
+
+	if snapshot := exporter.snapshot(); snapshot.lastError != lastErrorNone {
+		t.Fatalf("expected nil error to normalize to none, got %q", snapshot.lastError)
 	}
 }

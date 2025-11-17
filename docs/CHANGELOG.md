@@ -4,10 +4,29 @@
 
 ### Added
 _Note coverage-impacting additions: mention new test suites or tooling that shift the CI ≥95% statement coverage budget (§11)._
+- Configurable host-load pause/resume thresholds for the worker pool plus CLI YAML and
+  environment knobs so estimator observations suspend the pool until the host cools.
+  `pkg/shape` now exposes pause state helpers/tests, the controller forwards host CPU
+  readings to the pool, and docs (§§3.1, 9) describe the new configuration and
+  behaviour. Updated tests cover pause transitions to keep the ≥95% coverage floor (§§3,
+  5, 9, 11).
+- Cgroup telemetry helper that reads `/proc/self/cgroup`, parses the
+  colocated `cpu.weight`/`cpu.max` files, and publishes the detected values via
+  new `cgroup_cpu_weight`/`cgroup_cpu_max_*` metrics plus a `cgroup` block in
+  `/healthz`. Startup logs now warn whenever the observed weight exceeds the
+  low-weight defaults documented in §4 so Compose/Quadlet drift is obvious.
+  Fresh unit tests cover the helper, metrics exporter, and `/healthz` handler to
+  keep the ≥95% coverage floor intact, and §§4, 9 describe the new telemetry
+  surfaces for operators.
 - Grafana dashboard export (`deploy/grafana/oci-cpu-shaper-dashboard.json`) covering OCI
   P95, controller target/state, and host CPU overlays, plus §5.4 import instructions so
   operators can wire the Prometheus feed into Grafana without rebuilding the charts (§§3,
   5, 12).
+- Controller metrics now export `controller_interval_seconds` and
+  `controller_last_error_info`, with adaptive-controller hooks that update the interval,
+  state, and last OCI error every loop. Tests cover the Prometheus output and the
+  fallback integration path, while §5.4 now recommends Grafana panels for the cadence
+  and error strings (§§5, 9, 11).
 - `/healthz` status handler on the metrics listener that surfaces controller
   state plus the last OCI Monitoring and estimator errors as JSON; unit tests
   cover `pkg/http/status` and the offline CLI E2E now exercises the endpoint to
@@ -65,12 +84,17 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - Go vulnerability scanning via `make govulncheck` and a dedicated CI job that restores module/build caches, failing pull requests when published advisories affect the dependency graph (§14).
 - CPU weight responsiveness integration suite with CI coverage on `ubuntu-latest` (cgroup v2) that exercises the container build alongside a competing workload and publishes verbose logs (§§6, 11).
 - Local `make integration` helper replicating the CI cgroup v2 guard, Docker availability checks, and log capture so contributors can rerun the CPU weight suite with artifact parity (§§6, 11).
+- CPU weight responsiveness harness now builds and runs both the distroless rootful and nonroot images, gating execution on the cgroup v2 cpu controller so CI and local runs validate both deployment paths (§§6, 8, 11).
 - Quick Start onboarding guide that condenses the five plan-mandated console steps and links to the IAM, Monitoring, Compose, and alarm references (§10).
 - Documentation refresh covering OCI IAM policy setup (§1), Always Free reclaim guardrails (§3), cgroup v2 tuning guidance (§4), and alarm workflows (§7), aligning `docs/` with the implementation plan’s required artifacts (§12).
 - `/metrics` exporter and Prometheus integration surfaced through the CLI, including emitted series, sample scrape output, and Compose/HTTP_ADDR wiring documented across §§4–9.
 
 ### Changed
-_Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._
+_Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._ 
+- Runtime configuration loader now validates target/goal bounds, positive controller/estimator intervals, worker counts, and step
+  sizes after layering YAML files with environment overrides, returning `adapt.ErrInvalidConfig` when misconfigured values are
+  detected. Fresh CLI unit tests cover invalid manifests and environment overrides so the ≥95% coverage target remains intact
+  (§§3.1, 5.2, 9, 11).
 - Distroless image builds now reference the repository-root `Dockerfile` and ship the
   offline smoke-test config from `configs/offline-smoke.yaml`, consolidating Komodo,
   CI, and release workflows on a single path (§6).
@@ -94,8 +118,9 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% 
 - Refreshed `docs/00-overview.md` to document the current CLI flag surface, configuration layout, and navigation map, including forthcoming quick-start and CLI references (§§0, 5, 9).
 - Extended `docs/00-overview.md` with the plan-required threat model and non-goals sections and replaced the placeholder Quick Start note with a link to the published §10 onboarding guide so operators can navigate the consolidated deployment references (§§0, 10, 12).
 - Clarified the documentation roadmap to mark the published CLI/deployment guides and onboarding workflows as complete while calibrating remaining milestones for future adaptive-controller and release updates (§12).
-- CLI now starts the metrics HTTP server using `http.bind`/`HTTP_ADDR`, shuts it down with the run context, and ships container/Compose updates (`EXPOSE 9108`, `${SHAPER_METRICS_BIND}`) so `/metrics` is reachable when enabled; docs describe the exporter and monitoring workflow alignment (§§6, 9, 11).
+- CLI now starts the metrics HTTP server using `http.bind`/`HTTP_ADDR`, shuts it down with the run context, and ships container/Compose updates (`EXPOSE 9108`, `${SHAPER_METRICS_BIND}`) so `/metrics` is reachable when enabled; the listener now logs structured bind/serve failures and returns an explicit shutdown hook so docs can describe the exporter lifecycle and monitoring workflow alignment (§§6, 9, 11).
 - CLI metadata resolution now populates `oci.compartmentId`/`OCI_COMPARTMENT_ID` alongside the new `oci.region`/`OCI_REGION` overrides using IMDS when online, threads the resolved region into the Monitoring client, and logs both identifiers for observability. Fresh unit coverage in §11 exercises the success, fallback, and error paths so the ≥95% statement floor holds.
+- CLI now installs `SIGINT`/`SIGTERM` handlers that cancel the run context so the controller, worker pool, and metrics HTTP server exit gracefully. The new `tests/e2e/signal_shutdown_test.go` suite delivers both signals to the binary and asserts the structured shutdown logs to keep §11’s coverage contract intact (§§5, 9, 11).
 - IMDS client now injects the required IMDSv2 authorisation header and exposes canonical-region plus compartment OCID lookups, with unit tests and docs refreshed to keep §2 aligned with the metadata surface.
 - Canonical-region lookups now read the `regionInfo` block returned by `/instance/`, aligning the IMDS client, CLI emulation server, and documentation with the current OCI metadata layout (§2).
 - CLI `--mode` handling now starts the adaptive controller in `dry-run`/`enforce`, keeps `noop` as a diagnostics bypass, and logs configuration failures surfaced by the new YAML/environment loader. Updated docs in §§5 and 9 describe the operating modes and tunable configuration.
