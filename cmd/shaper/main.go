@@ -933,7 +933,12 @@ func queryShapeMetadata(
 ) (imds.ShapeConfig, error) {
 	value, err := fetch(ctx)
 	if err != nil {
-		logger.Warn(warnMsg, zap.Error(err))
+		logFunc := logger.Warn
+		if errors.Is(err, imds.ErrNotFound) {
+			logFunc = logger.Info
+		}
+
+		logFunc(warnMsg, zap.Error(err))
 
 		return imds.ShapeConfig{}, err
 	}

@@ -265,6 +265,12 @@ func (c *HTTPClient) tryFetch(ctx context.Context, resource string) ([]byte, boo
 		return body, false, nil
 	}
 
+	if resp.StatusCode == http.StatusNotFound {
+		trimmed := strings.TrimSpace(string(body))
+
+		return nil, false, fmt.Errorf("%w: %s (body %s)", ErrNotFound, resource, trimmed)
+	}
+
 	if !isRetryable(resp.StatusCode) {
 		trimmed := strings.TrimSpace(string(body))
 

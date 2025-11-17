@@ -1526,6 +1526,42 @@ func TestLogIMDSMetadataWarnsOnFailures(t *testing.T) {
 	}
 }
 
+func TestLogIMDSMetadataTreatsMissingShapeAsInfo(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.DebugLevel)
+	logger := zap.New(core)
+
+	client := newLoggingStubIMDS(
+		stubRegion,
+		nil,
+		stubRegion,
+		nil,
+		"ocid1.instance.oc1..exampleuniqueID",
+		nil,
+		stubCompartmentID,
+		nil,
+		stubShapeConfig(0, 0),
+		fmt.Errorf("missing: %w", imds.ErrNotFound),
+	)
+
+	ctrl := new(stubController)
+	ctrl.mode = modeNoop
+	ctrl.state = adapt.StateFallback
+
+	logIMDSMetadata(context.Background(), logger, client, ctrl, "", "", "", false)
+
+	info := observed.FilterLevelExact(zapcore.InfoLevel).All()
+	if len(info) != 1 {
+		t.Fatalf("expected one info log, got %d", len(info))
+	}
+
+	warns := observed.FilterLevelExact(zapcore.WarnLevel).All()
+	if len(warns) != 0 {
+		t.Fatalf("expected no warnings, got %d", len(warns))
+	}
+}
+
 func TestLogIMDSMetadataUsesOverrideInstanceID(t *testing.T) {
 	t.Parallel()
 

@@ -1,7 +1,15 @@
 // Package imds contains clients for the OCI Instance Metadata Service (IMDSv2).
 package imds
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrNotFound indicates the requested metadata resource is unavailable for the
+// running instance. Callers can treat this as an optional lookup and fall back
+// to alternate data sources.
+var ErrNotFound = errors.New("imds: resource not found")
 
 // DefaultEndpoint is the canonical IMDSv2 endpoint for OCI instances.
 const DefaultEndpoint = "http://169.254.169.254/opc/v2"

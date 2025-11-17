@@ -415,6 +415,34 @@ func TestShapeConfigDecodeError(t *testing.T) {
 	}
 }
 
+func TestShapeConfigHandlesMissingResource(t *testing.T) {
+	t.Parallel()
+
+	server := newIPv4TestServer(
+		t,
+		http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+			if req.URL.Path != shapeConfigResourcePath {
+				t.Fatalf("unexpected path: %s", req.URL.Path)
+			}
+
+			requireIMDSAuthHeader(t, req)
+
+			http.NotFound(writer, req)
+		}),
+	)
+	t.Cleanup(server.Close)
+
+	httpClient := server.Client()
+	httpClient.Timeout = time.Second
+
+	client := imds.NewClient(httpClient, imds.WithBaseURL(server.URL+"/opc/v2"))
+
+	_, err := client.ShapeConfig(context.Background())
+	if !errors.Is(err, imds.ErrNotFound) {
+		t.Fatalf("ShapeConfig() error = %v, want ErrNotFound", err)
+	}
+}
+
 // newIPv4TestServer binds to the IPv4 loopback explicitly so tests still work when
 // the sandbox forbids listening on IPv6.
 func newIPv4TestServer(t *testing.T, handler http.Handler) *httptest.Server {
