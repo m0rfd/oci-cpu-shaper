@@ -65,6 +65,39 @@ Use `curl -fsS ${HTTP_ADDR:-http://127.0.0.1:9108}/metrics` (or the forwarded Co
 
 Rootful experiments using `deploy/compose/mode-b.rootful.yaml` or the matching Quadlet unit should run on hosts where Docker/Podman can grant UID 0 and `SYS_NICE`. The Compose manifest defaults to `network_mode: host`; switch `SHAPER_NETWORK_MODE` to an isolated network when testing on shared lab hardware, and avoid running it under rootless Docker because cgroup weight, `cpus`, and capability settings will be ignored (§6.2).
 
+## §14 Release Signing and Verification
+
+The release workflow now installs Cosign with OIDC `id-token` permissions, signs every pushed image digest (both `nonroot` and `rootful`), and produces SPDX attestations that embed the Syft-generated SBOM. Each run emits five release assets per variant so operators can perform offline verification:
+
+- `cosign-<tag>-<variant>.sig` and `cosign-<tag>-<variant>.pem` (image signature + certificate).
+- `sbom-attestation-<tag>-<variant>.jsonl`, `.sig`, and `.pem` (SPDX attestation payload + metadata).
+
+Pull the assets that match the tag and variant you plan to deploy, then verify either the image or the SBOM attestation with Cosign’s keyless verification flags:
+
+```bash
+IMAGE_TAG="v1.2.3"
+VARIANT="nonroot" # or rootful
+IMAGE="ghcr.io/${OWNER}/oci-cpu-shaper:${VARIANT}"
+
+cosign verify \
+  --certificate-identity "https://github.com/${OWNER}/${REPO}/.github/workflows/release.yml@refs/tags/${IMAGE_TAG}" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  --signature cosign-${IMAGE_TAG}-${VARIANT}.sig \
+  --certificate cosign-${IMAGE_TAG}-${VARIANT}.pem \
+  "$IMAGE"
+
+cosign verify-attestation \
+  --type spdx \
+  --certificate-identity "https://github.com/${OWNER}/${REPO}/.github/workflows/release.yml@refs/tags/${IMAGE_TAG}" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  --signature sbom-attestation-${IMAGE_TAG}-${VARIANT}.sig \
+  --certificate sbom-attestation-${IMAGE_TAG}-${VARIANT}.pem \
+  --attestation sbom-attestation-${IMAGE_TAG}-${VARIANT}.jsonl \
+  "$IMAGE"
+```
+
+Cosign ensures the OIDC issuer is GitHub Actions and that the certificate identity matches the `release.yml` workflow at the tag you selected. Because the release assets include both the detached signature and certificate, the same verification steps work even on air-gapped hosts after the OCI image has been mirrored locally.
+
 ## §11.2 CPU Weight Integration Suite
 
 End-to-end responsiveness tests live under `tests/integration/` and run with the `integration` build tag. They build the rootful container image, compile a static CPU hog helper, and launch the image alongside an `alpine` competitor constrained to the same CPU. The harness measures each container's `cpu.weight` and `cpu.stat` usage to assert the heavier workload receives at least five times the CPU time, ensuring the runtime honours the responsiveness guarantees described in §§5, 9, and 11.
