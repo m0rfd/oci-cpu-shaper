@@ -37,6 +37,8 @@ Compose deployments for Mode A live in `deploy/compose/`. The rootless manifest
 - `HTTP_ADDR` – overrides the Prometheus listener bind address (defaults to `:9108` and must match the exposed port below).
 - `SHAPER_CPU_SHARES` – defaults to `128`, matching the architecture plan’s low-weight guidance now that rootless Docker honours
   delegated cgroup v2 CPU weights.
+- `SHAPER_CPUS` – optional fractional CPU quota that lines up with the commented `cpus: ${SHAPER_CPUS:-0.30}` entry from the
+  implementation plan. Leave the line commented to keep best-effort scheduling or uncomment it when hosts require a hard cap.
 - `SHAPER_MODE`/`SHAPER_LOG_LEVEL` – passed through as CLI arguments.
 
 Launch the stack with:
@@ -55,6 +57,10 @@ Override `SHAPER_METRICS_BIND` when collectors run outside the host or to expose
 TLS-terminating sidecars. With the configs copied into the image, the stack can
 start immediately using `/etc/oci-cpu-shaper/configs/mode-a.yaml`; mount a
 custom manifest over that path if tenancy-specific tuning is required.
+
+To enforce the optional CPU cap, set `SHAPER_CPUS` in `mode-a.env.example` (for example, `SHAPER_CPUS=0.30`) and remove the `#`
+in front of the `cpus:` line or mirror the stanza in an override file. Run `docker compose --file deploy/compose/mode-a.rootless.yaml config`
+to confirm the rendered service now includes a `cpus:` entry before rolling the stack to production.
 
 ## §6.3 Rootful Mode B stack
 
