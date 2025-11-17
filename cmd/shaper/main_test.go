@@ -434,8 +434,8 @@ func TestRunSuccessfulPath(t *testing.T) {
 	pool := new(stubPoolStarter)
 
 	deps.loadConfig = loadConfigStub()
-	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) error {
-		return nil
+	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) (metricsShutdownFunc, error) {
+		return func(context.Context) {}, nil
 	}
 
 	deps.newController = func(
@@ -496,8 +496,8 @@ func TestRunAppliesShutdownAfter(t *testing.T) {
 		return logger, nil
 	}
 	deps.loadConfig = loadConfigStub()
-	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) error {
-		return nil
+	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) (metricsShutdownFunc, error) {
+		return func(context.Context) {}, nil
 	}
 
 	ctrl := new(stubController)
@@ -629,8 +629,8 @@ func TestRunHandlesControllerError(t *testing.T) {
 	}
 
 	deps.loadConfig = loadConfigStub()
-	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) error {
-		return nil
+	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) (metricsShutdownFunc, error) {
+		return func(context.Context) {}, nil
 	}
 
 	deps.newController = func(
@@ -684,8 +684,8 @@ func TestRunHandlesControllerFactoryError(t *testing.T) {
 
 		return cfg, nil
 	}
-	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) error {
-		return nil
+	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) (metricsShutdownFunc, error) {
+		return func(context.Context) {}, nil
 	}
 	deps.newController = func(
 		context.Context,
@@ -735,8 +735,8 @@ func TestRunReturnsRuntimeErrorWhenMetricsServerFails(t *testing.T) {
 	) (adapt.Controller, poolStarter, error) {
 		return ctrl, nil, nil
 	}
-	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) error {
-		return errMetricsServerBoom
+	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) (metricsShutdownFunc, error) {
+		return nil, errMetricsServerBoom
 	}
 
 	exitCode := run(t.Context(), nil, deps, io.Discard)
@@ -779,8 +779,8 @@ func TestRunReturnsRuntimeErrorWhenMetadataResolutionFails(t *testing.T) {
 
 		return cfg, nil
 	}
-	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) error {
-		return nil
+	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) (metricsShutdownFunc, error) {
+		return func(context.Context) {}, nil
 	}
 
 	failingIMDS := newLoggingStubIMDS(
@@ -938,7 +938,12 @@ func newOfflineRunDeps(t *testing.T, serverCh chan<- *httptest.Server) runDeps {
 
 		return cfg, nil
 	}
-	deps.startMetricsServer = func(ctx context.Context, _ *zap.Logger, _ string, handler http.Handler) error {
+	deps.startMetricsServer = func(
+		ctx context.Context,
+		_ *zap.Logger,
+		_ string,
+		handler http.Handler,
+	) (metricsShutdownFunc, error) {
 		server := httptest.NewServer(handler)
 
 		serverCh <- server
@@ -948,7 +953,9 @@ func newOfflineRunDeps(t *testing.T, serverCh chan<- *httptest.Server) runDeps {
 			server.Close()
 		}()
 
-		return nil
+		return func(context.Context) {
+			server.Close()
+		}, nil
 	}
 	deps.newController = func(
 		ctx context.Context,
@@ -2135,8 +2142,8 @@ func runShutdownScenario(t *testing.T, runErr error, reason string) {
 		return logger, nil
 	}
 	deps.loadConfig = loadConfigStub()
-	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) error {
-		return nil
+	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) (metricsShutdownFunc, error) {
+		return func(context.Context) {}, nil
 	}
 	deps.newController = func(
 		context.Context,
@@ -3051,14 +3058,39 @@ func TestWriteErrorHandlesScenarios(t *testing.T) {
 func TestStartMetricsServerSkipsWhenAddressOrHandlerMissing(t *testing.T) {
 	t.Parallel()
 
-	err := startMetricsServer(context.Background(), zap.NewNop(), "   ", http.NewServeMux())
-	if err != nil {
-		t.Fatalf("expected trimmed empty address to skip, got %v", err)
+	shutdown, err := startMetricsServer(
+		context.Background(),
+		zap.NewNop(),
+		"   ",
+		http.NewServeMux(),
+	)
+	if !errors.Is(err, errMetricsServerDisabled) {
+		if err == nil {
+			t.Fatal("expected errMetricsServerDisabled, got nil")
+		}
+
+		if !errors.Is(err, errMetricsServerDisabled) {
+			t.Fatalf("expected errMetricsServerDisabled, got %v", err)
+		}
 	}
 
-	err = startMetricsServer(context.Background(), zap.NewNop(), testMetricsBind, nil)
-	if err != nil {
-		t.Fatalf("expected nil handler to skip, got %v", err)
+	if shutdown != nil {
+		t.Fatal("expected shutdown function to be nil when server is skipped")
+	}
+
+	shutdown, err = startMetricsServer(context.Background(), zap.NewNop(), testMetricsBind, nil)
+	if !errors.Is(err, errMetricsServerDisabled) {
+		if err == nil {
+			t.Fatal("expected errMetricsServerDisabled, got nil")
+		}
+
+		if !errors.Is(err, errMetricsServerDisabled) {
+			t.Fatalf("expected errMetricsServerDisabled, got %v", err)
+		}
+	}
+
+	if shutdown != nil {
+		t.Fatal("expected shutdown function to be nil when handler is missing")
 	}
 }
 
@@ -3067,9 +3099,18 @@ func TestStartMetricsServerRequiresContext(t *testing.T) {
 
 	var nilContext context.Context
 
-	err := startMetricsServer(nilContext, zap.NewNop(), testMetricsBind, http.NewServeMux())
+	shutdown, err := startMetricsServer(
+		nilContext,
+		zap.NewNop(),
+		testMetricsBind,
+		http.NewServeMux(),
+	)
 	if !errors.Is(err, errMetricsContextRequired) {
 		t.Fatalf("expected errMetricsContextRequired, got %v", err)
+	}
+
+	if shutdown != nil {
+		t.Fatal("expected shutdown function to be nil when context is missing")
 	}
 }
 
@@ -3092,9 +3133,13 @@ func TestStartMetricsServerServesRequests(t *testing.T) {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	err := startMetricsServer(ctx, nil, addr, mux)
+	shutdown, err := startMetricsServer(ctx, nil, addr, mux)
 	if err != nil {
 		t.Fatalf("startMetricsServer returned error: %v", err)
+	}
+
+	if shutdown == nil {
+		t.Fatal("expected shutdown function to be returned")
 	}
 
 	url := fmt.Sprintf("http://%s/metrics", addr)
@@ -3135,8 +3180,7 @@ func TestStartMetricsServerServesRequests(t *testing.T) {
 
 	cancel()
 
-	// Allow shutdown goroutine to process the cancellation.
-	time.Sleep(50 * time.Millisecond)
+	shutdown(context.Background())
 }
 
 func TestStartMetricsServerFailsWhenAddressInUse(t *testing.T) {
@@ -3155,7 +3199,12 @@ func TestStartMetricsServerFailsWhenAddressInUse(t *testing.T) {
 
 	addr := listener.Addr().String()
 
-	err = startMetricsServer(context.Background(), zap.NewNop(), addr, http.NewServeMux())
+	shutdown, err := startMetricsServer(
+		context.Background(),
+		zap.NewNop(),
+		addr,
+		http.NewServeMux(),
+	)
 	if err == nil {
 		t.Fatal("expected error when address is already in use")
 	}
@@ -3163,35 +3212,28 @@ func TestStartMetricsServerFailsWhenAddressInUse(t *testing.T) {
 	if !strings.Contains(err.Error(), "listen metrics endpoint") {
 		t.Fatalf("expected listen error, got %v", err)
 	}
-}
 
-func TestConfigureMetricsHandlesNilExporter(t *testing.T) {
-	t.Parallel()
-
-	cfg := defaultRuntimeConfig()
-
-	var deps runDeps
-
-	err := configureMetrics(context.Background(), deps, zap.NewNop(), cfg, nil, nil, nil)
-	if err != nil {
-		t.Fatalf("configureMetrics returned error: %v", err)
+	if shutdown != nil {
+		t.Fatal("expected shutdown function to be nil when start fails")
 	}
 }
 
-func TestConfigureMetricsSkipsServerWhenMissing(t *testing.T) {
+func TestConfigureMetricsSkipsExporterWhenMissing(t *testing.T) {
+	t.Parallel()
+
+	handler := configureMetrics(zap.NewNop(), nil, nil, nil)
+	if handler != nil {
+		t.Fatal("expected handler to be nil when exporter is missing")
+	}
+}
+
+func TestConfigureMetricsSetsWorkerMetrics(t *testing.T) {
 	t.Parallel()
 
 	exporter := metricshttp.NewExporter()
 	pool := &stubPoolStarter{startCount: 0, workers: 3, quantum: 150 * time.Millisecond}
-	cfg := defaultRuntimeConfig()
-	cfg.HTTP.Bind = testMetricsBind
 
-	var deps runDeps
-
-	err := configureMetrics(context.Background(), deps, zap.NewNop(), cfg, exporter, pool, nil)
-	if err != nil {
-		t.Fatalf("configureMetrics returned error: %v", err)
-	}
+	_ = configureMetrics(zap.NewNop(), exporter, pool, nil)
 
 	snapshot, err := exporter.Render()
 	if err != nil {
@@ -3207,7 +3249,6 @@ func TestConfigureMetricsSkipsServerWhenMissing(t *testing.T) {
 	}
 }
 
-//nolint:cyclop,funlen // comprehensive test covers handler wiring and response validation.
 func TestConfigureMetricsRegistersHandlers(t *testing.T) {
 	t.Parallel()
 
@@ -3224,55 +3265,14 @@ func TestConfigureMetricsRegistersHandlers(t *testing.T) {
 		estErr:      errStubQueryFailure,
 	}
 
-	cfg := defaultRuntimeConfig()
-	cfg.HTTP.Bind = testMetricsBind
-
-	var (
-		capturedAddr     string
-		capturedHandler  http.Handler
-		startInvocations int
-	)
-
-	var deps runDeps
-
-	deps.startMetricsServer = func(ctx context.Context, logger *zap.Logger, addr string, handler http.Handler) error {
-		if ctx == nil {
-			t.Fatal("expected context to be forwarded")
-		}
-
-		if logger == nil {
-			t.Fatal("expected logger to be forwarded")
-		}
-
-		capturedAddr = addr
-		capturedHandler = handler
-		startInvocations++
-
-		return nil
-	}
-
-	logger := zap.NewNop()
-
-	err := configureMetrics(context.Background(), deps, logger, cfg, exporter, pool, controller)
-	if err != nil {
-		t.Fatalf("configureMetrics returned error: %v", err)
-	}
-
-	if startInvocations != 1 {
-		t.Fatalf("expected startMetricsServer to be invoked once, got %d", startInvocations)
-	}
-
-	if capturedHandler == nil {
-		t.Fatal("expected handler to be captured")
-	}
-
-	if capturedAddr != cfg.HTTP.Bind {
-		t.Fatalf("expected bind address %s, got %s", cfg.HTTP.Bind, capturedAddr)
+	handler := configureMetrics(zap.NewNop(), exporter, pool, controller)
+	if handler == nil {
+		t.Fatal("expected handler to be configured")
 	}
 
 	metricsRequest := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	metricsRecorder := httptest.NewRecorder()
-	capturedHandler.ServeHTTP(metricsRecorder, metricsRequest)
+	handler.ServeHTTP(metricsRecorder, metricsRequest)
 
 	if metricsRecorder.Result().StatusCode != http.StatusOK {
 		t.Fatalf("expected metrics response 200, got %d", metricsRecorder.Result().StatusCode)
@@ -3285,7 +3285,7 @@ func TestConfigureMetricsRegistersHandlers(t *testing.T) {
 
 	healthRequest := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	healthRecorder := httptest.NewRecorder()
-	capturedHandler.ServeHTTP(healthRecorder, healthRequest)
+	handler.ServeHTTP(healthRecorder, healthRequest)
 
 	if healthRecorder.Result().StatusCode != http.StatusOK {
 		t.Fatalf("expected health status 200, got %d", healthRecorder.Result().StatusCode)
@@ -3313,35 +3313,35 @@ func TestConfigureMetricsWithoutController(t *testing.T) {
 	t.Parallel()
 
 	exporter := metricshttp.NewExporter()
-	cfg := defaultRuntimeConfig()
-	cfg.HTTP.Bind = testMetricsBind
 
-	var capturedHandler http.Handler
-
-	var deps runDeps
-
-	deps.startMetricsServer = func(_ context.Context, _ *zap.Logger, _ string, handler http.Handler) error {
-		capturedHandler = handler
-
-		return nil
-	}
-
-	err := configureMetrics(context.Background(), deps, zap.NewNop(), cfg, exporter, nil, nil)
-	if err != nil {
-		t.Fatalf("configureMetrics returned error: %v", err)
-	}
-
-	if capturedHandler == nil {
-		t.Fatal("expected handler to be captured")
+	handler := configureMetrics(zap.NewNop(), exporter, nil, nil)
+	if handler == nil {
+		t.Fatal("expected handler to be configured")
 	}
 
 	healthRequest := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	recorder := httptest.NewRecorder()
-	capturedHandler.ServeHTTP(recorder, healthRequest)
+	handler.ServeHTTP(recorder, healthRequest)
 
 	if recorder.Result().StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing health handler, got %d", recorder.Result().StatusCode)
 	}
+}
+
+func configureMetricsHandlerForTest(
+	t *testing.T,
+	exporter *metricshttp.Exporter,
+	pool poolStarter,
+	controller adapt.Controller,
+) http.Handler {
+	t.Helper()
+
+	handler := configureMetrics(zap.NewNop(), exporter, pool, controller)
+	if handler == nil {
+		t.Fatal("expected handler to be configured")
+	}
+
+	return handler
 }
 
 func TestConfigureMetricsServesPrometheusText(t *testing.T) {
@@ -3392,45 +3392,4 @@ func TestConfigureMetricsServesPrometheusText(t *testing.T) {
 			t.Fatalf("expected metrics output to contain %q, got:\n%s", snippet, body)
 		}
 	}
-}
-
-func configureMetricsHandlerForTest(
-	t *testing.T,
-	exporter *metricshttp.Exporter,
-	pool poolStarter,
-	controller adapt.Controller,
-) http.Handler {
-	t.Helper()
-
-	cfg := defaultRuntimeConfig()
-	cfg.HTTP.Bind = testMetricsBind
-
-	var handler http.Handler
-
-	var deps runDeps
-
-	deps.startMetricsServer = func(_ context.Context, _ *zap.Logger, _ string, mux http.Handler) error {
-		handler = mux
-
-		return nil
-	}
-
-	err := configureMetrics(
-		context.Background(),
-		deps,
-		zap.NewNop(),
-		cfg,
-		exporter,
-		pool,
-		controller,
-	)
-	if err != nil {
-		t.Fatalf("configureMetrics returned error: %v", err)
-	}
-
-	if handler == nil {
-		t.Fatal("expected handler to be configured")
-	}
-
-	return handler
 }

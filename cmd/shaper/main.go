@@ -71,7 +71,7 @@ type runDeps struct {
 		logger *zap.Logger,
 		addr string,
 		handler http.Handler,
-	) error
+	) (metricsShutdownFunc, error)
 	versionWriter io.Writer
 }
 
@@ -85,6 +85,8 @@ type poolStarter interface {
 type metricsClientFactory func(compartmentID, region string) (oci.MetricsClient, error)
 
 type metricsClientFactoryKey struct{}
+
+type metricsShutdownFunc func(context.Context)
 
 func withMetricsClientFactory(ctx context.Context, factory metricsClientFactory) context.Context {
 	if ctx == nil {
@@ -117,6 +119,7 @@ var (
 	errControllerRegionRequired = errors.New("controller factory: OCI region is required")
 	errMetricsDelegateNil       = errors.New("metrics client: nil delegate")
 	errMetricsContextRequired   = errors.New("metrics server: context is required")
+	errMetricsServerDisabled    = errors.New("metrics server: disabled")
 )
 
 func buildMetricsExporter(deps runDeps) *metricshttp.Exporter {
@@ -131,14 +134,11 @@ func buildMetricsExporter(deps runDeps) *metricshttp.Exporter {
 }
 
 func configureMetrics(
-	ctx context.Context,
-	deps runDeps,
 	logger *zap.Logger,
-	cfg runtimeConfig,
 	exporter *metricshttp.Exporter,
 	pool poolStarter,
 	controller adapt.Controller,
-) error {
+) http.Handler {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -165,12 +165,6 @@ func configureMetrics(
 		logger.Debug("worker pool metrics unavailable", zap.String("reason", "pool not configured"))
 	}
 
-	if deps.startMetricsServer == nil {
-		logger.Warn("metrics server disabled", zap.String("reason", "start function missing"))
-
-		return nil
-	}
-
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", exporter)
 
@@ -178,16 +172,49 @@ func configureMetrics(
 		mux.Handle("/healthz", statushttp.NewHandler(controller))
 	}
 
-	bindAddr := strings.TrimSpace(cfg.HTTP.Bind)
-	if bindAddr == "" {
-		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
+	return mux
+}
 
-		return nil
+func startMetricsEndpoint(
+	ctx context.Context,
+	deps runDeps,
+	logger *zap.Logger,
+	bindAddr string,
+	handler http.Handler,
+) (metricsShutdownFunc, context.CancelFunc, error) {
+	if handler == nil {
+		return nil, nil, nil
 	}
 
-	logger.Info("starting metrics server", zap.String("bind", bindAddr))
+	if deps.startMetricsServer == nil {
+		logger.Warn("metrics server disabled", zap.String("reason", "start function missing"))
 
-	return deps.startMetricsServer(ctx, logger, bindAddr, mux)
+		return nil, nil, nil
+	}
+
+	trimmed := strings.TrimSpace(bindAddr)
+	if trimmed == "" {
+		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
+
+		return nil, nil, nil
+	}
+
+	if ctx == nil {
+		return nil, nil, errMetricsContextRequired
+	}
+
+	logger.Info("starting metrics server", zap.String("bind", trimmed))
+
+	metricsCtx, cancel := context.WithCancel(ctx)
+
+	shutdown, err := deps.startMetricsServer(metricsCtx, logger, trimmed, handler)
+	if err != nil {
+		cancel()
+
+		return nil, nil, err
+	}
+
+	return shutdown, cancel, nil
 }
 
 // run orchestrates CLI initialization before handing execution to the controller.
@@ -271,11 +298,35 @@ func run(
 
 	logControllerInitialization(logger, cfg, controller, metricsExporter)
 
-	err = configureMetrics(ctx, deps, logger, cfg, metricsExporter, pool, controller)
-	if err != nil {
-		logger.Error("failed to start metrics server", zap.Error(err))
+	metricsHandler := configureMetrics(logger, metricsExporter, pool, controller)
+
+	metricsShutdown, metricsCancel, metricsErr := startMetricsEndpoint(
+		ctx,
+		deps,
+		logger,
+		cfg.HTTP.Bind,
+		metricsHandler,
+	)
+	if metricsErr != nil {
+		logger.Error("failed to start metrics server", zap.Error(metricsErr))
 
 		return exitCodeRuntimeError
+	}
+
+	if metricsShutdown != nil {
+		defer func() {
+			if metricsCancel != nil {
+				metricsCancel()
+			}
+
+			shutdownCtx, cancelShutdown := context.WithTimeout(
+				context.WithoutCancel(ctx),
+				metricsShutdownTimeout,
+			)
+			defer cancelShutdown()
+
+			metricsShutdown(shutdownCtx)
+		}()
 	}
 
 	if pool != nil {
@@ -925,12 +976,12 @@ func createMetricsClient(
 	return metricsClient, nil
 }
 
-func startMetricsServer(
+func startMetricsServer( //nolint:cyclop,funlen // listener lifecycle requires several guard branches
 	ctx context.Context,
 	logger *zap.Logger,
 	addr string,
 	handler http.Handler,
-) error {
+) (metricsShutdownFunc, error) {
 	trimmed := strings.TrimSpace(addr)
 
 	if logger == nil {
@@ -940,24 +991,32 @@ func startMetricsServer(
 	if trimmed == "" {
 		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
 
-		return nil
+		return nil, errMetricsServerDisabled
 	}
 
 	if handler == nil {
 		logger.Warn("metrics server disabled", zap.String("reason", "handler missing"))
 
-		return nil
+		return nil, errMetricsServerDisabled
 	}
 
 	if ctx == nil {
-		return errMetricsContextRequired
+		return nil, errMetricsContextRequired
 	}
+
+	baseCtx := context.WithoutCancel(ctx)
 
 	var listenCfg net.ListenConfig
 
 	listener, err := listenCfg.Listen(ctx, "tcp", trimmed)
 	if err != nil {
-		return fmt.Errorf("listen metrics endpoint %q: %w", trimmed, err)
+		logger.Error(
+			"metrics server listen failed",
+			zap.String("bind", trimmed),
+			zap.Error(err),
+		)
+
+		return nil, fmt.Errorf("listen metrics endpoint %q: %w", trimmed, err)
 	}
 
 	server := &http.Server{ //nolint:exhaustruct // only security-critical timeout configured here
@@ -968,41 +1027,48 @@ func startMetricsServer(
 
 	logger.Info("metrics server listening", zap.String("bind", trimmed))
 
-	serveMetrics(ctx, logger, server, listener)
-
-	return nil
-}
-
-func serveMetrics(
-	ctx context.Context,
-	logger *zap.Logger,
-	server *http.Server,
-	listener net.Listener,
-) {
-	go func() {
-		<-ctx.Done()
-
-		shutdownCtx, cancel := context.WithTimeout(ctx, metricsShutdownTimeout)
-		defer cancel()
-
-		logger.Info("stopping metrics server", zap.String("bind", server.Addr))
-
-		err := server.Shutdown(shutdownCtx)
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Warn("metrics server shutdown", zap.Error(err))
-		}
-	}()
+	serveDone := make(chan struct{})
 
 	go func() {
+		defer close(serveDone)
+
 		err := server.Serve(listener)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Warn("metrics server serve", zap.Error(err))
+			logger.Error("metrics server serve", zap.String("bind", trimmed), zap.Error(err))
 
 			return
 		}
 
-		logger.Info("metrics server stopped", zap.String("bind", server.Addr))
+		logger.Info("metrics server stopped", zap.String("bind", trimmed))
 	}()
+
+	shutdown := func(shutdownCtx context.Context) {
+		if shutdownCtx == nil {
+			shutdownCtx = baseCtx
+		}
+
+		logger.Info("stopping metrics server", zap.String("bind", trimmed))
+
+		err := server.Shutdown(shutdownCtx)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Warn("metrics server shutdown", zap.String("bind", trimmed), zap.Error(err))
+		}
+	}
+
+	go func() {
+		<-ctx.Done()
+
+		shutdownCtx, cancel := context.WithTimeout(baseCtx, metricsShutdownTimeout)
+		defer cancel()
+
+		shutdown(shutdownCtx)
+	}()
+
+	return func(shutdownCtx context.Context) {
+		shutdown(shutdownCtx)
+
+		<-serveDone
+	}, nil
 }
 
 type p95CPUQuerier interface {
