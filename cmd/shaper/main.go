@@ -10,22 +10,17 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	"go.uber.org/zap"
 	"oci-cpu-shaper/internal/buildinfo"
 	"oci-cpu-shaper/pkg/adapt"
 	"oci-cpu-shaper/pkg/cgroup"
-	"oci-cpu-shaper/pkg/est"
 	metricshttp "oci-cpu-shaper/pkg/http/metrics"
-	statushttp "oci-cpu-shaper/pkg/http/status"
 	"oci-cpu-shaper/pkg/imds"
 	"oci-cpu-shaper/pkg/oci"
-	"oci-cpu-shaper/pkg/shape"
 )
 
 const (
@@ -49,24 +44,7 @@ const (
 )
 
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sigCh := make(chan os.Signal, 1)
-
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(sigCh)
-
-	go func() {
-		select {
-		case <-ctx.Done():
-			return
-		case <-sigCh:
-			cancel()
-		}
-	}()
-
-	code := run(ctx, os.Args[1:], defaultRunDeps(), os.Stderr)
+	code := newApp(defaultRunDeps()).Run(context.Background(), os.Args[1:], os.Stderr)
 	if code != 0 {
 		exitProcess(code)
 	}
@@ -108,8 +86,6 @@ type metricsClientFactory func(compartmentID, region string) (oci.MetricsClient,
 
 type metricsClientFactoryKey struct{}
 
-type metricsShutdownFunc func(context.Context)
-
 func withMetricsClientFactory(ctx context.Context, factory metricsClientFactory) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
@@ -143,287 +119,6 @@ var (
 	errMetricsContextRequired   = errors.New("metrics server: context is required")
 	errMetricsServerDisabled    = errors.New("metrics server: disabled")
 )
-
-func buildMetricsExporter(deps runDeps) *metricshttp.Exporter {
-	if deps.newMetricsExporter != nil {
-		exporter := deps.newMetricsExporter()
-		if exporter != nil {
-			return exporter
-		}
-	}
-
-	return metricshttp.NewExporter()
-}
-
-func configureMetrics(
-	logger *zap.Logger,
-	exporter *metricshttp.Exporter,
-	pool poolStarter,
-	controller adapt.Controller,
-	cpuInfo *cgroup.CPU,
-) http.Handler {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
-	if exporter == nil {
-		logger.Warn("metrics exporter disabled", zap.String("reason", "no exporter configured"))
-
-		return nil
-	}
-
-	if pool != nil {
-		workers := pool.Workers()
-		exporter.SetWorkerCount(workers)
-
-		quantum := pool.Quantum()
-		exporter.SetDutyCycle(quantum)
-
-		logger.Debug(
-			"registered worker pool metrics",
-			zap.Int("workerCount", workers),
-			zap.Duration("dutyCycle", quantum),
-		)
-	} else {
-		logger.Debug("worker pool metrics unavailable", zap.String("reason", "pool not configured"))
-	}
-
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", exporter)
-
-	if controller != nil {
-		mux.Handle("/healthz", statushttp.NewHandler(controller, cpuInfo))
-	}
-
-	return mux
-}
-
-func startMetricsEndpoint(
-	ctx context.Context,
-	deps runDeps,
-	logger *zap.Logger,
-	bindAddr string,
-	handler http.Handler,
-) (metricsShutdownFunc, context.CancelFunc, error) {
-	if handler == nil {
-		return nil, nil, nil
-	}
-
-	if deps.startMetricsServer == nil {
-		logger.Warn("metrics server disabled", zap.String("reason", "start function missing"))
-
-		return nil, nil, nil
-	}
-
-	trimmed := strings.TrimSpace(bindAddr)
-	if trimmed == "" {
-		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
-
-		return nil, nil, nil
-	}
-
-	if ctx == nil {
-		return nil, nil, errMetricsContextRequired
-	}
-
-	logger.Info("starting metrics server", zap.String("bind", trimmed))
-
-	metricsCtx, cancel := context.WithCancel(ctx)
-
-	shutdown, err := deps.startMetricsServer(metricsCtx, logger, trimmed, handler)
-	if err != nil {
-		cancel()
-
-		return nil, nil, err
-	}
-
-	return shutdown, cancel, nil
-}
-
-// run orchestrates CLI initialization before handing execution to the controller.
-//
-//nolint:funlen,cyclop // CLI wiring composes setup steps before controller execution
-func run(
-	ctx context.Context,
-	args []string,
-	deps runDeps,
-	stderr io.Writer,
-) int {
-	opts, err := parseArgs(args)
-	if err != nil {
-		return writeError(stderr, err, exitCodeParseError)
-	}
-
-	if opts.showVersion {
-		info := deps.currentBuildInfo()
-
-		writer := deps.versionWriter
-		if writer == nil {
-			writer = os.Stdout
-		}
-
-		_, _ = fmt.Fprintf(writer, "%+v\n", info)
-
-		return exitCodeSuccess
-	}
-
-	cfg, exitCode, configLoaded := loadRuntimeConfigOrExit(deps, opts.configPath, stderr)
-	if !configLoaded {
-		return exitCode
-	}
-
-	logger, exitCode, loggerReady := buildLoggerOrExit(deps, opts.logLevel, stderr)
-	if !loggerReady {
-		return exitCode
-	}
-
-	defer func() {
-		_ = logger.Sync()
-	}()
-
-	ctx, cancel := applyShutdownTimer(ctx, opts.shutdownAfter)
-	if cancel != nil {
-		defer cancel()
-	}
-
-	info := deps.currentBuildInfo()
-	logStartup(logger, info, opts)
-	logRuntimeConfig(logger, cfg)
-
-	imdsClient := deps.newIMDS()
-
-	metricsExporter := buildMetricsExporter(deps)
-	cgroupInfo := detectAndReportCgroup(deps, logger, metricsExporter)
-	metricsRecorder := newRecorderLogger(logger, metricsExporter)
-
-	cfg, metadata, metadataErr := prepareRunMetadata(ctx, cfg, imdsClient, opts.mode)
-	if metadataErr != nil {
-		logger.Error("failed to resolve oci metadata", zap.Error(metadataErr))
-
-		return exitCodeRuntimeError
-	}
-
-	logMetadataResolution(logger, opts.mode, metadata, cfg.OCI.Offline)
-
-	controller, pool, buildErr := deps.newController(
-		ctx,
-		opts.mode,
-		cfg,
-		imdsClient,
-		metricsRecorder,
-	)
-	if buildErr != nil {
-		code := exitCodeForConfigError(buildErr)
-
-		logger.Error("failed to build controller", zap.Error(buildErr))
-
-		return code
-	}
-
-	logControllerInitialization(logger, cfg, controller, metricsExporter)
-
-	metricsHandler := configureMetrics(logger, metricsExporter, pool, controller, cgroupInfo)
-
-	metricsShutdown, metricsCancel, metricsErr := startMetricsEndpoint(
-		ctx,
-		deps,
-		logger,
-		cfg.HTTP.Bind,
-		metricsHandler,
-	)
-	if metricsErr != nil {
-		logger.Error("failed to start metrics server", zap.Error(metricsErr))
-
-		return exitCodeRuntimeError
-	}
-
-	if metricsShutdown != nil {
-		defer func() {
-			if metricsCancel != nil {
-				metricsCancel()
-			}
-
-			shutdownCtx, cancelShutdown := context.WithTimeout(
-				context.WithoutCancel(ctx),
-				metricsShutdownTimeout,
-			)
-			defer cancelShutdown()
-
-			metricsShutdown(shutdownCtx)
-		}()
-	}
-
-	if pool != nil {
-		pool.SetWorkerStartErrorHandler(func(err error) {
-			if err == nil {
-				return
-			}
-
-			logger.Warn("worker failed to enter sched_idle", zap.Error(err))
-		})
-
-		logger.Info(
-			"starting worker pool",
-			zap.Int("workers", pool.Workers()),
-			zap.Duration("quantum", pool.Quantum()),
-		)
-
-		pool.Start(ctx)
-	}
-
-	logIMDSMetadata(
-		ctx,
-		logger,
-		imdsClient,
-		controller,
-		cfg.OCI.InstanceID,
-		cfg.OCI.CompartmentID,
-		cfg.OCI.Region,
-		cfg.OCI.Offline,
-	)
-
-	logger.Info(
-		"starting controller run",
-		zap.String("mode", controller.Mode()),
-		zap.String("controllerState", controller.State().String()),
-	)
-
-	return handleControllerRunResult(logger, controller.Run(ctx))
-}
-
-func handleControllerRunResult(logger *zap.Logger, runErr error) int {
-	if runErr == nil {
-		logger.Info("controller stopped", zap.String("reason", "completed"))
-
-		return exitCodeSuccess
-	}
-
-	switch {
-	case errors.Is(runErr, context.Canceled):
-		logger.Info("controller stopped", zap.String("reason", context.Canceled.Error()))
-
-		return exitCodeSuccess
-	case errors.Is(runErr, context.DeadlineExceeded):
-		logger.Info(
-			"controller stopped",
-			zap.String("reason", context.DeadlineExceeded.Error()),
-		)
-
-		return exitCodeSuccess
-	default:
-		logger.Error("controller execution failed", zap.Error(runErr))
-
-		return exitCodeRuntimeError
-	}
-}
-
-func exitCodeForConfigError(err error) int {
-	if errors.Is(err, adapt.ErrInvalidConfig) {
-		return exitCodeParseError
-	}
-
-	return exitCodeRuntimeError
-}
 
 func writeError(dst io.Writer, err error, code int) int {
 	if err == nil {
@@ -644,77 +339,6 @@ func defaultControllerFactory(
 	}
 
 	return buildAdaptiveController(ctx, trimmed, cfg, imdsClient, recorder)
-}
-
-//nolint:ireturn,funlen // helper returns controller interface for wiring and coordinates several setup steps
-func buildAdaptiveController(
-	ctx context.Context,
-	mode string,
-	cfg runtimeConfig,
-	imdsClient imds.Client,
-	recorder adapt.MetricsRecorder,
-) (adapt.Controller, poolStarter, error) {
-	offline := cfg.OCI.Offline
-
-	instanceID, err := resolveInstanceID(ctx, cfg, offline, imdsClient)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	compartmentID := strings.TrimSpace(cfg.OCI.CompartmentID)
-	if compartmentID == "" && !offline {
-		return nil, nil, errControllerCompartmentRequired
-	}
-
-	region := strings.TrimSpace(cfg.OCI.Region)
-	if region == "" && !offline {
-		return nil, nil, errControllerRegionRequired
-	}
-
-	metricsClient, err := createMetricsClient(ctx, cfg, offline, compartmentID, region)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	pool, err := shape.NewPool(cfg.Pool.Workers, cfg.Pool.Quantum)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build worker pool: %w", err)
-	}
-
-	pool.SetPauseThresholds(cfg.Pool.PauseThreshold, cfg.Pool.ResumeThreshold)
-
-	sampler := est.NewSampler(nil, cfg.Estimator.Interval)
-
-	controllerCfg := adapt.Config{
-		ResourceID:        instanceID,
-		Mode:              mode,
-		TargetStart:       cfg.Controller.TargetStart,
-		TargetMin:         cfg.Controller.TargetMin,
-		TargetMax:         cfg.Controller.TargetMax,
-		StepUp:            cfg.Controller.StepUp,
-		StepDown:          cfg.Controller.StepDown,
-		FallbackTarget:    cfg.Controller.FallbackTarget,
-		GoalLow:           cfg.Controller.GoalLow,
-		GoalHigh:          cfg.Controller.GoalHigh,
-		Interval:          cfg.Controller.Interval,
-		RelaxedInterval:   cfg.Controller.RelaxedInterval,
-		RelaxedThreshold:  cfg.Controller.RelaxedThreshold,
-		SuppressThreshold: cfg.Controller.SuppressThreshold,
-		SuppressResume:    cfg.Controller.SuppressResume,
-	}
-
-	controller, err := adapt.NewAdaptiveController(
-		controllerCfg,
-		metricsClient,
-		sampler,
-		pool,
-		recorder,
-	)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build adaptive controller: %w", err)
-	}
-
-	return controller, pool, nil
 }
 
 func resolveInstanceID(

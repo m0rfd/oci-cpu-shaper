@@ -4,7 +4,7 @@ OCI CPU Shaper is an adaptive controller for shaping CPU utilization of workload
 
 ## Repository Structure
 
-- `cmd/shaper/` – Entry point for the CLI binary that applies CPU shaping logic.
+- `cmd/shaper/` – Entry point for the CLI binary with `app` wiring that applies CPU shaping logic.
 - `pkg/` – Shared packages divided into domains for metadata (`imds`), OCI integrations (`oci`), estimation (`est`), shaping algorithms (`shape`), adaptation (`adapt`), and HTTP helpers (`http`).
 - `internal/buildinfo/` – Build metadata embedded into binaries.
 - `configs/` – Example configuration files and templates, including `mode-a.yaml`
