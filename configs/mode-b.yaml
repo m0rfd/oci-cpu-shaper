@@ -18,6 +18,8 @@ estimator:
 pool:
   workers: 2
   quantum: 1ms
+  pauseThreshold: 0.80
+  resumeThreshold: 0.68
 http:
   bind: ":9108"
 oci:

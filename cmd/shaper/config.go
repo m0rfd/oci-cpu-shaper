@@ -15,26 +15,28 @@ import (
 )
 
 const (
-	envTargetStart       = "SHAPER_TARGET_START"
-	envTargetMin         = "SHAPER_TARGET_MIN"
-	envTargetMax         = "SHAPER_TARGET_MAX"
-	envStepUp            = "SHAPER_STEP_UP"
-	envStepDown          = "SHAPER_STEP_DOWN"
-	envSlowInterval      = "SHAPER_SLOW_INTERVAL"
-	envRelaxedInterval   = "SHAPER_SLOW_INTERVAL_RELAXED"
-	envFastInterval      = "SHAPER_FAST_INTERVAL"
-	envPoolWorkers       = "SHAPER_WORKER_COUNT"
-	envHTTPBind          = "HTTP_ADDR"
-	envCompartmentID     = "OCI_COMPARTMENT_ID"
-	envOCIRegion         = "OCI_REGION"
-	envInstanceID        = "OCI_INSTANCE_ID"
-	envOCIOffline        = "OCI_OFFLINE"
-	envFallbackTarget    = "SHAPER_FALLBACK_TARGET"
-	envRelaxedThreshold  = "SHAPER_RELAXED_THRESHOLD"
-	envGoalLow           = "SHAPER_GOAL_LOW"
-	envGoalHigh          = "SHAPER_GOAL_HIGH"
-	envSuppressThreshold = "SHAPER_SUPPRESS_THRESHOLD"
-	envSuppressResume    = "SHAPER_SUPPRESS_RESUME"
+	envTargetStart         = "SHAPER_TARGET_START"
+	envTargetMin           = "SHAPER_TARGET_MIN"
+	envTargetMax           = "SHAPER_TARGET_MAX"
+	envStepUp              = "SHAPER_STEP_UP"
+	envStepDown            = "SHAPER_STEP_DOWN"
+	envSlowInterval        = "SHAPER_SLOW_INTERVAL"
+	envRelaxedInterval     = "SHAPER_SLOW_INTERVAL_RELAXED"
+	envFastInterval        = "SHAPER_FAST_INTERVAL"
+	envPoolWorkers         = "SHAPER_WORKER_COUNT"
+	envHTTPBind            = "HTTP_ADDR"
+	envCompartmentID       = "OCI_COMPARTMENT_ID"
+	envOCIRegion           = "OCI_REGION"
+	envInstanceID          = "OCI_INSTANCE_ID"
+	envOCIOffline          = "OCI_OFFLINE"
+	envFallbackTarget      = "SHAPER_FALLBACK_TARGET"
+	envRelaxedThreshold    = "SHAPER_RELAXED_THRESHOLD"
+	envGoalLow             = "SHAPER_GOAL_LOW"
+	envGoalHigh            = "SHAPER_GOAL_HIGH"
+	envSuppressThreshold   = "SHAPER_SUPPRESS_THRESHOLD"
+	envSuppressResume      = "SHAPER_SUPPRESS_RESUME"
+	envPoolPauseThreshold  = "SHAPER_POOL_PAUSE_THRESHOLD"
+	envPoolResumeThreshold = "SHAPER_POOL_RESUME_THRESHOLD"
 )
 
 type runtimeConfig struct {
@@ -66,8 +68,10 @@ type estimatorConfig struct {
 }
 
 type poolConfig struct {
-	Workers int
-	Quantum time.Duration
+	Workers         int
+	Quantum         time.Duration
+	PauseThreshold  float64
+	ResumeThreshold float64
 }
 
 type httpConfig struct {
@@ -110,8 +114,10 @@ type estimatorFileConfig struct {
 }
 
 type poolFileConfig struct {
-	Workers *int           `yaml:"workers"`
-	Quantum *time.Duration `yaml:"quantum"`
+	Workers         *int           `yaml:"workers"`
+	Quantum         *time.Duration `yaml:"quantum"`
+	PauseThreshold  *float64       `yaml:"pauseThreshold"`
+	ResumeThreshold *float64       `yaml:"resumeThreshold"`
 }
 
 type httpFileConfig struct {
@@ -152,6 +158,8 @@ func defaultRuntimeConfig() runtimeConfig {
 	}
 
 	cfg.Pool.Quantum = shape.DefaultQuantum
+	cfg.Pool.PauseThreshold = defaults.SuppressThreshold
+	cfg.Pool.ResumeThreshold = defaults.SuppressResume
 
 	cfg.HTTP.Bind = ":9108"
 
@@ -207,6 +215,8 @@ func mergeEstimatorConfig(dst *estimatorConfig, src estimatorFileConfig) {
 func mergePoolConfig(dst *poolConfig, src poolFileConfig) {
 	assignInt(&dst.Workers, src.Workers)
 	assignDuration(&dst.Quantum, src.Quantum)
+	assignFloat(&dst.PauseThreshold, src.PauseThreshold)
+	assignFloat(&dst.ResumeThreshold, src.ResumeThreshold)
 }
 
 func mergeHTTPConfig(dst *httpConfig, src httpFileConfig) {
@@ -239,6 +249,8 @@ func applyEnvOverrides(cfg *runtimeConfig) {
 	cfg.Controller.RelaxedInterval = envDuration(envRelaxedInterval, cfg.Controller.RelaxedInterval)
 	cfg.Estimator.Interval = envDuration(envFastInterval, cfg.Estimator.Interval)
 	cfg.Pool.Workers = envInt(envPoolWorkers, cfg.Pool.Workers)
+	cfg.Pool.PauseThreshold = envFloat(envPoolPauseThreshold, cfg.Pool.PauseThreshold)
+	cfg.Pool.ResumeThreshold = envFloat(envPoolResumeThreshold, cfg.Pool.ResumeThreshold)
 	cfg.HTTP.Bind = envString(envHTTPBind, cfg.HTTP.Bind)
 	cfg.OCI.CompartmentID = envString(envCompartmentID, cfg.OCI.CompartmentID)
 	cfg.OCI.Region = envString(envOCIRegion, cfg.OCI.Region)

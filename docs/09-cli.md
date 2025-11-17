@@ -63,6 +63,8 @@ estimator:
 pool:
   workers: 2
   quantum: 1ms
+  pauseThreshold: 0.80
+  resumeThreshold: 0.68
 http:
   bind: ":9108"
 oci:
@@ -82,7 +84,7 @@ oci:
 - `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed four-hour interval when OCI P95 remains healthy. The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) decide when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools.
 - The loader now enforces the documented ratios and cadences: `targetMin` must remain below `targetMax`, every slow-loop target and goal must fall within that band, and the `interval`, `relaxedInterval`, `stepUp`, `stepDown`, `pool.quantum`, and `pool.workers` values must be positive. Invalid manifests abort startup with an exit status of `2` so operators can fix the config before the controller touches system state (§§3.1, 5.2).
 - Validation now enforces that every slow-loop target or goal remains below both suppression thresholds, so manifests that would immediately re-trigger the fast loop are rejected with an exit status of `2` and a descriptive error message (§§3.1, 5.2).
-- `estimator.interval` controls the fast `/proc/stat` sampler cadence (§5.2) while the worker `pool` exposes quantum sizing that stays within the 1–5 ms duty-cycle budget.
+- `estimator.interval` controls the fast `/proc/stat` sampler cadence (§5.2) while the worker `pool` exposes quantum sizing that stays within the 1–5 ms duty-cycle budget. `pool.pauseThreshold`/`pool.resumeThreshold` mirror the estimator hysteresis so the worker pool pauses entirely when host utilisation crosses the configured limit and only resumes once the load cools.
 - `http.bind` retains the Prometheus listener address and now backs the `/metrics` exporter described in §9.5, while `oci.compartmentId` supplies the tenancy scope required by the Monitoring client and `oci.region` pins the Monitoring endpoint region when IMDS access is unavailable (for example, CI smoke tests).
 - `oci.instanceId` is optional and lets operators bypass IMDS lookups when metadata access is blocked (for example, CI smoke tests or staging environments without instance principals). When `oci.offline` is set the CLI injects a static metrics client and fallback instance ID so dry-run/enforce can exercise the adaptive controller without IMDS or Monitoring access (§§5.2, 11).
 
@@ -104,6 +106,7 @@ The CLI honours the following environment variables, matching the naming in §5.
 | `SHAPER_FAST_INTERVAL` | Host CPU sampling cadence for the estimator. | `1s` |
 | `SHAPER_SUPPRESS_THRESHOLD` / `SHAPER_SUPPRESS_RESUME` | Fast-loop suppression thresholds that gate the zero-target mode. | `0.85` / `0.70` |
 | `SHAPER_WORKER_COUNT` | Number of duty-cycle workers (`>=1`). | `runtime.NumCPU()` |
+| `SHAPER_POOL_PAUSE_THRESHOLD` / `SHAPER_POOL_RESUME_THRESHOLD` | Host CPU hysteresis that pauses/resumes the worker pool when the estimator detects contention. | `0.85` / `0.70` |
 | `HTTP_ADDR` | Prometheus listener bind address. | `:9108` |
 | `OCI_COMPARTMENT_ID` | Tenancy scope for OCI Monitoring API calls. | *(required for enforce/dry-run unless offline mode is enabled)* |
 | `OCI_REGION` | Overrides the Monitoring region, avoiding live IMDS lookups when running in smoke-test environments. | *(empty)* |

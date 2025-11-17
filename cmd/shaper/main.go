@@ -676,6 +676,8 @@ func buildAdaptiveController(
 		return nil, nil, fmt.Errorf("build worker pool: %w", err)
 	}
 
+	pool.SetPauseThresholds(cfg.Pool.PauseThreshold, cfg.Pool.ResumeThreshold)
+
 	sampler := est.NewSampler(nil, cfg.Estimator.Interval)
 
 	controllerCfg := adapt.Config{
