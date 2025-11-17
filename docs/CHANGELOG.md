@@ -11,7 +11,10 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - `/healthz` status handler on the metrics listener that surfaces controller
   state plus the last OCI Monitoring and estimator errors as JSON; unit tests
   cover `pkg/http/status` and the offline CLI E2E now exercises the endpoint to
-  keep the ≥95% statement coverage floor intact (§§5, 9, 11).
+  keep the ≥95% statement coverage floor intact (§§5, 9, 11). The handler now
+  also reports the controller mode, and companion tests verify the `/metrics`
+  export plus HTTP bind failures so the Prometheus listener fails fast when the
+  port is unavailable (§§3.2, 4, 5, 9, 11).
 - `shaper --version`/`shaper version` commands that print the embedded build
   metadata without initialising configuration or logging, plus unit coverage to
   ensure the fast-exit path leaves existing logger wiring untouched (§§5, 9).

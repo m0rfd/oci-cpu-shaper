@@ -17,21 +17,22 @@ var (
 )
 
 type stubController struct {
+	mode   string
 	state  adapt.State
 	ociErr error
 	estErr error
 }
 
-func (s *stubController) State() adapt.State { return s.state }
-
-func (s *stubController) LastError() error { return s.ociErr }
-
+func (s *stubController) Mode() string              { return s.mode }
+func (s *stubController) State() adapt.State        { return s.state }
+func (s *stubController) LastError() error          { return s.ociErr }
 func (s *stubController) LastEstimatorError() error { return s.estErr }
 
 func TestHandlerReturnsSnapshot(t *testing.T) {
 	t.Parallel()
 
 	controller := &stubController{
+		mode:   "dry-run",
 		state:  adapt.StateFallback,
 		ociErr: errMetricsUnavailable,
 		estErr: errEstimatorStalled,
@@ -57,6 +58,10 @@ func TestHandlerReturnsSnapshot(t *testing.T) {
 	decodeErr := json.Unmarshal(recorder.Body.Bytes(), &snapshot)
 	if decodeErr != nil {
 		t.Fatalf("failed to decode response: %v", decodeErr)
+	}
+
+	if snapshot.Mode != "dry-run" {
+		t.Fatalf("expected mode dry-run, got %q", snapshot.Mode)
 	}
 
 	if snapshot.State != adapt.StateFallback.String() {
