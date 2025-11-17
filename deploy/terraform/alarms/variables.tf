@@ -62,7 +62,7 @@ variable "pending_duration" {
 variable "resolution" {
   description = "Monitoring resolution used by the alarm evaluation window."
   type        = string
-  default     = "1m"
+  default     = "1d"
 }
 
 variable "freeform_tags" {
