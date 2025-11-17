@@ -115,6 +115,9 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% 
   (§§3, 5).
 - Rootless Mode A manifests, runtime script, and docs now restore the `SHAPER_CPU_SHARES` default to `128`, reflecting that rootless
   Docker honours delegated cgroup v2 CPU weight overrides (§6).
+- Rootless Mode A Compose samples now include the plan-aligned `# cpus: ${SHAPER_CPUS:-0.30}` line plus matching environment
+  variable and documentation guidance so operators can uncomment the stanza, set `SHAPER_CPUS`, and confirm `docker compose config`
+  renders the expected quota before deployment (§§6, 12).
 - Refreshed `docs/00-overview.md` to document the current CLI flag surface, configuration layout, and navigation map, including forthcoming quick-start and CLI references (§§0, 5, 9).
 - Extended `docs/00-overview.md` with the plan-required threat model and non-goals sections and replaced the placeholder Quick Start note with a link to the published §10 onboarding guide so operators can navigate the consolidated deployment references (§§0, 10, 12).
 - Clarified the documentation roadmap to mark the published CLI/deployment guides and onboarding workflows as complete while calibrating remaining milestones for future adaptive-controller and release updates (§12).

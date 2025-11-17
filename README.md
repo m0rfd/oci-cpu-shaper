@@ -10,7 +10,12 @@ OCI CPU Shaper is an adaptive controller for shaping CPU utilization of workload
 - `configs/` – Example configuration files and templates, including `mode-a.yaml`
   and `mode-b.yaml` which ship the documented defaults referenced in
   [`docs/09-cli.md`](docs/09-cli.md).
-- `deploy/` – Deployment manifests and automation assets.
+- `deploy/` – Deployment manifests and automation assets. Compose bundles such as
+  `deploy/compose/mode-a.rootless.yaml` now expose the optional `SHAPER_CPUS`
+  knob documented in §6, so operators can uncomment the provided `cpus:` stanza,
+  set a fractional value in `deploy/compose/mode-a.env.example`, and run
+  `docker compose --file deploy/compose/mode-a.rootless.yaml config` to verify
+  the rendered CPU cap before deploying.
 - `docs/` – Living documentation; begin with [`00-overview.md`](docs/00-overview.md).
 
 ## Contribution Guidelines
