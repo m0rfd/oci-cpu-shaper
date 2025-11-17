@@ -1607,6 +1607,202 @@ func TestLogIMDSMetadataOfflineSkipsIMDS(t *testing.T) {
 	assertOfflineLog(t, observed, "ocid1.instance.oc1..offline")
 }
 
+func TestLogRuntimeConfig(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	cfg := runtimeConfig{
+		Controller: controllerConfig{ //nolint:exhaustruct
+			TargetMin:         0.21,
+			TargetMax:         0.39,
+			GoalLow:           0.23,
+			GoalHigh:          0.30,
+			Interval:          time.Minute,
+			RelaxedInterval:   6 * time.Hour,
+			SuppressThreshold: 0.85,
+			SuppressResume:    0.70,
+		},
+		Estimator: estimatorConfig{Interval: 2 * time.Second},
+		Pool:      poolConfig{Workers: 4, Quantum: 50 * time.Millisecond},
+		HTTP:      httpConfig{Bind: "127.0.0.1:9000"},
+		OCI:       ociConfig{Offline: true}, //nolint:exhaustruct
+	}
+
+	logRuntimeConfig(logger, cfg)
+
+	entry := requireSingleEntry(t, observed, zap.InfoLevel)
+	if entry.Message != "loaded runtime configuration" {
+		t.Fatalf("unexpected log message: %q", entry.Message)
+	}
+
+	if workers, ok := fieldInt(entry.Context, "workerCount"); !ok || workers != 4 {
+		t.Fatalf("expected workerCount 4, got %d (present=%v)", workers, ok)
+	}
+
+	if duration, ok := fieldDuration(entry.Context, "workerQuantum"); !ok ||
+		duration != 50*time.Millisecond {
+		t.Fatalf("expected worker quantum 50ms, got %v (present=%v)", duration, ok)
+	}
+
+	if offline, ok := fieldBool(entry.Context, "offline"); !ok || !offline {
+		t.Fatalf("expected offline flag true, got %v (present=%v)", offline, ok)
+	}
+
+	requireLogFieldFloat(t, entry, "controllerTargetMin", 0.21)
+	requireLogFieldFloat(t, entry, "controllerTargetMax", 0.39)
+	requireLogFieldFloat(t, entry, "controllerGoalLow", 0.23)
+	requireLogFieldFloat(t, entry, "controllerGoalHigh", 0.30)
+	requireLogFieldFloat(t, entry, "suppressThreshold", 0.85)
+	requireLogFieldFloat(t, entry, "suppressResume", 0.70)
+	requireLogFieldString(t, entry, "httpBind", "127.0.0.1:9000")
+}
+
+func TestLogMetadataResolutionOnline(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.DebugLevel)
+	logger := zap.New(core)
+
+	logMetadataResolution(
+		logger,
+		modeDryRun,
+		ociMetadata{CompartmentID: stubCompartmentID, Region: stubRegion},
+		false,
+	)
+
+	entry := requireSingleEntry(t, observed, zap.InfoLevel)
+	if entry.Message != "resolved runtime metadata" {
+		t.Fatalf("unexpected log message: %q", entry.Message)
+	}
+
+	requireLogFieldString(t, entry, "compartmentID", stubCompartmentID)
+	requireLogFieldString(t, entry, "region", stubRegion)
+
+	if offline, ok := fieldBool(entry.Context, "offline"); !ok || offline {
+		t.Fatalf("expected offline flag false, got %v (present=%v)", offline, ok)
+	}
+}
+
+func TestLogMetadataResolutionOffline(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.DebugLevel)
+	logger := zap.New(core)
+
+	logMetadataResolution(
+		logger,
+		modeEnforce,
+		ociMetadata{CompartmentID: stubCompartmentID}, //nolint:exhaustruct
+		true,
+	)
+
+	entry := requireSingleEntry(t, observed, zap.InfoLevel)
+	if entry.Message != "using offline metadata configuration" {
+		t.Fatalf("unexpected log message: %q", entry.Message)
+	}
+
+	requireLogFieldString(t, entry, "compartmentID", stubCompartmentID)
+
+	if offline, ok := fieldBool(entry.Context, "offline"); !ok || !offline {
+		t.Fatalf("expected offline flag true, got %v (present=%v)", offline, ok)
+	}
+}
+
+func TestLogMetadataResolutionWarnsWhenIncomplete(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.DebugLevel)
+	logger := zap.New(core)
+
+	var emptyMetadata ociMetadata
+	logMetadataResolution(logger, modeEnforce, emptyMetadata, false)
+
+	entry := requireSingleEntry(t, observed, zap.WarnLevel)
+	if entry.Message != "runtime metadata incomplete" {
+		t.Fatalf("unexpected log message: %q", entry.Message)
+	}
+
+	if offline, ok := fieldBool(entry.Context, "offline"); !ok || offline {
+		t.Fatalf("expected offline flag false, got %v (present=%v)", offline, ok)
+	}
+}
+
+func TestLogMetadataResolutionSkipsNoopMode(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.DebugLevel)
+	logger := zap.New(core)
+
+	var noopMetadata ociMetadata
+	logMetadataResolution(logger, modeNoop, noopMetadata, false)
+
+	entry := requireSingleEntry(t, observed, zap.DebugLevel)
+	if entry.Message != "metadata resolution skipped" {
+		t.Fatalf("unexpected log message: %q", entry.Message)
+	}
+
+	requireLogFieldString(t, entry, "mode", modeNoop)
+}
+
+func TestLogControllerInitialization(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	cfg := runtimeConfig{ //nolint:exhaustruct
+		Pool: poolConfig{Workers: 2, Quantum: 25 * time.Millisecond},
+		Estimator: estimatorConfig{
+			Interval: 750 * time.Millisecond,
+		},
+		OCI: ociConfig{CompartmentID: stubCompartmentID, Region: stubRegion}, //nolint:exhaustruct
+	}
+
+	ctrl := &stubController{mode: modeDryRun, state: adapt.StateFallback} //nolint:exhaustruct
+	exporter := metricshttp.NewExporter()
+
+	logControllerInitialization(logger, cfg, ctrl, exporter)
+
+	entry := requireSingleEntry(t, observed, zap.InfoLevel)
+	if entry.Message != "controller initialized" {
+		t.Fatalf("unexpected log message: %q", entry.Message)
+	}
+
+	requireLogFieldString(t, entry, "mode", modeDryRun)
+	requireLogFieldString(t, entry, "controllerState", adapt.StateFallback.String())
+	requireLogFieldString(t, entry, "compartmentID", stubCompartmentID)
+	requireLogFieldString(t, entry, "region", stubRegion)
+
+	if workers, ok := fieldInt(entry.Context, "workerCount"); !ok || workers != 2 {
+		t.Fatalf("expected worker count 2, got %d (present=%v)", workers, ok)
+	}
+
+	if metricsEnabled, ok := fieldBool(entry.Context, "metricsEnabled"); !ok || !metricsEnabled {
+		t.Fatalf("expected metricsEnabled true, got %v (present=%v)", metricsEnabled, ok)
+	}
+}
+
+func TestHandleControllerRunResultLogsCompletion(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	code := handleControllerRunResult(logger, nil)
+	if code != exitCodeSuccess {
+		t.Fatalf("expected success exit code, got %d", code)
+	}
+
+	entries := observed.FilterMessage("controller stopped").All()
+	if len(entries) != 1 {
+		t.Fatalf("expected controller stopped log entry, got %+v", observed.All())
+	}
+
+	requireLogFieldString(t, entries[0], "reason", "completed")
+}
+
 func TestResolveCompartmentAndRegionOfflineSkipsLookups(t *testing.T) {
 	t.Parallel()
 
@@ -2096,6 +2292,31 @@ func fieldFloat(fields []zap.Field, key string) float64 {
 	}
 
 	return 0
+}
+
+func fieldInt(fields []zap.Field, key string) (int64, bool) {
+	for _, field := range fields {
+		if field.Key != key {
+			continue
+		}
+
+		switch field.Type { //nolint:exhaustive // only integer field types are relevant
+		case zapcore.Int8Type,
+			zapcore.Int16Type,
+			zapcore.Int32Type,
+			zapcore.Int64Type:
+			return field.Integer, true
+		case zapcore.Uint8Type,
+			zapcore.Uint16Type,
+			zapcore.Uint32Type,
+			zapcore.Uint64Type:
+			return field.Integer, true
+		default:
+			return 0, false
+		}
+	}
+
+	return 0, false
 }
 
 func requireLogFieldString(t *testing.T, entry observer.LoggedEntry, key, want string) {
