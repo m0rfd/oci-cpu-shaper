@@ -38,6 +38,8 @@ var (
 	errStubQueryFailure  = errors.New("stub: query failure")
 	errFailingWriter     = errors.New("failing writer: write failed")
 	errMetricsServerBoom = errors.New("metrics server start failure")
+	errCgroupWeightBoom  = errors.New("read cpu.weight: boom")
+	errCgroupMaxBoom     = errors.New("read cpu.max: boom")
 )
 
 const (
@@ -3836,5 +3838,122 @@ func TestDetectAndReportCgroupHandlesErrors(t *testing.T) {
 	if len(warnEntries) == 0 {
 		logs := observed.All()
 		t.Fatalf("expected warning log, got %#v", logs)
+	}
+}
+
+func TestLogCgroupInfoSkipsWithoutLoggerOrInfo(t *testing.T) {
+	t.Parallel()
+
+	info := &cgroup.CPU{
+		Path:   "/slice",
+		Weight: cgroup.Weight{Path: "", Value: 0, Available: false, Err: nil},
+		Max: cgroup.Max{
+			Path:      "",
+			Quota:     0,
+			Period:    0,
+			Unlimited: false,
+			Available: false,
+			Err:       nil,
+		},
+	}
+
+	// nil logger should be tolerated so metrics-only deployments can reuse the helper.
+	logCgroupInfo(nil, info)
+
+	core, observed := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	// nil info indicates detection failed; no log entries should be emitted.
+	logCgroupInfo(logger, nil)
+
+	if count := len(observed.All()); count != 0 {
+		t.Fatalf("expected no logs when info is nil, got %d entries", count)
+	}
+
+	logCgroupInfo(logger, info)
+
+	if entries := observed.FilterMessage("detected cgroup cpu settings").All(); len(entries) != 1 {
+		logs := observed.All()
+		t.Fatalf("expected log after info supplied, got %#v", logs)
+	}
+}
+
+func TestCgroupWeightFieldsHandlesErrorAndUnavailable(t *testing.T) {
+	t.Parallel()
+
+	fields := cgroupWeightFields(
+		nil,
+		cgroup.Weight{Path: "", Value: 0, Available: false, Err: errCgroupWeightBoom},
+	)
+	if len(fields) != 1 {
+		t.Fatalf("expected single error field, got %d", len(fields))
+	}
+
+	field := fields[0]
+	if field.Key != "cpuWeightError" || field.Type != zapcore.StringType {
+		t.Fatalf("unexpected error field: %#v", field)
+	}
+
+	if field.String != errCgroupWeightBoom.Error() {
+		t.Fatalf(
+			"expected error field to capture %q, got %q",
+			errCgroupWeightBoom.Error(),
+			field.String,
+		)
+	}
+
+	unavailable := cgroupWeightFields(
+		nil,
+		cgroup.Weight{Path: "", Value: 0, Available: false, Err: nil},
+	)
+	if len(unavailable) != 1 {
+		t.Fatalf("expected unavailable status, got %d fields", len(unavailable))
+	}
+
+	status := unavailable[0]
+	if status.Key != "cpuWeightStatus" || status.String != "unavailable" {
+		t.Fatalf("unexpected status field: %#v", status)
+	}
+}
+
+func TestCgroupMaxFieldsHandlesErrorAndUnavailable(t *testing.T) {
+	t.Parallel()
+
+	fields := cgroupMaxFields(
+		cgroup.Max{
+			Path:      "",
+			Quota:     0,
+			Period:    0,
+			Unlimited: false,
+			Available: false,
+			Err:       errCgroupMaxBoom,
+		},
+	)
+	if len(fields) != 1 {
+		t.Fatalf("expected single error field, got %d", len(fields))
+	}
+
+	field := fields[0]
+	if field.Key != "cpuMaxError" || field.String != errCgroupMaxBoom.Error() {
+		t.Fatalf("unexpected error field: %#v", field)
+	}
+
+	unavailable := cgroupMaxFields(
+		cgroup.Max{
+			Path:      "",
+			Quota:     0,
+			Period:    0,
+			Unlimited: false,
+			Available: false,
+			Err:       nil,
+		},
+	)
+	if len(unavailable) != 1 {
+		t.Fatalf("expected unavailable field, got %d", len(unavailable))
+	}
+
+	status := unavailable[0]
+	if status.Key != "cpuMaxStatus" || status.String != "unavailable" {
+		t.Fatalf("unexpected status field: %#v", status)
 	}
 }

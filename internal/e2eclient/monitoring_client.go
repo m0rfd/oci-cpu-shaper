@@ -36,7 +36,7 @@ type monitoringPayload struct {
 // NewMonitoringClient constructs an oci.MetricsClient backed by HTTP endpoints exposed
 // by the e2e monitoring server helpers.
 //
-//nolint:ireturn // e2e helper returns the MetricsClient interface for tests.
+//nolint:ireturn // tests rely on the oci.MetricsClient interface seam
 func NewMonitoringClient(
 	endpoint string,
 ) (oci.MetricsClient, error) {
