@@ -20,7 +20,7 @@ type loggingRecorder struct {
 // NewLoggingRecorder decorates the provided MetricsRecorder so e2e tests can observe
 // controller state transitions via structured logs.
 //
-//nolint:ireturn // helper intentionally returns interface for flexible wiring in tests
+//nolint:ireturn // helper exposes interface so tests can wrap any recorder implementation.
 func NewLoggingRecorder(
 	logger *zap.Logger,
 	delegate adapt.MetricsRecorder,
