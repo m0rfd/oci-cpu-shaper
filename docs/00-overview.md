@@ -3,9 +3,11 @@
 The OCI CPU Shaper project provides tools for shaping and orchestrating CPU resource usage across Oracle Cloud Infrastructure workloads. The overarching goal is to offer adaptive scheduling, telemetry integration, and policy-driven controls that help teams right-size compute consumption while maintaining service quality.
 
 This overview summarizes the high-level vision and map to the supporting documentation set:
-Operators looking for the fastest onboarding path should start with the [Quick Start](./10-quick-start.md), which condenses the plan-mandated console tasks before diving into the deeper references below.
+Operators looking for the fastest onboarding path should start with the [§10 Quick Start Onboarding guide](./10-quick-start.md), which condenses the plan-mandated console tasks before diving into the deeper references below.
 
-- **Quick-start (forthcoming)** – Step-by-step bootstrap covering container images, Compose/Quadlet manifests, and smoke tests. This guide will land alongside the release noted in `docs/CHANGELOG.md`.
+- **Threat Model** – Baseline trust boundaries, IAM scope, and exposed surfaces. See [§1 Threat Model](#%C2%A71-threat-model).
+- **Non-goals** – Out-of-scope behaviors so operators can quickly identify unsupported asks. See [§2 Non-goals](#%C2%A72-non-goals).
+- **Quick Start (§10)** – Five required deployment moves, from Monitoring enablement through alarm wiring. See [§10 Quick Start Onboarding](./10-quick-start.md).
 - **IAM and Policies** – Configure dynamic groups and Monitoring permissions so instance principals can query tenancy metrics. See [`01-oci-policy.md`](./01-oci-policy.md).
 - **IMDS Integration** – Understand metadata resolution, retry policies, and offline fallbacks. See [`02-imds-v2.md`](./02-imds-v2.md).
 - **Always Free Guardrails** – Track Oracle’s reclaim thresholds and remediation playbooks. See [`03-free-tier-reclaim.md`](./03-free-tier-reclaim.md).
@@ -14,6 +16,24 @@ Operators looking for the fastest onboarding path should start with the [Quick S
 - **Deployment Patterns** – Compose, Quadlet, and Terraform references that ship Mode A/Mode B defaults. See [`06-komodo-compose.md`](./06-komodo-compose.md).
 - **Contributor Reference** – Tooling workflows, coverage expectations, and CI guardrails for extending `cmd/`, `pkg/`, and `internal/`. See [`08-development.md`](./08-development.md) and [`14-ci-pr-workflow-review.md`](./14-ci-pr-workflow-review.md).
 - **CLI Reference** – Detailed flag descriptions, configuration layering, and diagnostics. See [`09-cli.md`](./09-cli.md).
+
+## §1 Threat Model
+
+The controller operates with the minimal privileges outlined in the implementation plan and only exposes the surfaces documented elsewhere in `docs/`. Threat considerations include:
+
+- **Instance principal scope** – IAM access is constrained to the `read metrics` permission described in [`01-oci-policy.md`](./01-oci-policy.md). No tenancy writes or network control APIs are invoked, so a compromised shaper can only read historical Monitoring data.
+- **Metadata handling** – IMDSv2 is the sole source of instance identifiers, compartment OCIDs, and region hints. Requests are bound to the local link endpoint, require short-lived session tokens, and never persist the bearer secrets to disk, limiting exposure to host-local actors.
+- **Controller surfaces** – The binary runs rootless by default (Mode A) with an optional rootful Mode B that only adds `CAP_SYS_NICE` for `SCHED_IDLE`. No other Linux capabilities are requested, and the Prometheus `/metrics` plus `/healthz` handlers are read-only to keep the HTTP listener from becoming a mutation vector.
+- **Offline fallback** – When `oci.offline` is set or Monitoring queries fail, the controller swaps in a static estimator without pulling extra credentials, preserving the same IAM blast radius while still meeting the Always Free duty-cycle goals documented in §§3 and 5.
+
+## §2 Non-goals
+
+To keep the threat model tractable and the operational scope focused, the following behaviors remain explicitly out of scope:
+
+- **Acting as an access-control boundary** – The shaper assumes the host administrator controls the container runtime. If an attacker gains root on the host, they can tamper with cgroup weights or the binary regardless of the shaper’s own posture.
+- **Managing OCI resources** – The project will not auto-provision Dynamic Groups, policies, alarms, or metrics plugins. Operators must follow §§1, 5, 7, and 10 to configure those prerequisites using the console, Terraform, or CLI workflows outside of the shaper’s runtime.
+- **Serving as a general-purpose load generator** – Worker pools are tuned solely to maintain the 7-day P95 guardrail. Scenarios such as stress testing, benchmarking, or non-OCI deployments require bespoke tooling.
+- **Broad telemetry ingestion** – Beyond IMDSv2, `/proc/stat`, and OCI Monitoring, no additional metadata, tracing, or logging integrations are in scope. This avoids importing secrets or tokens from other services that could complicate the threat model.
 
 ## §5 Configuration and CLI Surfaces
 
@@ -34,6 +54,6 @@ Configuration manifests keep policy inputs and infrastructure wiring distinct. T
 - `http.*` – Prometheus exporter bind address surfaced at `/metrics`.
 - `oci.*` – Compartment OCID, region, optional instance OCID override, and offline toggle used to wire Monitoring clients or static fallbacks.
 
-Environment variables override the YAML manifest so operators can ship the published `configs/mode-a.yaml` and `configs/mode-b.yaml` defaults and apply targeted adjustments for experiments or incident response. The complete CLI and configuration reference lives in [`09-cli.md`](./09-cli.md) and will cross-link to the forthcoming quick-start once it is published.
+Environment variables override the YAML manifest so operators can ship the published `configs/mode-a.yaml` and `configs/mode-b.yaml` defaults and apply targeted adjustments for experiments or incident response. The complete CLI and configuration reference lives in [`09-cli.md`](./09-cli.md) and links directly to the §10 Quick Start onboarding steps for deployment context.
 
 Additional documents will be added to detail interfaces, deployment flows, and best practices as the project evolves. For local development environment setup and contributor tooling expectations, see [`08-development.md`](./08-development.md).
