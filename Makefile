@@ -42,7 +42,7 @@ ACTIONLINT ?= $(ACTIONLINT_BIN)
 ACTIONLINT_FLAGS ?=
 ACTIONLINT_PATHS ?=
 
-.PHONY: fmt lint test build check tools ensure-golangci-lint ensure-gofumpt ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows
+.PHONY: fmt lint test build check tools ensure-golangci-lint ensure-gofumpt ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench
 
 tools: ensure-golangci-lint ensure-gofumpt ensure-actionlint
 
@@ -181,6 +181,10 @@ actionlint: ensure-actionlint
 	fi
 
 lint-workflows: actionlint
+
+bench:
+	@set -euo pipefail; \
+	./hack/check_benchmarks.sh
 
 build:
 	$(GO) build ./...

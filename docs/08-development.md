@@ -22,6 +22,7 @@ The repository includes a `Makefile` that wraps the most common development task
 | `make test` | Execute `go test -race ./...` across every package. |
 | `make check` | Run linting and race-enabled tests in one step. |
 | `make coverage` | Generate a race-enabled coverage profile for production packages, save `coverage.out`/`coverage.txt`, and print the total percentage (CI enforces ≥95%). |
+| `make bench` | Run `hack/check_benchmarks.sh`, which executes `go test -bench BenchmarkPoolDutyCycle ./pkg/shape`, captures the output under `artifacts/benchmarks/`, and fails when CPU duty-cycle drift, per-tick fairness, or scheduler variance exceed the §10 limits described below. |
 | `make integration` | Ensure Docker is reachable, validate cgroup v2, and run the CPU weight responsiveness suite while teeing logs to `artifacts/integration.log` for post-run inspection (§§6, 11). |
 | `make e2e` | Build the CLI with the `e2e` tag and exercise the IMDS/Monitoring emulation suite described in §11.3 so offline/online flows and metrics wiring stay covered. |
 | `make govulncheck` | Scan the module and all packages with `golang.org/x/vuln/cmd/govulncheck@v1.1.4`, failing on known Go vulnerabilities before changes ship (§14). |
@@ -30,6 +31,11 @@ The repository includes a `Makefile` that wraps the most common development task
 ## Local caches
 
 The Makefile defines `GOCACHE_DIR` (`.cache/go`) and `GOLANGCI_LINT_CACHE_DIR` (`.cache/golangci`) relative to the repository root and injects them into the `make test` and `make lint` targets. These locally scoped caches keep Go build artifacts and linter facts inside the workspace so commands do not hit the runner’s global `~/.cache` tree, which may be read-only in restricted sandboxes. `.gitignore` excludes the `.cache/` directory, so the caches survive between runs without leaking into commits. You can run `go env -u GOCACHE` if you temporarily need to fall back to the default global cache.
+
+### §11.5 Duty-Cycle Benchmarks
+
+- `pkg/shape` now exposes `BenchmarkPoolDutyCycle`, which drives deterministic worker quanta across a range of duty-cycle targets and quantums, recording CPU usage, average drift per tick, and scheduler fairness. Run the suite locally with `GOCACHE=.cache/go go test -run '^$' -bench BenchmarkPoolDutyCycle ./pkg/shape` when you need raw benchmark output for exploratory tuning.
+- Prefer `make bench` for CI-quality verification: it shells out to `hack/check_benchmarks.sh`, executes the benchmark suite, persists the log to `artifacts/benchmarks/pool-bench.txt`, and enforces the §10 duty-cycle budgets by failing when CPU usage drifts more than five percentage points from the configured target, when per-tick drift exceeds 15 percent of the quantum, or when tick variance rises above 0.01. These guards help flag regressions before cgroup-facing changes land in CI (§§5, 10, 11), and the CI workflow now runs the same target on every pull request so regressions surface automatically.
 
 ### §14 Lint Auto-Fix Workflow
 
