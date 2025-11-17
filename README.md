@@ -31,4 +31,22 @@ Contributions are welcome! Please:
 
 See [`docs/08-development.md`](docs/08-development.md) for detailed local development setup guidance.
 
+## Validating Mode B SCHED_IDLE support
+
+Mode B deployments rely on the `SYS_NICE` capability to enter Linux `SCHED_IDLE`
+when the worker pool starts. Operators can validate a host before rolling out a
+rootful deployment by running the integration suite and inspecting the logs for
+the `worker failed to enter sched_idle` warning:
+
+```
+make integration INTEGRATION_KEEP_LOGS=1
+```
+
+The new `TestSchedIdleWarningTracksSysNiceCapability` case builds the binary
+with `-tags rootful`, launches a distroless Mode B container twice, and toggles
+the capability so the warning only appears when `SYS_NICE` is intentionally
+missing. The container logs are mirrored to `artifacts/integration.log` whenever
+`INTEGRATION_KEEP_LOGS=1`, giving operators a quick signal that the host kernel
+honours the `SCHED_IDLE` downgrade before promoting the change to production.
+
 Refer to the documentation in the `docs/` directory for deeper architectural and operational context as it becomes available.
