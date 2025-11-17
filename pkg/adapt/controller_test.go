@@ -80,12 +80,13 @@ func (f *fakeMetrics) QueryP95CPU(ctx context.Context, _ string) (float64, error
 }
 
 type fakeShaper struct {
-	target float64
-	calls  []float64
+	target    float64
+	calls     []float64
+	hostLoads []float64
 }
 
 func newFakeShaper() *fakeShaper {
-	return &fakeShaper{target: 0, calls: make([]float64, 0)}
+	return &fakeShaper{target: 0, calls: make([]float64, 0), hostLoads: make([]float64, 0)}
 }
 
 func (f *fakeShaper) SetTarget(v float64) {
@@ -94,6 +95,10 @@ func (f *fakeShaper) SetTarget(v float64) {
 }
 
 func (f *fakeShaper) Target() float64 { return f.target }
+
+func (f *fakeShaper) ObserveHostLoad(util float64) {
+	f.hostLoads = append(f.hostLoads, util)
+}
 
 func TestControllerStateTransitions(t *testing.T) {
 	t.Parallel()
@@ -325,6 +330,10 @@ func TestConsumeEstimatorSuppression(t *testing.T) {
 			"expected shaper to be called for suppression transitions, got %d calls",
 			len(shaper.calls),
 		)
+	}
+
+	if len(shaper.hostLoads) == 0 {
+		t.Fatal("expected shaper to observe host load samples")
 	}
 }
 

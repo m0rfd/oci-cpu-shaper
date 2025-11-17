@@ -1625,9 +1625,14 @@ func TestLogRuntimeConfig(t *testing.T) {
 			SuppressResume:    0.70,
 		},
 		Estimator: estimatorConfig{Interval: 2 * time.Second},
-		Pool:      poolConfig{Workers: 4, Quantum: 50 * time.Millisecond},
-		HTTP:      httpConfig{Bind: "127.0.0.1:9000"},
-		OCI:       ociConfig{Offline: true}, //nolint:exhaustruct
+		Pool: poolConfig{
+			Workers:         4,
+			Quantum:         50 * time.Millisecond,
+			PauseThreshold:  0.85,
+			ResumeThreshold: 0.70,
+		},
+		HTTP: httpConfig{Bind: "127.0.0.1:9000"},
+		OCI:  ociConfig{Offline: true}, //nolint:exhaustruct
 	}
 
 	logRuntimeConfig(logger, cfg)
@@ -1753,7 +1758,12 @@ func TestLogControllerInitialization(t *testing.T) {
 	logger := zap.New(core)
 
 	cfg := runtimeConfig{ //nolint:exhaustruct
-		Pool: poolConfig{Workers: 2, Quantum: 25 * time.Millisecond},
+		Pool: poolConfig{
+			Workers:         2,
+			Quantum:         25 * time.Millisecond,
+			PauseThreshold:  0.85,
+			ResumeThreshold: 0.70,
+		},
 		Estimator: estimatorConfig{
 			Interval: 750 * time.Millisecond,
 		},

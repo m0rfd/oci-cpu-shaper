@@ -4,6 +4,12 @@
 
 ### Added
 _Note coverage-impacting additions: mention new test suites or tooling that shift the CI ≥95% statement coverage budget (§11)._
+- Configurable host-load pause/resume thresholds for the worker pool plus CLI YAML and
+  environment knobs so estimator observations suspend the pool until the host cools.
+  `pkg/shape` now exposes pause state helpers/tests, the controller forwards host CPU
+  readings to the pool, and docs (§§3.1, 9) describe the new configuration and
+  behaviour. Updated tests cover pause transitions to keep the ≥95% coverage floor (§§3,
+  5, 9, 11).
 - Grafana dashboard export (`deploy/grafana/oci-cpu-shaper-dashboard.json`) covering OCI
   P95, controller target/state, and host CPU overlays, plus §5.4 import instructions so
   operators can wire the Prometheus feed into Grafana without rebuilding the charts (§§3,

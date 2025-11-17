@@ -8,6 +8,8 @@ estimator:
 pool:
   workers: 1
   quantum: 10ms
+  pauseThreshold: 0.85
+  resumeThreshold: 0.70
 oci:
   compartmentId: ""
   instanceId: "ocid1.instance.oc1..offline-smoke"

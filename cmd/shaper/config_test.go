@@ -59,6 +59,18 @@ func TestLoadConfigDefaultsWhenFileMissing(t *testing.T) {
 		cfg.Controller.SuppressResume,
 		adaptDefault().SuppressResume,
 	)
+	assertFloatEqual(
+		t,
+		"poolPauseThreshold",
+		cfg.Pool.PauseThreshold,
+		adaptDefault().SuppressThreshold,
+	)
+	assertFloatEqual(
+		t,
+		"poolResumeThreshold",
+		cfg.Pool.ResumeThreshold,
+		adaptDefault().SuppressResume,
+	)
 }
 
 func TestLoadConfigSamplesMatchDefaults(t *testing.T) {
@@ -99,6 +111,18 @@ func TestLoadConfigSamplesMatchDefaults(t *testing.T) {
 			)
 			assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9108")
 			assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, time.Second)
+			assertFloatEqual(
+				t,
+				"poolPauseThreshold",
+				cfg.Pool.PauseThreshold,
+				defaults.SuppressThreshold,
+			)
+			assertFloatEqual(
+				t,
+				"poolResumeThreshold",
+				cfg.Pool.ResumeThreshold,
+				defaults.SuppressResume,
+			)
 		})
 	}
 }
@@ -146,6 +170,8 @@ func TestLoadConfigAppliesFileOverrides(t *testing.T) {
 
 	assertFloatEqual(t, "suppressThreshold", cfg.Controller.SuppressThreshold, 0.9)
 	assertFloatEqual(t, "suppressResume", cfg.Controller.SuppressResume, 0.6)
+	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, 0.88)
+	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, 0.44)
 }
 
 func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
@@ -156,6 +182,8 @@ func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
 	t.Setenv(envRelaxedInterval, "12h")
 	t.Setenv(envFastInterval, "250ms")
 	t.Setenv(envPoolWorkers, "4")
+	t.Setenv(envPoolPauseThreshold, "0.81")
+	t.Setenv(envPoolResumeThreshold, "0.49")
 	t.Setenv(envHTTPBind, " :9300 ")
 	t.Setenv(envCompartmentID, " "+testCompartmentOverride+" ")
 	t.Setenv(envInstanceID, " ocid1.instance.oc1..override ")
@@ -176,6 +204,8 @@ func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
 	assertDurationEqual(t, "relaxedInterval", cfg.Controller.RelaxedInterval, 12*time.Hour)
 	assertFloatEqual(t, "suppressThreshold", cfg.Controller.SuppressThreshold, 0.88)
 	assertFloatEqual(t, "suppressResume", cfg.Controller.SuppressResume, 0.51)
+	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, 0.81)
+	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, 0.49)
 	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, 250*time.Millisecond)
 	assertIntEqual(t, "workers", cfg.Pool.Workers, 4)
 	assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9300")

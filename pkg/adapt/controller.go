@@ -52,6 +52,7 @@ type Controller interface {
 type DutyCycler interface {
 	SetTarget(target float64)
 	Target() float64
+	ObserveHostLoad(utilisation float64)
 }
 
 // MetricsRecorder captures controller observability signals.
@@ -313,13 +314,17 @@ func (c *AdaptiveController) handleObservation(observation est.Observation) {
 
 	c.lastEstErr = nil
 
-	if c.cfg.SuppressThreshold <= 0 {
-		return
-	}
-
 	utilisation := clamp(observation.Utilisation, 0, 1)
 	if c.recorder != nil {
 		c.recorder.ObserveHostCPU(utilisation)
+	}
+
+	if c.shaper != nil {
+		c.shaper.ObserveHostLoad(utilisation)
+	}
+
+	if c.cfg.SuppressThreshold <= 0 {
+		return
 	}
 
 	c.updateHostLoadLocked(utilisation)
