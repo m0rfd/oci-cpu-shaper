@@ -139,16 +139,35 @@ func configureMetrics(
 	pool poolStarter,
 	controller adapt.Controller,
 ) error {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	if exporter == nil {
+		logger.Info("metrics exporter disabled", zap.String("reason", "no exporter configured"))
+
 		return nil
 	}
 
 	if pool != nil {
-		exporter.SetWorkerCount(pool.Workers())
-		exporter.SetDutyCycle(pool.Quantum())
+		workers := pool.Workers()
+		exporter.SetWorkerCount(workers)
+
+		quantum := pool.Quantum()
+		exporter.SetDutyCycle(quantum)
+
+		logger.Debug(
+			"registered worker pool metrics",
+			zap.Int("workerCount", workers),
+			zap.Duration("dutyCycle", quantum),
+		)
+	} else {
+		logger.Debug("worker pool metrics unavailable", zap.String("reason", "pool not configured"))
 	}
 
 	if deps.startMetricsServer == nil {
+		logger.Info("metrics server disabled", zap.String("reason", "start function missing"))
+
 		return nil
 	}
 
@@ -159,7 +178,16 @@ func configureMetrics(
 		mux.Handle("/healthz", statushttp.NewHandler(controller))
 	}
 
-	return deps.startMetricsServer(ctx, logger, cfg.HTTP.Bind, mux)
+	bindAddr := strings.TrimSpace(cfg.HTTP.Bind)
+	if bindAddr == "" {
+		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
+
+		return nil
+	}
+
+	logger.Info("starting metrics server", zap.String("bind", bindAddr))
+
+	return deps.startMetricsServer(ctx, logger, bindAddr, mux)
 }
 
 // run orchestrates CLI initialization before handing execution to the controller.
@@ -252,6 +280,12 @@ func run(
 
 			logger.Warn("worker failed to enter sched_idle", zap.Error(err))
 		})
+
+		logger.Info(
+			"starting worker pool",
+			zap.Int("workers", pool.Workers()),
+			zap.Duration("quantum", pool.Quantum()),
+		)
 
 		pool.Start(ctx)
 	}
@@ -783,16 +817,25 @@ func startMetricsServer(
 	handler http.Handler,
 ) error {
 	trimmed := strings.TrimSpace(addr)
-	if trimmed == "" || handler == nil {
+
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	if trimmed == "" {
+		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
+
+		return nil
+	}
+
+	if handler == nil {
+		logger.Warn("metrics server disabled", zap.String("reason", "handler missing"))
+
 		return nil
 	}
 
 	if ctx == nil {
 		return errMetricsContextRequired
-	}
-
-	if logger == nil {
-		logger = zap.NewNop()
 	}
 
 	var listenCfg net.ListenConfig
@@ -808,6 +851,19 @@ func startMetricsServer(
 	server.Addr = trimmed
 	server.Handler = handler
 
+	logger.Info("metrics server listening", zap.String("bind", trimmed))
+
+	serveMetrics(ctx, logger, server, listener)
+
+	return nil
+}
+
+func serveMetrics(
+	ctx context.Context,
+	logger *zap.Logger,
+	server *http.Server,
+	listener net.Listener,
+) {
 	go func() {
 		<-ctx.Done()
 
@@ -826,8 +882,6 @@ func startMetricsServer(
 			logger.Warn("metrics server serve", zap.Error(err))
 		}
 	}()
-
-	return nil
 }
 
 type p95CPUQuerier interface {
@@ -891,7 +945,7 @@ func logIMDSMetadata(
 			fields = append(fields, zap.String("instanceID", trimmedOverride))
 		}
 
-		logger.Debug("initialized subsystems", fields...)
+		logger.Info("initialized subsystems", fields...)
 
 		return
 	}
@@ -906,7 +960,7 @@ func logIMDSMetadata(
 		trimmedRegion,
 	)
 
-	logger.Debug("initialized subsystems", fields...)
+	logger.Info("initialized subsystems", fields...)
 }
 
 func queryTextMetadata(

@@ -1484,7 +1484,7 @@ func TestLogIMDSMetadataEmitsDetails(t *testing.T) {
 
 	logIMDSMetadata(context.Background(), logger, client, ctrl, "", "", "", false)
 
-	entry := requireSingleDebugEntry(t, observed)
+	entry := requireSingleEntry(t, observed, zapcore.InfoLevel)
 	requireLogFieldString(t, entry, "controllerMode", modeDryRun)
 	requireLogFieldString(t, entry, "controllerState", adapt.StateSuppressed.String())
 	requireLogFieldString(t, entry, "region", stubRegion)
@@ -1562,7 +1562,7 @@ func TestLogIMDSMetadataUsesOverrideInstanceID(t *testing.T) {
 
 	requireOverrideIMDSLookups(t, client)
 
-	entry := requireSingleDebugEntry(t, observed)
+	entry := requireSingleEntry(t, observed, zapcore.InfoLevel)
 	requireLogFieldString(t, entry, "controllerState", adapt.StateNormal.String())
 	requireLogFieldString(t, entry, "instanceID", "ocid1.instance.oc1..override")
 	requireLogFieldString(t, entry, "canonicalRegion", overrideRegion)
@@ -2114,12 +2114,16 @@ func requireLogFieldFloat(t *testing.T, entry observer.LoggedEntry, key string, 
 	}
 }
 
-func requireSingleDebugEntry(t *testing.T, observed *observer.ObservedLogs) observer.LoggedEntry {
+func requireSingleEntry(
+	t *testing.T,
+	observed *observer.ObservedLogs,
+	level zapcore.Level,
+) observer.LoggedEntry {
 	t.Helper()
 
-	entries := observed.FilterLevelExact(zapcore.DebugLevel).All()
+	entries := observed.FilterLevelExact(level).All()
 	if len(entries) == 0 {
-		t.Fatalf("expected debug log entry, got %+v", observed.All())
+		t.Fatalf("expected %s log entry, got %+v", level, observed.All())
 	}
 
 	return entries[0]
@@ -2446,9 +2450,9 @@ func assertOfflineLog(t *testing.T, observed *observer.ObservedLogs, expectedID 
 		t.Fatalf("expected no warnings, got %d", len(warns))
 	}
 
-	entries := observed.FilterLevelExact(zapcore.DebugLevel).All()
+	entries := observed.FilterLevelExact(zapcore.InfoLevel).All()
 	if len(entries) != 1 {
-		t.Fatalf("expected single debug entry, got %d", len(entries))
+		t.Fatalf("expected single info entry, got %d", len(entries))
 	}
 
 	entry := entries[0]
