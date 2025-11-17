@@ -205,6 +205,8 @@ The response mirrors this structure:
 
 When errors are present the strings are populated with the underlying error
 messages; otherwise they remain empty. Unit coverage in `pkg/http/status`
-verifies the handler’s JSON output while the existing offline end-to-end run
-now asserts that `/healthz` reflects the injected Monitoring and estimator
-errors, keeping the ≥95% coverage target documented in §11 intact.
+verifies the handler’s JSON output while the end-to-end harness starts the CLI,
+injects a Monitoring outage, and polls `/healthz` until it reports the
+`fallback` state with the recorded error string. This keeps the ≥95% coverage
+target documented in §11 intact and proves that health probes surface Monitoring
+failures without crashing the process.

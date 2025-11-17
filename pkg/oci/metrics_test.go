@@ -29,6 +29,7 @@ var (
 	providerOverrideSeq   uint64               //nolint:gochecknoglobals
 	monitoringOverrides   []monitoringOverride //nolint:gochecknoglobals
 	monitoringOverrideSeq uint64               //nolint:gochecknoglobals
+	overrideSerialMu      sync.Mutex           //nolint:gochecknoglobals
 )
 
 type httpVerifyingClient struct {
@@ -465,6 +466,9 @@ func TestNewClientValidatesParameters(t *testing.T) {
 func TestNewInstancePrincipalClientPropagatesProviderError(t *testing.T) {
 	t.Parallel()
 
+	overrideSerialMu.Lock()
+	defer overrideSerialMu.Unlock()
+
 	overrideInstancePrincipalProvider(t, func() (common.ConfigurationProvider, error) {
 		return nil, errForcedFailure
 	})
@@ -477,6 +481,9 @@ func TestNewInstancePrincipalClientPropagatesProviderError(t *testing.T) {
 
 func TestNewInstancePrincipalClientPropagatesClientError(t *testing.T) {
 	t.Parallel()
+
+	overrideSerialMu.Lock()
+	defer overrideSerialMu.Unlock()
 
 	provider := stubConfigurationProvider(t)
 
@@ -501,6 +508,9 @@ func TestNewInstancePrincipalClientPropagatesClientError(t *testing.T) {
 
 func TestNewInstancePrincipalClientSuccess(t *testing.T) {
 	t.Parallel()
+
+	overrideSerialMu.Lock()
+	defer overrideSerialMu.Unlock()
 
 	provider := stubConfigurationProvider(t)
 
