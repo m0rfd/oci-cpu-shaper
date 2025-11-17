@@ -146,6 +146,8 @@ are silently ignored when the capability is intentionally withheld.
 
 `cmd/shaper` instantiates the lightweight OpenMetrics exporter from `pkg/http/metrics` and serves it at `/metrics` using the `http.bind` configuration (or `HTTP_ADDR` environment override). The listener defaults to `:9108`, matching the Compose port mapping in §6 and the container `EXPOSE 9108` declaration. Production Prometheus servers can scrape the endpoint directly when the rootful stack runs in host-network mode, while rootless deployments forward `${SHAPER_METRICS_BIND:-127.0.0.1:9108}:9108` from the host loopback to the container port.
 
+Binding failures now abort startup: when the requested `http.bind` address is already in use the CLI logs `failed to start metrics server`, exits with a runtime error, and leaves the controller uninitialised so systemd or Kubernetes can retry immediately. Unit coverage in §11 confirms both the fast-fail path and the `/metrics` content-type expectations.
+
 ### Emitted series
 
 | Metric | Type | Description |
@@ -194,16 +196,17 @@ Offline mode continues to populate each series so smoke tests and container heal
 ## 9.6 Health Checks
 
 `cmd/shaper` now serves a lightweight JSON status document at `/healthz` on the
-same listener as `/metrics`. The handler reports the controller state machine
-(`"normal"`, `"fallback"`, or `"suppressed"`) alongside the last OCI metrics error
-and most recent estimator error snapshot. Container orchestrators can poll the
-endpoint to surface degraded Monitoring connectivity or estimator stalls while
-the process continues to run.
+same listener as `/metrics`. The handler reports the controller mode (`"noop"`,
+`"dry-run"`, or `"enforce"`), the state machine (`"normal"`, `"fallback"`, or
+`"suppressed"`), and the last OCI metrics plus estimator errors. Container
+orchestrators can poll the endpoint to surface degraded Monitoring connectivity
+or estimator stalls while the process continues to run.
 
 The response mirrors this structure:
 
 ```json
 {
+  "mode": "dry-run",
   "state": "normal",
   "ociError": "",
   "estimatorError": ""
