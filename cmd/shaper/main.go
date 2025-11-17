@@ -853,6 +853,17 @@ func startMetricsServer(
 
 	logger.Info("metrics server listening", zap.String("bind", trimmed))
 
+	serveMetrics(ctx, logger, server, listener)
+
+	return nil
+}
+
+func serveMetrics(
+	ctx context.Context,
+	logger *zap.Logger,
+	server *http.Server,
+	listener net.Listener,
+) {
 	go func() {
 		<-ctx.Done()
 
@@ -871,8 +882,6 @@ func startMetricsServer(
 			logger.Warn("metrics server serve", zap.Error(err))
 		}
 	}()
-
-	return nil
 }
 
 type p95CPUQuerier interface {
