@@ -7,7 +7,7 @@ Always Free instances require early warning when CPU utilisation drifts toward r
 Create an alarm in **Observability & Management → Alarms** using Advanced mode with the following parameters:
 
 ```text
-CpuUtilization[1m]{resourceId="<instance_ocid>"}.percentile(0.95) < 20
+CpuUtilization[1d]{resourceId="<instance_ocid>"}.percentile(0.95) < 20
 ```
 
 - **Interval:** `1d` (one day). Oracle Alarms cap the CpuUtilization evaluation window at one day and ignore `.window()` clauses, so set the interval to its maximum to approximate the reclaim check.
@@ -35,7 +35,7 @@ Document any future alarm templates or automation hooks here and in `docs/CHANGE
 
 ## 7.4 Automation
 
-- **Terraform module.** `deploy/terraform/alarms/` provisions the Always Free guardrail with parameterised instance, compartment, and topic OCIDs. The module defaults to `PT1H` pending duration, `1m` resolution, and tags alarms so tenancy-wide reports can filter on `oci-cpu-shaper=always-free-guardrail`. Set the alarm interval to `1d` when reviewing the resource in the console (Terraform exposes the MQL expression only) to align with the Monitoring service limits. Adjust the variable inputs (see the module README) to point at the production Notification topic before running `terraform apply`, then execute `terraform init && terraform apply` from the module directory (or a wrapper root module) to publish the alarm.
+- **Terraform module.** `deploy/terraform/alarms/` provisions the Always Free guardrail with parameterised instance, compartment, and topic OCIDs. The module defaults to `PT1H` pending duration, `1d` resolution, and tags alarms so tenancy-wide reports can filter on `oci-cpu-shaper=always-free-guardrail`. Confirm the console reflects the one-day interval after Terraform applies so the Monitoring service enforces the full-day evaluation window. Adjust the variable inputs (see the module README) to point at the production Notification topic before running `terraform apply`, then execute `terraform init && terraform apply` from the module directory (or a wrapper root module) to publish the alarm.
 - **CI enforcement.** The Always Free runner invokes `go run ./hack/tools/alarmguard` from the `self-hosted` workflow after collecting IMDS metadata. The helper authenticates with instance principals, lists Monitoring alarms, and fails CI when the guardrail is missing, disabled, or lacks destinations. Repository variables such as `SELF_HOSTED_SKIP_ALARM_GUARD` and `SELF_HOSTED_METRIC_COMPARTMENT_OCID` tune the verification when environments require overrides.
 
 [^oci-alarms]: Oracle Cloud Infrastructure, "Overview of Alarms". <https://docs.oracle.com/en-us/iaas/Content/Monitoring/Tasks/workingalarms.htm>

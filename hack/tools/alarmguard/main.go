@@ -17,7 +17,7 @@ import (
 const (
 	defaultTimeout         = 60 * time.Second
 	defaultPendingDuration = "PT1H"
-	defaultResolution      = "1m"
+	defaultResolution      = "1d"
 	listPageLimit          = 1000
 
 	exitOK    = 0
@@ -286,7 +286,7 @@ func queryMatches(query, instanceID string) bool {
 	normalized = strings.ReplaceAll(normalized, "\n", "")
 	normalized = strings.ReplaceAll(normalized, "\t", "")
 
-	if !strings.Contains(normalized, "cpuutilization[1m]{") {
+	if !strings.Contains(normalized, "cpuutilization[1d]{") {
 		return false
 	}
 

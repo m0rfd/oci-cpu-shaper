@@ -59,7 +59,7 @@ We support two documented modes. Rootless is first-class but not exclusive.
 
 * **Safety alarm (OCI Console):**
 
-  * Alarm expression: `CpuUtilization[1m]{resourceId="<ocid>"}.percentile(0.95) < 20` with a **7-day** window, notify to your email topic. ([Oracle Docs][7])
+  * Alarm expression: `CpuUtilization[1d]{resourceId="<ocid>"}.percentile(0.95) < 20` with a one-day interval (Oracle caps CpuUtilization alarms at `1d`) and notifications to your email topic. ([Oracle Docs][7])
 
 ### 3.2 Metrics and telemetry
 
@@ -209,8 +209,8 @@ WantedBy=default.target
 
 4. **Alarm**
    Observability & Management → **Alarms** → Create → Advanced mode MQL:
-   `CpuUtilization[1m]{resourceId="<INSTANCE_OCID>"}.percentile(0.95) < 20`
-   Window: **7 days**. Notification: your Email topic. ([Oracle Docs][7])
+   `CpuUtilization[1d]{resourceId="<INSTANCE_OCID>"}.percentile(0.95) < 20`
+   Interval: **1 day** (Monitoring ignores `.window()` for CpuUtilization). Notification: your Email topic. ([Oracle Docs][7])
 
 5. **IMDSv2**
    Instance → **Instance metadata service** → set v2 only after you confirm the header.
