@@ -396,7 +396,7 @@ func validateRuntimeConfig(cfg runtimeConfig) error {
 		return err
 	}
 
-	err := validateLoopIntervals(cfg.Controller, cfg.Estimator)
+	err = validateLoopIntervals(cfg.Controller, cfg.Estimator)
 	if err != nil {
 		return err
 	}
