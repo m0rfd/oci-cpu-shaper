@@ -148,8 +148,6 @@ coverage:
 					rm -f "$$integration_profile"; \
 				fi; \
 			fi; \
-		fi; \
-
 		if [ -n "$(strip $(E2E_PKGS))" ]; then \
 			e2e_profile="coverage-e2e.out"; \
 			if $(GO) test -race -covermode=atomic -tags=e2e -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $(E2E_PKGS); then \
