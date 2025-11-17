@@ -70,7 +70,11 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - `/metrics` exporter and Prometheus integration surfaced through the CLI, including emitted series, sample scrape output, and Compose/HTTP_ADDR wiring documented across §§4–9.
 
 ### Changed
-_Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._
+_Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._ 
+- Runtime configuration loader now validates target/goal bounds, positive controller/estimator intervals, worker counts, and step
+  sizes after layering YAML files with environment overrides, returning `adapt.ErrInvalidConfig` when misconfigured values are
+  detected. Fresh CLI unit tests cover invalid manifests and environment overrides so the ≥95% coverage target remains intact
+  (§§3.1, 5.2, 9, 11).
 - Distroless image builds now reference the repository-root `Dockerfile` and ship the
   offline smoke-test config from `configs/offline-smoke.yaml`, consolidating Komodo,
   CI, and release workflows on a single path (§6).
