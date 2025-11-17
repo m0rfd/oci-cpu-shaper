@@ -1407,9 +1407,9 @@ func TestMainPropagatesNonZeroExitCode(t *testing.T) { //nolint:paralleltest // 
 
 func TestDefaultIMDSFactoryUsesEnvironmentEndpoint(t *testing.T) {
 	responses := map[string]string{
-		"/opc/v2/instance/region":       overrideRegion,
-		"/opc/v2/instance/id":           "ocid1.instance.oc1..exampleuniqueID",
-		"/opc/v2/instance/shape-config": `{"ocpus":2,"memoryInGBs":32}`,
+		"/opc/v2/instance/region":      overrideRegion,
+		"/opc/v2/instance/id":          "ocid1.instance.oc1..exampleuniqueID",
+		"/opc/v2/instance/shapeConfig": `{"ocpus":2,"memoryInGBs":32}`,
 	}
 
 	server := newIPv4TestServer(
@@ -1844,7 +1844,7 @@ func TestMainIntegratesDefaultDependencies(t *testing.T) {
 				_, _ = writer.Write([]byte("ocid1.instance.oc1..main"))
 			case "/opc/v2/instance/compartmentId":
 				_, _ = writer.Write([]byte("ocid1.compartment.oc1..main"))
-			case "/opc/v2/instance/shape-config":
+			case "/opc/v2/instance/shapeConfig":
 				_, _ = writer.Write([]byte(`{"ocpus":1,"memoryInGBs":1}`))
 			default:
 				t.Fatalf("unexpected path: %s", req.URL.Path)

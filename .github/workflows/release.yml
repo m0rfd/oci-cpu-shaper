@@ -96,7 +96,7 @@ jobs:
           format: spdx-json
 
       - name: Upload SBOM artifact (${{ matrix.image_tag }})
-        uses: actions/upload-artifact@v5.0.0
+        uses: actions/upload-artifact@v5
         with:
           name: sbom-${{ github.ref_name }}-${{ matrix.image_tag }}
           path: sbom-${{ github.ref_name }}-${{ matrix.image_tag }}.spdx.json
