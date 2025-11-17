@@ -75,11 +75,14 @@ node’s address and the container honours whatever `HTTP_ADDR` the binary is
 configured with (typically `:9108`). Override `SHAPER_NETWORK_MODE` when a
 bridge network is preferable, and adjust `SHAPER_RESTART_POLICY` if the Docker daemon should stop
 restarting the container after failures. Rootful builds compiled with
-`-tags rootful` now ask the kernel for `SCHED_IDLE` scheduling on each worker
-thread as soon as the pool starts (§6.2). The Compose manifest already grants
-`SYS_NICE`, which is required to let the kernel honour the request; when the
-capability is missing the controller logs `worker failed to enter sched_idle`
-at `warn` level and continues without downgrading the scheduler policy.
+`-tags rootful` now call `sched_setscheduler(0, SCHED_IDLE, ...)` as the worker
+pool is constructed so the downgrade request lands before controller threads
+spin up (§6.2). The Compose manifest already grants `SYS_NICE`, which is
+required to let the kernel honour the request; when the capability is missing
+the controller logs `worker failed to enter sched_idle` at `warn` level and
+continues without downgrading the scheduler policy. The helper ignores
+`EPERM` rejections so operators that intentionally omit the capability keep a
+noise-free log while experimentation remains safe on hosts that do grant it.
 
 Bring the Mode B stack up with:
 

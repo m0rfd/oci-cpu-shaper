@@ -134,11 +134,13 @@ Smoke tests introduced in §11 now cover the dependency-injected entrypoint as w
 
 Local contributors can validate the CLI wiring the same way: run `make lint` and `make test` before checking in changes and finish with `make coverage MIN_COVERAGE=95` to confirm the documentation’s QA promise remains true.
 
-Rootful binaries built with `-tags rootful` log a warning if the kernel rejects the
-`SCHED_IDLE` request emitted when the worker pool starts (§§6, 9). Hosts running
-the Compose or Quadlet stacks must grant `CAP_SYS_NICE`/`SYS_NICE` so the
+Rootful binaries built with `-tags rootful` now issue their
+`sched_setscheduler(0, SCHED_IDLE, ...)` request as soon as the worker pool is
+constructed, before goroutines start consuming CPU (§§6, 9). Hosts running the
+Compose or Quadlet stacks must grant `CAP_SYS_NICE`/`SYS_NICE` so the
 `worker failed to enter sched_idle` warning remains informational rather than a
-permanent indicator that the downgrade could not be applied.
+permanent indicator that the downgrade could not be applied; `EPERM` rejections
+are silently ignored when the capability is intentionally withheld.
 
 ## 9.5 Metrics Exporter
 

@@ -2,10 +2,13 @@
 package shape
 
 import (
+	"errors"
 	"math"
 	"testing"
 	"time"
 )
+
+var errTestSchedIdle = errors.New("sched_idle failed")
 
 func TestPoolWorkersAndQuantumAccessors(t *testing.T) {
 	t.Parallel()
@@ -51,7 +54,7 @@ func TestPoolSetTargetBoundsInput(t *testing.T) {
 	}
 }
 
-func TestConfigureRootfulHooksNoop(t *testing.T) {
+func TestSetWorkerStartErrorHandlerReplaysStoredError(t *testing.T) {
 	t.Parallel()
 
 	pool, err := NewPool(1, DefaultQuantum)
@@ -59,17 +62,26 @@ func TestConfigureRootfulHooksNoop(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	configureRootfulHooks(pool)
+	pool.rootfulInitErr = errTestSchedIdle
 
-	configureRootfulHooks(nil)
-}
+	var called int
 
-func TestTrySchedIdleNoop(t *testing.T) {
-	t.Parallel()
+	pool.SetWorkerStartErrorHandler(func(err error) {
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
 
-	err := trySchedIdle()
-	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
+		called++
+	})
+
+	if called != 1 {
+		t.Fatalf("expected handler to be called once, got %d", called)
+	}
+
+	pool.SetWorkerStartErrorHandler(func(error) {})
+
+	if called != 1 {
+		t.Fatalf("handler should not be called again, got %d", called)
 	}
 }
 

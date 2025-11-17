@@ -22,6 +22,7 @@ type Pool struct {
 
 	workerStartHook         func() error
 	workerStartErrorHandler func(error)
+	rootfulInitErr          error
 
 	targetBits atomic.Uint64
 }
@@ -66,7 +67,10 @@ func NewPool(workers int, quantum time.Duration) (*Pool, error) {
 	poolInstance.SetWorkerStartErrorHandler(nil)
 	poolInstance.SetTarget(0)
 
-	configureRootfulHooks(poolInstance)
+	err := trySchedIdle()
+	if err != nil {
+		poolInstance.rootfulInitErr = err
+	}
 
 	return poolInstance, nil
 }
@@ -117,6 +121,10 @@ func (p *Pool) SetWorkerStartErrorHandler(handler func(error)) {
 	}
 
 	p.workerStartErrorHandler = handler
+	if p.rootfulInitErr != nil {
+		handler(p.rootfulInitErr)
+		p.rootfulInitErr = nil
+	}
 }
 
 func (p *Pool) worker(ctx context.Context) {
