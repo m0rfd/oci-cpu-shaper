@@ -150,7 +150,7 @@ type recordingDutyCycler struct {
 	target float64
 }
 
-//nolint:ireturn // helper returns DutyCycler interface to allow optional wrapping of the delegate.
+//nolint:ireturn // callers require the DutyCycler interface seam for testing.
 func newModeAwareDutyCycler(mode string, shaper DutyCycler) DutyCycler {
 	if shaper == nil {
 		return nil

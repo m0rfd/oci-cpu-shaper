@@ -10,6 +10,14 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
   readings to the pool, and docs (§§3.1, 9) describe the new configuration and
   behaviour. Updated tests cover pause transitions to keep the ≥95% coverage floor (§§3,
   5, 9, 11).
+- Cgroup telemetry helper that reads `/proc/self/cgroup`, parses the
+  colocated `cpu.weight`/`cpu.max` files, and publishes the detected values via
+  new `cgroup_cpu_weight`/`cgroup_cpu_max_*` metrics plus a `cgroup` block in
+  `/healthz`. Startup logs now warn whenever the observed weight exceeds the
+  low-weight defaults documented in §4 so Compose/Quadlet drift is obvious.
+  Fresh unit tests cover the helper, metrics exporter, and `/healthz` handler to
+  keep the ≥95% coverage floor intact, and §§4, 9 describe the new telemetry
+  surfaces for operators.
 - Grafana dashboard export (`deploy/grafana/oci-cpu-shaper-dashboard.json`) covering OCI
   P95, controller target/state, and host CPU overlays, plus §5.4 import instructions so
   operators can wire the Prometheus feed into Grafana without rebuilding the charts (§§3,

@@ -48,6 +48,10 @@ type Exporter struct {
 	hostCPUPercent  float64
 	intervalSeconds float64
 	lastError       string
+	cgroupWeight    float64
+	cgroupMaxQuota  float64
+	cgroupMaxPeriod float64
+	cgroupMaxLimit  float64
 
 	bufferFactory func() byteBuffer
 }
@@ -176,6 +180,44 @@ func (e *Exporter) SetWorkerCount(count int) {
 	e.mu.Unlock()
 }
 
+// SetCgroupCPUWeight records the detected cgroup v2 cpu.weight value.
+func (e *Exporter) SetCgroupCPUWeight(weight uint64) {
+	value := float64(weight)
+	if value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		value = 0
+	}
+
+	e.mu.Lock()
+	e.cgroupWeight = value
+	e.mu.Unlock()
+}
+
+// SetCgroupCPUMax captures the configured cpu.max quota/period tuple.
+// When unlimited is true, quota is ignored and a separate flag is toggled.
+func (e *Exporter) SetCgroupCPUMax(quota uint64, period uint64, unlimited bool) {
+	periodValue := float64(period)
+	if periodValue < 0 || math.IsNaN(periodValue) || math.IsInf(periodValue, 0) {
+		periodValue = 0
+	}
+
+	quotaValue := float64(quota)
+	if quotaValue < 0 || math.IsNaN(quotaValue) || math.IsInf(quotaValue, 0) {
+		quotaValue = 0
+	}
+
+	limit := 0.0
+	if unlimited {
+		limit = 1
+		quotaValue = 0
+	}
+
+	e.mu.Lock()
+	e.cgroupMaxQuota = quotaValue
+	e.cgroupMaxPeriod = periodValue
+	e.cgroupMaxLimit = limit
+	e.mu.Unlock()
+}
+
 // ObserveHostCPU records the latest host CPU utilisation percentage.
 func (e *Exporter) ObserveHostCPU(utilisation float64) {
 	if math.IsNaN(utilisation) || math.IsInf(utilisation, 0) {
@@ -234,6 +276,8 @@ func (e *Exporter) Render() ([]byte, error) {
 }
 
 // WriteTo writes the current metrics snapshot to the provided writer.
+//
+//nolint:funlen // Metrics list is intentionally linear for readability.
 func (e *Exporter) WriteTo(dst io.Writer) (int64, error) {
 	if dst == nil {
 		return 0, errNilWriter
@@ -275,6 +319,18 @@ func (e *Exporter) WriteTo(dst io.Writer) (int64, error) {
 		"# HELP host_cpu_percent Last recorded host CPU utilisation percentage.\n",
 		"# TYPE host_cpu_percent gauge\n",
 		fmt.Sprintf("host_cpu_percent %.2f\n", snapshot.hostCPUPercent),
+		"# HELP cgroup_cpu_weight Detected cgroup v2 cpu.weight value for the process.\n",
+		"# TYPE cgroup_cpu_weight gauge\n",
+		fmt.Sprintf("cgroup_cpu_weight %.0f\n", snapshot.cgroupWeight),
+		"# HELP cgroup_cpu_max_quota Detected cpu.max quota (microseconds). Zero when unlimited.\n",
+		"# TYPE cgroup_cpu_max_quota gauge\n",
+		fmt.Sprintf("cgroup_cpu_max_quota %.0f\n", snapshot.cgroupMaxQuota),
+		"# HELP cgroup_cpu_max_period Detected cpu.max period (microseconds).\n",
+		"# TYPE cgroup_cpu_max_period gauge\n",
+		fmt.Sprintf("cgroup_cpu_max_period %.0f\n", snapshot.cgroupMaxPeriod),
+		"# HELP cgroup_cpu_max_unlimited Flag set to 1 when cpu.max reports \"max\".\n",
+		"# TYPE cgroup_cpu_max_unlimited gauge\n",
+		fmt.Sprintf("cgroup_cpu_max_unlimited %.0f\n", snapshot.cgroupMaxLimit),
 		"# EOF\n",
 	}
 
@@ -304,6 +360,10 @@ type exporterSnapshot struct {
 	hostCPUPercent      float64
 	intervalSeconds     float64
 	lastError           string
+	cgroupWeight        float64
+	cgroupMaxQuota      float64
+	cgroupMaxPeriod     float64
+	cgroupMaxLimit      float64
 }
 
 func (e *Exporter) snapshot() exporterSnapshot {
@@ -332,5 +392,9 @@ func (e *Exporter) snapshot() exporterSnapshot {
 		hostCPUPercent:      e.hostCPUPercent,
 		intervalSeconds:     e.intervalSeconds,
 		lastError:           errorLabel,
+		cgroupWeight:        e.cgroupWeight,
+		cgroupMaxQuota:      e.cgroupMaxQuota,
+		cgroupMaxPeriod:     e.cgroupMaxPeriod,
+		cgroupMaxLimit:      e.cgroupMaxLimit,
 	}
 }

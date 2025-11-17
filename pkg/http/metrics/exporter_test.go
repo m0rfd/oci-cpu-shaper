@@ -20,6 +20,7 @@ var (
 	errMonitoringGap = errors.New("monitoring gap")
 )
 
+//nolint:funlen // covers entire OpenMetrics payload in a single assertion for clarity.
 func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 	t.Parallel()
 
@@ -33,6 +34,8 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 	exporter.SetDutyCycle(1500 * time.Microsecond)
 	exporter.SetWorkerCount(4)
 	exporter.ObserveHostCPU(0.6789)
+	exporter.SetCgroupCPUWeight(128)
+	exporter.SetCgroupCPUMax(50000, 100000, false)
 
 	body, err := exporter.Render()
 	if err != nil {
@@ -74,6 +77,18 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 		"# HELP host_cpu_percent Last recorded host CPU utilisation percentage.",
 		"# TYPE host_cpu_percent gauge",
 		"host_cpu_percent 67.89",
+		"# HELP cgroup_cpu_weight Detected cgroup v2 cpu.weight value for the process.",
+		"# TYPE cgroup_cpu_weight gauge",
+		"cgroup_cpu_weight 128",
+		"# HELP cgroup_cpu_max_quota Detected cpu.max quota (microseconds). Zero when unlimited.",
+		"# TYPE cgroup_cpu_max_quota gauge",
+		"cgroup_cpu_max_quota 50000",
+		"# HELP cgroup_cpu_max_period Detected cpu.max period (microseconds).",
+		"# TYPE cgroup_cpu_max_period gauge",
+		"cgroup_cpu_max_period 100000",
+		"# HELP cgroup_cpu_max_unlimited Flag set to 1 when cpu.max reports \"max\".",
+		"# TYPE cgroup_cpu_max_unlimited gauge",
+		"cgroup_cpu_max_unlimited 0",
 		"# EOF",
 		"",
 	}, "\n")
@@ -166,6 +181,8 @@ func TestExporterGuardsAgainstInvalidInputs(t *testing.T) {
 	exporter.ObserveHostCPU(math.Inf(1))
 	exporter.SetInterval(-time.Second)
 	exporter.SetLastError(nil)
+	exporter.SetCgroupCPUWeight(0)
+	exporter.SetCgroupCPUMax(0, 0, true)
 
 	data, err := exporter.Render()
 	if err != nil {
