@@ -1,4 +1,4 @@
-//nolint:testpackage,ireturn // benchmarks need access to internal hooks and ticker interfaces
+//nolint:testpackage // benchmarks need access to internal hooks and ticker interfaces
 package shape
 
 import (
