@@ -33,6 +33,12 @@ Three foundational flags align with §§3.1 and 5.2 of the implementation plan:
 
 Flags remain intentionally minimal so orchestration tools can template them alongside file-based configuration and environment overrides. When `--shutdown-after` is non-zero the CLI installs a context deadline and treats the resulting `context deadline exceeded`/`context canceled` errors as clean shutdowns so smoke tests can rely on exit status `0`.
 
+The CLI also installs `SIGINT`/`SIGTERM` handlers that wrap the run loop in a
+`context.WithCancel`. Delivering either signal now cancels the controller,
+worker pool, and HTTP server contexts just like the time-bounded shutdown,
+letting supervisors stop the process without forcing an unclean exit or leaking
+goroutines.
+
 ## 9.2 Configuration Layout
 
 Bootstrap deployments rely on a compact YAML manifest that mirrors §§3.1 and 5.2 thresholds:

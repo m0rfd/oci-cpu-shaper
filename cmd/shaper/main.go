@@ -10,8 +10,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"go.uber.org/zap"
@@ -45,7 +47,24 @@ const (
 )
 
 func main() {
-	code := run(context.Background(), os.Args[1:], defaultRunDeps(), os.Stderr)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-sigCh:
+			cancel()
+		}
+	}()
+
+	code := run(ctx, os.Args[1:], defaultRunDeps(), os.Stderr)
 	if code != 0 {
 		exitProcess(code)
 	}
