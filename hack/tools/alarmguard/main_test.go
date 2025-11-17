@@ -10,7 +10,7 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/monitoring"
 )
 
-const guardrailQuery = "CpuUtilization[1m]{resourceId=\"ocid1.instance.oc1..guard\"}.window(7d).percentile(0.95) < 20"
+const guardrailQuery = "CpuUtilization[1m]{resourceId=\"ocid1.instance.oc1..guard\"}.percentile(0.95) < 20"
 
 var (
 	errListNotImplemented = errors.New("list not implemented")
@@ -49,18 +49,24 @@ func TestQueryMatches(t *testing.T) {
 	t.Parallel()
 
 	instance := "ocid1.instance.oc1..example"
-	valid := "CpuUtilization[1m]{resourceId=\"ocid1.instance.oc1..example\"}.window(7d).percentile(0.95) < 20"
+	valid := "CpuUtilization[1m]{resourceId=\"ocid1.instance.oc1..example\"}.percentile(0.95) < 20"
 
 	if !queryMatches(valid, instance) {
 		t.Fatalf("expected valid guardrail query to match")
 	}
 
-	missingWindow := "CpuUtilization[1m]{resourceId=\"ocid1.instance.oc1..example\"}.percentile(0.95) < 20"
-	if queryMatches(missingWindow, instance) {
-		t.Fatalf("expected query without window to fail")
+	splitDimensions := "CpuUtilization[1m]{resourceId=\"ocid1.instance.oc1..example\"," +
+		"resourceId=\"ocid1.instance.oc1..second\"}.grouping(resourceId).percentile(0.95) < 20"
+	if !queryMatches(splitDimensions, instance) {
+		t.Fatalf("expected split-dimension guardrail to match")
 	}
 
-	wrongInstance := "CpuUtilization[1m]{resourceId=\"ocid1.instance.oc1..other\"}.window(7d).percentile(0.95) < 20"
+	missingResource := "CpuUtilization[1m]{availabilityDomain=\"phx-ad-1\"}.percentile(0.95) < 20"
+	if queryMatches(missingResource, instance) {
+		t.Fatalf("expected query without resourceId dimension to fail")
+	}
+
+	wrongInstance := "CpuUtilization[1m]{resourceId=\"ocid1.instance.oc1..other\"}.percentile(0.95) < 20"
 	if queryMatches(wrongInstance, instance) {
 		t.Fatalf("expected query with different resourceId to fail")
 	}

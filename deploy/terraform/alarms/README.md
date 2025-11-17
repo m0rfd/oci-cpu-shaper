@@ -1,10 +1,12 @@
 # Always Free P95 Alarm
 
-This configuration provisions an OCI Monitoring alarm that enforces the Always Free reclaim guardrail. It evaluates the instance-specific P95 CpuUtilization over a seven-day window and fires when the metric drops below 20% using the following MQL expression:
+This configuration provisions an OCI Monitoring alarm that enforces the Always Free reclaim guardrail. Oracle Monitoring alarms cannot apply a rolling seven-day window to CpuUtilization directly, so the guardrail instead evaluates the instance-specific P95 CpuUtilization over the maximum one-day interval and fires when the metric drops below 20% using the following MQL expression:
 
 ```text
-CpuUtilization[1m]{resourceId="<instance_ocid>"}.window(7d).percentile(0.95) < 20
+CpuUtilization[1m]{resourceId="<instance_ocid>"}.percentile(0.95) < 20
 ```
+
+Set the alarm interval to `1d` when wiring the module output in the console so the Monitoring service evaluates the full day of samples at P95.
 
 ## Inputs
 

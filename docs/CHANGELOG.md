@@ -67,6 +67,7 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% 
 - Distroless image builds now reference the repository-root `Dockerfile` and ship the
   offline smoke-test config from `configs/offline-smoke.yaml`, consolidating Komodo,
   CI, and release workflows on a single path (§6).
+- Alarm documentation, Terraform module defaults, and the `alarmguard` verification now reflect OCI Monitoring’s one-day CpuUtilization interval limit (the console ignores `.window()`), document the split-by-`resourceId` workflow for multi-runner alarms, and keep the self-hosted guardrail enforcement aligned with what operators can configure (§§5, 7, 11).
 - The distroless targets now copy the Mode A/Mode B manifests into
   `/etc/oci-cpu-shaper/configs/` and the Compose/Quadlet/docker-run helpers default
   to those paths, letting deployments start with baked-in YAML while retaining the

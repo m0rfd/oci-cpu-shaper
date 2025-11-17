@@ -281,18 +281,21 @@ func queryMatches(query, instanceID string) bool {
 		return false
 	}
 
-	normalized := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(query, " ", ""), "\n", ""))
-	expectedResource := fmt.Sprintf("resourceid=\"%s\"", strings.ToLower(instanceID))
+	normalized := strings.ToLower(query)
+	normalized = strings.ReplaceAll(normalized, " ", "")
+	normalized = strings.ReplaceAll(normalized, "\n", "")
+	normalized = strings.ReplaceAll(normalized, "\t", "")
 
 	if !strings.Contains(normalized, "cpuutilization[1m]{") {
 		return false
 	}
 
-	if !strings.Contains(normalized, expectedResource) {
+	if !strings.Contains(normalized, "resourceid") {
 		return false
 	}
 
-	if !strings.Contains(normalized, ".window(7d).") {
+	expectedInstance := strings.ToLower(instanceID)
+	if expectedInstance == "" || !strings.Contains(normalized, expectedInstance) {
 		return false
 	}
 
