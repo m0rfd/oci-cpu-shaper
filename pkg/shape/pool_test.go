@@ -4,6 +4,7 @@ package shape
 import (
 	"context"
 	"errors"
+	"math"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -216,6 +217,101 @@ func TestPoolPausesWorkerActivityWhenThresholdExceeded(t *testing.T) {
 
 	pool.ObserveHostLoad(0.3)
 	waitForBusyCount(t, manual, &busyCount, pausedCount+1)
+}
+
+func TestPoolSetPauseThresholdsResetOnNaN(t *testing.T) {
+	t.Parallel()
+
+	pool, err := NewPool(1, time.Millisecond)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	pool.paused.Store(1)
+	pool.SetPauseThresholds(math.NaN(), math.NaN())
+
+	if got := math.Float64frombits(pool.pauseThresholdBits.Load()); got != 0 {
+		t.Fatalf("expected pause threshold to reset, got %v", got)
+	}
+
+	if got := math.Float64frombits(pool.resumeThresholdBits.Load()); got != 0 {
+		t.Fatalf("expected resume threshold to reset, got %v", got)
+	}
+
+	if pool.Paused() {
+		t.Fatalf("expected paused state to clear when thresholds reset")
+	}
+}
+
+func TestPoolSetPauseThresholdsClampAndCap(t *testing.T) {
+	t.Parallel()
+
+	pool, err := NewPool(1, time.Millisecond)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	pool.paused.Store(1)
+	pool.SetPauseThresholds(1.5, -0.3)
+
+	if got := math.Float64frombits(pool.pauseThresholdBits.Load()); got != 1 {
+		t.Fatalf("expected pause threshold to clamp to 1, got %v", got)
+	}
+
+	if got := math.Float64frombits(pool.resumeThresholdBits.Load()); got != 0 {
+		t.Fatalf("expected resume threshold to clamp to 0, got %v", got)
+	}
+
+	if !pool.Paused() {
+		t.Fatalf("expected non-zero pause threshold to preserve paused state")
+	}
+
+	pool.paused.Store(1)
+	pool.SetPauseThresholds(0.4, 0.9)
+
+	if got := math.Float64frombits(pool.resumeThresholdBits.Load()); got != 0.4 {
+		t.Fatalf("expected resume threshold to cap at pause, got %v", got)
+	}
+
+	if !pool.Paused() {
+		t.Fatalf("expected paused state to remain when pause threshold > 0")
+	}
+}
+
+func TestPoolObserveHostLoadNormalisesInput(t *testing.T) {
+	t.Parallel()
+
+	pool, err := NewPool(1, time.Millisecond)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	pool.SetPauseThresholds(0.6, 0.2)
+	pool.paused.Store(1)
+
+	pool.ObserveHostLoad(math.NaN())
+
+	if !pool.Paused() {
+		t.Fatalf("expected NaN observation to leave paused state unchanged")
+	}
+
+	pool.ObserveHostLoad(math.Inf(1))
+
+	if !pool.Paused() {
+		t.Fatalf("expected Inf observation to leave paused state unchanged")
+	}
+
+	pool.ObserveHostLoad(-0.5)
+
+	if pool.Paused() {
+		t.Fatalf("expected negative utilisation to clamp to resume threshold and resume workers")
+	}
+
+	pool.ObserveHostLoad(2)
+
+	if !pool.Paused() {
+		t.Fatalf("expected utilisation above 1 to clamp and pause workers")
+	}
 }
 
 func waitForBusyCount(tb testing.TB, manual *manualTicker, counter *atomic.Int32, expected int32) {
