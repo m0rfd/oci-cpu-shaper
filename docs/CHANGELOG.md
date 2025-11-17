@@ -65,6 +65,7 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - Go vulnerability scanning via `make govulncheck` and a dedicated CI job that restores module/build caches, failing pull requests when published advisories affect the dependency graph (§14).
 - CPU weight responsiveness integration suite with CI coverage on `ubuntu-latest` (cgroup v2) that exercises the container build alongside a competing workload and publishes verbose logs (§§6, 11).
 - Local `make integration` helper replicating the CI cgroup v2 guard, Docker availability checks, and log capture so contributors can rerun the CPU weight suite with artifact parity (§§6, 11).
+- CPU weight responsiveness harness now builds and runs both the distroless rootful and nonroot images, gating execution on the cgroup v2 cpu controller so CI and local runs validate both deployment paths (§§6, 8, 11).
 - Quick Start onboarding guide that condenses the five plan-mandated console steps and links to the IAM, Monitoring, Compose, and alarm references (§10).
 - Documentation refresh covering OCI IAM policy setup (§1), Always Free reclaim guardrails (§3), cgroup v2 tuning guidance (§4), and alarm workflows (§7), aligning `docs/` with the implementation plan’s required artifacts (§12).
 - `/metrics` exporter and Prometheus integration surfaced through the CLI, including emitted series, sample scrape output, and Compose/HTTP_ADDR wiring documented across §§4–9.
