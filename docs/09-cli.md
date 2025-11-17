@@ -1,6 +1,6 @@
 # §9 Command-Line Interface
 
-The `shaper` binary delivers a thin orchestration layer that connects configuration, logging, and subsystem wiring. Early builds prioritise predictable ergonomics over feature completeness so that operators can familiarise themselves with workflows before controllers are fully implemented.
+The `shaper` binary delivers a thin orchestration layer that connects configuration, logging, and subsystem wiring. It now prioritises predictable ergonomics while shipping the fully implemented adaptive controller that powers both `dry-run` and `enforce` workflows, so operators interact with the same code paths that production deployments execute.
 
 ## 9.1 Invocation
 
@@ -39,38 +39,41 @@ Bootstrap deployments rely on a compact YAML manifest that mirrors §§3.1 and 5
 
 ```yaml
 controller:
-  targetStart: 0.25
-  targetMin: 0.22
-  targetMax: 0.40
-  stepUp: 0.02
-  stepDown: 0.01
-  fallbackTarget: 0.25
-  goalLow: 0.23
-  goalHigh: 0.30
+  targetStart: 0.22
+  targetMin: 0.20
+  targetMax: 0.32
+  stepUp: 0.01
+  stepDown: 0.005
+  fallbackTarget: 0.22
+  goalLow: 0.21
+  goalHigh: 0.27
   interval: 1h
-  relaxedInterval: 6h
-  relaxedThreshold: 0.28
-  suppressThreshold: 0.85
-  suppressResume: 0.70
+  relaxedInterval: 4h
+  relaxedThreshold: 0.26
+  suppressThreshold: 0.80
+  suppressResume: 0.68
 estimator:
-  interval: 1s
+  interval: 2s
 pool:
-  workers: 4
+  workers: 2
   quantum: 1ms
 http:
   bind: ":9108"
 oci:
+  offline: false
   compartmentId: "ocid1.compartment.oc1..example"
   region: "us-phoenix-1"
   instanceId: "ocid1.instance.oc1..example"
 ```
 
 - The repository publishes these defaults as ready-to-use manifests at
-  `configs/mode-a.yaml` and `configs/mode-b.yaml`. The Compose and Quadlet
-  manifests in §6 mount the matching file so Mode A (rootless) and Mode B
-  (rootful) stacks boot with the documented configuration when no overrides are
-  supplied.
-- `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed six-hour interval when OCI P95 remains healthy. The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) decide when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools.
+  `configs/mode-a.yaml` and `configs/mode-b.yaml`. Both files match the
+  controller, estimator, pool, HTTP, and `oci.offline` defaults above; they
+  intentionally omit tenancy-specific OCIDs so the samples remain usable in
+  source control. Operators should extend the manifest with their own
+  `compartmentId`, `region`, and optional `instanceId` values before entering
+  enforce mode.
+- `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed four-hour interval when OCI P95 remains healthy. The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) decide when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools.
 - Validation now enforces that every slow-loop target or goal remains below both suppression thresholds, so manifests that would immediately re-trigger the fast loop are rejected with an exit status of `2` and a descriptive error message (§§3.1, 5.2).
 - `estimator.interval` controls the fast `/proc/stat` sampler cadence (§5.2) while the worker `pool` exposes quantum sizing that stays within the 1–5 ms duty-cycle budget.
 - `http.bind` retains the Prometheus listener address and now backs the `/metrics` exporter described in §9.5, while `oci.compartmentId` supplies the tenancy scope required by the Monitoring client and `oci.region` pins the Monitoring endpoint region when IMDS access is unavailable (for example, CI smoke tests).
@@ -128,6 +131,8 @@ Invalid flag values are rejected during argument parsing: unknown controller mod
 Configuration validation shares this behaviour: when thresholds conflict with the suppression bounds the CLI prints the descriptive failure and exits with code `2`, preventing partially initialised controllers (§§3.1, 5.2).
 
 Smoke tests introduced in §11 now cover the dependency-injected entrypoint as well as adaptive-controller wiring, ensuring that enforce/dry-run builds start the OCI client, estimator sampler, and worker pool while `noop` preserves the bypass path for validation scenarios. Offline mode keeps this wiring intact by substituting the static metrics client so container smoke tests can run without live tenancy credentials, and new unit coverage exercises the IMDS-backed region/compartment resolver plus its failure modes to keep the ≥95% statement coverage guarantee intact.
+
+Local contributors can validate the CLI wiring the same way: run `make lint` and `make test` before checking in changes and finish with `make coverage MIN_COVERAGE=95` to confirm the documentation’s QA promise remains true.
 
 Rootful binaries built with `-tags rootful` log a warning if the kernel rejects the
 `SCHED_IDLE` request emitted when the worker pool starts (§§6, 9). Hosts running

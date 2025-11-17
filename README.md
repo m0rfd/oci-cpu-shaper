@@ -1,6 +1,6 @@
 # OCI CPU Shaper
 
-OCI CPU Shaper is an emerging toolkit for shaping CPU utilization of workloads running on Oracle Cloud Infrastructure. The project is in its early stages; the current repository layout and documentation scaffolding are intended to guide future development. New operators should begin with the [Quick Start](docs/10-quick-start.md) to complete the mandatory console setup before exploring the reference material.
+OCI CPU Shaper is an adaptive controller for shaping CPU utilization of workloads running on Oracle Cloud Infrastructure. The fully implemented controller now ships in the CLI and Compose/Quadlet bundles, so operators can run dry-run or enforce modes with live OCI metrics today instead of waiting for future milestones. New operators should begin with the [Quick Start](docs/10-quick-start.md) to complete the mandatory console setup before exploring the reference material.
 
 ## Repository Structure
 
@@ -19,10 +19,11 @@ Contributions are welcome! Please:
 
 1. Open an issue to discuss significant features or changes.
 2. Follow Go best practices and the formatting rules defined in `.editorconfig`.
-3. Use the provided tooling shortcuts before submitting changes:
+3. Use the provided tooling shortcuts before submitting changes and keep the ≥95% statement coverage guarantee in place:
    - `make fmt` to format code with `go fmt`.
-   - `make lint` to run `golangci-lint`.
+   - `make lint` to run `golangci-lint` with the cached configuration described in the docs.
    - `make test` to execute the suite with the Go race detector enabled.
+   - `make coverage MIN_COVERAGE=95` to confirm the repository-wide coverage threshold documented in §11 of the implementation plan.
    - `make integration` to verify Docker connectivity, enforce cgroup v2, and run the CPU weight responsiveness tests with logs mirrored to `artifacts/integration.log`.
    - `make build` to ensure binaries compile successfully.
 4. Include tests and documentation updates when adding new functionality.
