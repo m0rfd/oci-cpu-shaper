@@ -24,7 +24,7 @@ Contributions are welcome! Please:
    - `make lint` to run `golangci-lint` with the cached configuration described in the docs.
    - `make test` to execute the suite with the Go race detector enabled.
    - `make coverage MIN_COVERAGE=95` to confirm the repository-wide coverage threshold documented in §11 of the implementation plan.
-   - `make integration` to verify Docker connectivity, enforce cgroup v2, and run the CPU weight responsiveness tests with logs mirrored to `artifacts/integration.log`.
+  - `make integration` to verify Docker connectivity, ensure the cgroup v2 CPU controller is present, build the distroless rootful and nonroot images, and run the CPU weight responsiveness tests with logs mirrored to `artifacts/integration.log`.
    - `make build` to ensure binaries compile successfully.
 4. Include tests and documentation updates when adding new functionality.
 5. Use conventional commit messages where possible to ease changelog generation.

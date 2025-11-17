@@ -425,6 +425,26 @@ jobs:
 
           echo "Cgroup version: $version"
 
+      - name: Verify cgroup v2 cpu controller
+        run: |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          controllers_path=/sys/fs/cgroup/cgroup.controllers
+          if [ ! -r "$controllers_path" ]; then
+            echo "::error::cgroup controllers file $controllers_path is not readable"
+            exit 1
+          fi
+
+          controllers=$(tr '\n' ' ' < "$controllers_path")
+          if ! grep -qw cpu "$controllers_path"; then
+            echo "::error::integration suite requires the cgroup v2 cpu controller (controllers: ${controllers:-unknown})"
+            exit 1
+          fi
+
+          echo "cgroup v2 controllers: $controllers"
+
       - name: Run integration tests
         env:
           INTEGRATION_KEEP_LOGS: "1"
