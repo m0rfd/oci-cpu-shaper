@@ -24,13 +24,15 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
   explains how environment variables layer on top for Mode A/Mode B deployments.
 - CLI emulation suite under `tests/e2e/` gated by the `e2e` build tag, complete with reusable IMDS/Monitoring mocks and `make e2e` helper so offline/online controller flows, metrics output, and structured state-transition logs stay verifiable in CI and locally (§§5, 9, 11).
 - Rootful worker pools compiled with `-tags rootful` now request Linux
-  `SCHED_IDLE` scheduling for each worker and emit a `worker failed to enter
-  sched_idle` warning when the kernel rejects the downgrade (for example,
-  missing `CAP_SYS_NICE`/`SYS_NICE`). Dependency-injected unit tests stub
-  `unix.SchedSetScheduler` to cover success and EPERM denial paths, preserving
-  the §11.1 coverage contract while documenting the new behaviour in §§6 and 9.
+  `SCHED_IDLE` via `sched_setscheduler(0, SCHED_IDLE, ...)` as the pool is
+  constructed, record the result until the CLI installs its warning handler, and
+  ignore `EPERM` so intentionally unprivileged hosts keep clean logs. Unit tests
+  swap in fake schedulers to exercise success, permission-denied, and error
+  propagation paths, preserving the §11.1 coverage contract while documenting
+  the new behaviour in §§6 and 9.
 - Regression suite `TestControllerCpuUtilisationAcrossOCPUs` covering 1–4 OCPU CpuUtilization streams and the relaxed-interval clamp so the adaptive controller keeps the Always Free reclaim guardrails documented in §§3.1 and 5.2. Tests maintain the ≥95% statement floor by exercising the prolonged high-utilisation path in `pkg/adapt/controller.go` (§11).
 - Deterministic 24-hour-equivalent worker-pool load harness (`go test -tags=load ./pkg/shape -run TestPoolLoad24hEquivalent`) that logs CPU/RSS telemetry to `artifacts/load/pool-24h.log` and enforces the §10 budgets alongside nightly/manual CI coverage via `.github/workflows/load.yml` (§§10, 11.4).
+- Duty-cycle benchmark suite (`BenchmarkPoolDutyCycle`) plus the `hack/check_benchmarks.sh` guard script that record CPU usage, per-tick drift, and scheduler fairness across multiple quantums and targets, failing whenever the §10 duty-cycle or §5 scheduler limits regress (§§5, 10, 11).
 - Always Free Terraform stack under `deploy/terraform/self-hosted-runner/` that provisions a hardened GitHub Actions runner with instance-principal access scoped to test compartments, including cloud-init hardening and IAM automation (§§5, 8, 15).
 - Terraform alarm module under `deploy/terraform/alarms/` that creates the seven-day P95 Always Free reclaim guardrail with parameterised OCIDs, opinionated tagging, and Notification wiring, plus documentation of the exact `.window(7d).percentile(0.95)` MQL expression in §7 (§§3, 5, 7).
 - Scheduled `self-hosted` workflow exercising IMDS lookups, live `QueryP95CPU` calls via `hack/tools/p95query`, Docker cgroup v2 behaviour, and a rootful CPU weight validation that builds the image in situ, runs the high/low weight hog containers, and publishes `/sys/fs/cgroup` logs as artifacts on the OCI runner (§§4, 6, 11, 15).
@@ -50,6 +52,7 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - Time-bounded shutdown support via the `--shutdown-after` flag so smoke tests and diagnostics can exercise the adaptive controller without leaving background processes behind; docs cover the workflow alongside the offline configuration shipped in the image (§§5, 9).
 - GitHub Actions workflows covering `golangci-lint` and race-enabled `go test` runs on pull requests (§14).
 - Automated release pipeline publishing multi-architecture images with Syft-generated SPDX SBOM artifacts (§14).
+- Release workflow now installs Cosign, signs each multi-arch image digest with GitHub Actions OIDC keyless certificates, emits SPDX attestations, and uploads the detached signatures/certificates as release assets so operators can verify images offline (§14).
 - Unit coverage for IMDS dummy metadata, controller mode wiring, and CLI bootstrap flows via dependency-injected smoke tests (§§5, 9, 11).
 - Race-enabled `make coverage` target and CI enforcement requiring at least 95% statement coverage before merging (§14).
 - Go vulnerability scanning via `make govulncheck` and a dedicated CI job that restores module/build caches, failing pull requests when published advisories affect the dependency graph (§14).
@@ -107,3 +110,4 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% 
 - Overview, README, and Monitoring documentation now link to the IAM, reclaim, cgroup, alarm, and Quick Start guides so operators can navigate the consolidated Always Free playbook (§§0, 5, 10).
 - Updated third-party Go modules (flock, gobreaker, testify, golang.org/x/{crypto,net,sys}) to their latest releases so the controller wiring, samplers, and tests stay aligned with upstream fixes (§§11, 14).
 - Reconfirmed all Go module requirements and GitHub Actions pins are on the latest stable releases, updating workflow actions to their freshest tags to keep CI and release automation current (§§11, 14).
+- Added a `make bench` helper that wraps `hack/check_benchmarks.sh` and wired the same duty-cycle benchmark enforcement into the CI workflow so every pull request runs the CPU/fairness regression gate alongside linting and tests (§§11, 14).

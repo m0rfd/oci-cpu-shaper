@@ -32,3 +32,31 @@ Contributions are welcome! Please:
 See [`docs/08-development.md`](docs/08-development.md) for detailed local development setup guidance.
 
 Refer to the documentation in the `docs/` directory for deeper architectural and operational context as it becomes available.
+
+## Release Verification
+
+Images published to `ghcr.io/<owner>/oci-cpu-shaper` are signed with Cosign using GitHub Actions’ OIDC keyless flow, and the workflow uploads detached signatures plus SBOM attestations as release assets for both `nonroot` and `rootful` variants. Download the files that match the release tag you are deploying and verify either the image or the Syft-generated SPDX attestation:
+
+```bash
+TAG="v1.2.3"
+VARIANT="nonroot" # or rootful
+IMAGE="ghcr.io/<owner>/oci-cpu-shaper:${VARIANT}"
+
+cosign verify \
+  --certificate-identity "https://github.com/<owner>/oci-cpu-shaper/.github/workflows/release.yml@refs/tags/${TAG}" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  --signature cosign-${TAG}-${VARIANT}.sig \
+  --certificate cosign-${TAG}-${VARIANT}.pem \
+  "$IMAGE"
+
+cosign verify-attestation \
+  --type spdx \
+  --certificate-identity "https://github.com/<owner>/oci-cpu-shaper/.github/workflows/release.yml@refs/tags/${TAG}" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  --signature sbom-attestation-${TAG}-${VARIANT}.sig \
+  --certificate sbom-attestation-${TAG}-${VARIANT}.pem \
+  --attestation sbom-attestation-${TAG}-${VARIANT}.jsonl \
+  "$IMAGE"
+```
+
+For additional context and troubleshooting guidance, see the §14 signing section in [`docs/08-development.md`](docs/08-development.md).

@@ -2,10 +2,15 @@
 package shape
 
 import (
+	"context"
+	"errors"
 	"math"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+var errTestSchedIdle = errors.New("sched_idle failed")
 
 func TestPoolWorkersAndQuantumAccessors(t *testing.T) {
 	t.Parallel()
@@ -51,7 +56,7 @@ func TestPoolSetTargetBoundsInput(t *testing.T) {
 	}
 }
 
-func TestConfigureRootfulHooksNoop(t *testing.T) {
+func TestSetWorkerStartErrorHandlerReplaysStoredError(t *testing.T) {
 	t.Parallel()
 
 	pool, err := NewPool(1, DefaultQuantum)
@@ -59,17 +64,26 @@ func TestConfigureRootfulHooksNoop(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	configureRootfulHooks(pool)
+	pool.rootfulInitErr = errTestSchedIdle
 
-	configureRootfulHooks(nil)
-}
+	var called int
 
-func TestTrySchedIdleNoop(t *testing.T) {
-	t.Parallel()
+	pool.SetWorkerStartErrorHandler(func(err error) {
+		if err == nil {
+			t.Fatalf("expected error, got nil")
+		}
 
-	err := trySchedIdle()
-	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
+		called++
+	})
+
+	if called != 1 {
+		t.Fatalf("expected handler to be called once, got %d", called)
+	}
+
+	pool.SetWorkerStartErrorHandler(func(error) {})
+
+	if called != 1 {
+		t.Fatalf("handler should not be called again, got %d", called)
 	}
 }
 
@@ -102,4 +116,95 @@ func TestNewPoolClampsQuantumWithinBounds(t *testing.T) {
 	if got := tooLarge.Quantum(); got != maxQuantum {
 		t.Fatalf("expected quantum to clamp to %s, got %s", maxQuantum, got)
 	}
+}
+
+func TestPoolWorkerSkipsSleepWhenTargetIsFullyBusy(t *testing.T) {
+	t.Parallel()
+
+	pool, err := NewPool(1, 2*time.Millisecond)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	pool.SetTarget(1)
+
+	busyDurations, sleepCalls, yieldCalls := installFullyBusyWorkerProbes(pool)
+
+	tick := newControllableTicker()
+	pool.tickerFactory = func(time.Duration) ticker {
+		return tick
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go pool.worker(ctx)
+
+	tick.Tick()
+
+	var busyDur time.Duration
+	select {
+	case busyDur = <-busyDurations:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatalf("worker did not process tick")
+	}
+
+	cancel()
+	time.Sleep(5 * time.Millisecond)
+
+	if busyDur != pool.quantum {
+		t.Fatalf("expected busy duration %s, got %s", pool.quantum, busyDur)
+	}
+
+	if got := sleepCalls.Load(); got != 0 {
+		t.Fatalf("expected sleep to be skipped, got %d calls", got)
+	}
+
+	if got := yieldCalls.Load(); got < 2 {
+		t.Fatalf("expected at least two yields when idle duration is zero, got %d", got)
+	}
+}
+
+func installFullyBusyWorkerProbes(pool *Pool) (chan time.Duration, *atomic.Int32, *atomic.Int32) {
+	busyDurations := make(chan time.Duration, 1)
+
+	var (
+		sleepCalls atomic.Int32
+		yieldCalls atomic.Int32
+	)
+
+	pool.busyFunc = func(d time.Duration) {
+		select {
+		case busyDurations <- d:
+		default:
+		}
+	}
+
+	pool.sleepFunc = func(time.Duration) {
+		sleepCalls.Add(1)
+	}
+
+	pool.yieldFunc = func() {
+		yieldCalls.Add(1)
+	}
+
+	return busyDurations, &sleepCalls, &yieldCalls
+}
+
+type controllableTicker struct {
+	ch chan time.Time
+}
+
+func newControllableTicker() *controllableTicker {
+	return &controllableTicker{ch: make(chan time.Time, 1)}
+}
+
+func (t *controllableTicker) C() <-chan time.Time {
+	return t.ch
+}
+
+func (t *controllableTicker) Stop() {}
+
+func (t *controllableTicker) Tick() {
+	t.ch <- time.Now()
 }

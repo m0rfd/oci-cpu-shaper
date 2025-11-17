@@ -267,6 +267,39 @@ jobs:
             coverage.txt
           if-no-files-found: error
 
+  benchmarks:
+    name: duty-cycle benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5.0.0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.sum
+
+      - name: Cache Go build artifacts
+        uses: actions/cache@v4
+        with:
+          path: .cache/go
+          key: ${{ runner.os }}-go-cache-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-cache-
+
+      - name: Run duty-cycle benchmarks
+        run: make bench
+
+      - name: Upload benchmark log
+        uses: actions/upload-artifact@v5
+        with:
+          name: duty-cycle-benchmarks
+          path: artifacts/benchmarks/pool-bench.txt
+          if-no-files-found: error
+
   container-smoke:
     name: container smoke
     runs-on: ubuntu-latest
