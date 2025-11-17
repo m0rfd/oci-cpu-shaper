@@ -8,6 +8,11 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
   P95, controller target/state, and host CPU overlays, plus §5.4 import instructions so
   operators can wire the Prometheus feed into Grafana without rebuilding the charts (§§3,
   5, 12).
+- Controller metrics now export `controller_interval_seconds` and
+  `controller_last_error_info`, with adaptive-controller hooks that update the interval,
+  state, and last OCI error every loop. Tests cover the Prometheus output and the
+  fallback integration path, while §5.4 now recommends Grafana panels for the cadence
+  and error strings (§§5, 9, 11).
 - `/healthz` status handler on the metrics listener that surfaces controller
   state plus the last OCI Monitoring and estimator errors as JSON; unit tests
   cover `pkg/http/status` and the offline CLI E2E now exercises the endpoint to
