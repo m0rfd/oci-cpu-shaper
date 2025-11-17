@@ -57,6 +57,28 @@ func TestControllerRecorderLoggerSetModeLogsChanges(t *testing.T) {
 	}
 }
 
+func TestControllerRecorderLoggerSetModeNormalizesEmptyValues(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+	recorder := newRecorderLogger(logger, metricshttp.NewExporter())
+
+	recorder.SetMode("   ")
+
+	entries := observed.Filter(func(entry observer.LoggedEntry) bool {
+		return entry.Message == "controller mode configured"
+	}).All()
+
+	if len(entries) != 1 {
+		t.Fatalf("expected a single mode log, got %d", len(entries))
+	}
+
+	if got := fieldString(entries[0].Context, "mode"); got != controllerUnknownValue {
+		t.Fatalf("expected empty mode to normalize to unknown, got %q", got)
+	}
+}
+
 func TestControllerRecorderLoggerSetStateLogsTransitions(t *testing.T) {
 	t.Parallel()
 
@@ -93,6 +115,31 @@ func TestControllerRecorderLoggerSetStateLogsTransitions(t *testing.T) {
 
 	if got := fieldString(second.Context, "to"); got != "fallback" {
 		t.Fatalf("expected fallback transition, got %q", got)
+	}
+}
+
+func TestControllerRecorderLoggerSetStateNormalizesEmptyValues(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+	recorder := newRecorderLogger(logger, metricshttp.NewExporter())
+
+	recorder.SetState("   ")
+
+	entries := observed.FilterLevelExact(zap.InfoLevel).All()
+
+	if len(entries) != 1 {
+		t.Fatalf("expected single state log for empty input, got %d", len(entries))
+	}
+
+	entry := entries[0]
+	if entry.Message != "controller state transition" {
+		t.Fatalf("unexpected log message %q", entry.Message)
+	}
+
+	if got := fieldString(entry.Context, "to"); got != controllerUnknownValue {
+		t.Fatalf("expected empty state to normalize to unknown, got %q", got)
 	}
 }
 
@@ -166,6 +213,38 @@ func TestControllerRecorderLoggerObserveOCIP95UsesCooldown(t *testing.T) {
 	}
 }
 
+func TestControllerRecorderLoggerObserveOCIP95LogsWhenTimestampMissing(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.DebugLevel)
+	logger := zap.New(core)
+	recorder := newRecorderLogger(logger, metricshttp.NewExporter())
+
+	impl, ok := recorder.(*controllerRecorderLogger)
+	if !ok {
+		t.Fatal("expected recorder to be controllerRecorderLogger")
+	}
+
+	impl.ociLogged = true
+	impl.lastOCI = 0.2
+	impl.lastOCILog = time.Time{}
+	impl.now = func() time.Time { return time.Date(2024, time.July, 10, 12, 0, 0, 0, time.UTC) }
+
+	recorder.ObserveOCIP95(0.203, time.Time{})
+
+	entries := observed.Filter(func(entry observer.LoggedEntry) bool {
+		return entry.Message == "oci metrics observation"
+	}).All()
+
+	if len(entries) != 1 {
+		t.Fatalf("expected single OCI observation log, got %d", len(entries))
+	}
+
+	if got := fieldFloat(entries[0].Context, "p95"); got != 0.203 {
+		t.Fatalf("expected log to capture observation value, got %f", got)
+	}
+}
+
 func TestControllerRecorderLoggerObserveHostCPULogsThresholds(t *testing.T) {
 	t.Parallel()
 
@@ -193,7 +272,7 @@ func TestControllerRecorderLoggerObserveHostCPULogsThresholds(t *testing.T) {
 	recorder.ObserveHostCPU(0.12)
 
 	entries := observed.Filter(func(entry observer.LoggedEntry) bool {
-		return entry.Message == "host cpu observation"
+		return entry.Message == hostCPUObservationMessage
 	}).All()
 
 	if len(entries) != 2 {
@@ -208,5 +287,50 @@ func TestControllerRecorderLoggerObserveHostCPULogsThresholds(t *testing.T) {
 	secondPercent := fieldFloat(entries[1].Context, "percent")
 	if secondPercent != 12 {
 		t.Fatalf("expected host CPU cooldown log to capture 12%%, got %f", secondPercent)
+	}
+}
+
+func TestControllerRecorderLoggerObserveHostCPULogsLargeDelta(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.DebugLevel)
+	logger := zap.New(core)
+	recorder := newRecorderLogger(logger, metricshttp.NewExporter())
+
+	recorder.ObserveHostCPU(0.10)
+	recorder.ObserveHostCPU(0.22)
+
+	entries := observed.Filter(func(entry observer.LoggedEntry) bool {
+		return entry.Message == hostCPUObservationMessage
+	}).All()
+
+	if len(entries) != 2 {
+		t.Fatalf(
+			"expected large delta to trigger second log without cooldown, got %d entries",
+			len(entries),
+		)
+	}
+
+	if got := fieldFloat(entries[1].Context, "percent"); got != 22 {
+		t.Fatalf("expected second log to capture 22%%, got %f", got)
+	}
+}
+
+func TestControllerRecorderLoggerShouldLogObservationFallsBackToTimeNow(t *testing.T) {
+	t.Parallel()
+
+	logger := zap.NewNop()
+	recorder := newRecorderLogger(logger, metricshttp.NewExporter())
+
+	impl, ok := recorder.(*controllerRecorderLogger)
+	if !ok {
+		t.Fatal("expected recorder to be controllerRecorderLogger")
+	}
+
+	impl.now = nil
+	past := time.Now().Add(-controllerObservationCooldown - time.Second)
+
+	if !impl.shouldLogObservation(true, 0.2, 0.2, past, controllerHostObservationDelta) {
+		t.Fatal("expected time.Now fallback to allow logging when cooldown elapsed")
 	}
 }

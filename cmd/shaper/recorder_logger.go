@@ -16,6 +16,8 @@ const (
 	controllerHostObservationDelta = 0.05
 	controllerObservationCooldown  = 30 * time.Second
 	hostPercentMultiplier          = 100.0
+	controllerUnknownValue         = "unknown"
+	hostCPUObservationMessage      = "host cpu observation"
 )
 
 type controllerRecorderLogger struct {
@@ -60,7 +62,7 @@ func newRecorderLogger(
 func (r *controllerRecorderLogger) SetMode(mode string) {
 	trimmed := strings.TrimSpace(mode)
 	if trimmed == "" {
-		trimmed = "unknown"
+		trimmed = controllerUnknownValue
 	}
 
 	if r.delegate != nil {
@@ -81,7 +83,7 @@ func (r *controllerRecorderLogger) SetMode(mode string) {
 func (r *controllerRecorderLogger) SetState(state string) {
 	trimmed := strings.TrimSpace(state)
 	if trimmed == "" {
-		trimmed = "unknown"
+		trimmed = controllerUnknownValue
 	}
 
 	if r.delegate != nil {
@@ -177,7 +179,7 @@ func (r *controllerRecorderLogger) ObserveHostCPU(utilisation float64) {
 	}
 
 	r.logger.Debug(
-		"host cpu observation",
+		hostCPUObservationMessage,
 		zap.Float64("percent", percent),
 		zap.Float64("ratio", utilisation),
 	)
