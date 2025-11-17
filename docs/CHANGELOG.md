@@ -26,10 +26,17 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - Rootful worker pools compiled with `-tags rootful` now request Linux
   `SCHED_IDLE` via `sched_setscheduler(0, SCHED_IDLE, ...)` as the pool is
   constructed, record the result until the CLI installs its warning handler, and
-  ignore `EPERM` so intentionally unprivileged hosts keep clean logs. Unit tests
+  emit a `worker failed to enter sched_idle` warning when kernels reject the
+  downgrade (for example when `CAP_SYS_NICE`/`SYS_NICE` is missing). Unit tests
   swap in fake schedulers to exercise success, permission-denied, and error
   propagation paths, preserving the §11.1 coverage contract while documenting
   the new behaviour in §§6 and 9.
+- Integration test `TestSchedIdleWarningTracksSysNiceCapability` builds the
+  rootful binary with `-tags rootful`, launches the Mode B container once as the
+  `nobody` user (missing capabilities) and once as `root` with `SYS_NICE`
+  explicitly granted, and asserts the sched_idle warning only appears when the
+  capability is missing. README §10 now references the workflow so operators can
+  validate hosts before enabling SCHED_IDLE (§§6, 10, 11).
 - Regression suite `TestControllerCpuUtilisationAcrossOCPUs` covering 1–4 OCPU CpuUtilization streams and the relaxed-interval clamp so the adaptive controller keeps the Always Free reclaim guardrails documented in §§3.1 and 5.2. Tests maintain the ≥95% statement floor by exercising the prolonged high-utilisation path in `pkg/adapt/controller.go` (§11).
 - Deterministic 24-hour-equivalent worker-pool load harness (`go test -tags=load ./pkg/shape -run TestPoolLoad24hEquivalent`) that logs CPU/RSS telemetry to `artifacts/load/pool-24h.log` and enforces the §10 budgets alongside nightly/manual CI coverage via `.github/workflows/load.yml` (§§10, 11.4).
 - Duty-cycle benchmark suite (`BenchmarkPoolDutyCycle`) plus the `hack/check_benchmarks.sh` guard script that record CPU usage, per-tick drift, and scheduler fairness across multiple quantums and targets, failing whenever the §10 duty-cycle or §5 scheduler limits regress (§§5, 10, 11).

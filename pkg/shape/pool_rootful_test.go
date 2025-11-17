@@ -14,7 +14,7 @@ type fakeSchedIdleSetter struct {
 	err    error
 }
 
-func (f *fakeSchedIdleSetter) setScheduler(pid int, policy int, param *unix.SchedParam) error {
+func (f *fakeSchedIdleSetter) setScheduler(pid int, policy int, param *schedParam) error {
 	f.called = true
 
 	if pid != 0 {
@@ -61,15 +61,15 @@ func TestTrySchedIdleSuccess(t *testing.T) {
 	}
 }
 
-func TestTrySchedIdleIgnoresEPERM(t *testing.T) {
+func TestTrySchedIdlePropagatesEPERM(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeSchedIdleSetter{err: unix.EPERM}
 	restore := withFakeSchedIdleSetter(fake)
 	t.Cleanup(restore)
 
-	if err := trySchedIdle(); err != nil {
-		t.Fatalf("expected nil error, got %v", err)
+	if err := trySchedIdle(); !errors.Is(err, unix.EPERM) {
+		t.Fatalf("expected EPERM, got %v", err)
 	}
 }
 
