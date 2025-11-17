@@ -103,6 +103,10 @@ test:
 		mkdir -p "$(GOCACHE_DIR)"; \
 		GOCACHE="$(GOCACHE_DIR)" $(GO) test -race $(PKGS); \
 	fi
+	@if [ -d "$(ROOT_DIR)/tests/e2e" ]; then \
+		mkdir -p "$(GOCACHE_DIR)"; \
+		GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=e2e ./tests/e2e/...; \
+	fi
 
 coverage:
 	@set -euo pipefail; \
