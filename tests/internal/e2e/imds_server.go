@@ -95,7 +95,7 @@ func (s *IMDSServer) serveHTTP(writer http.ResponseWriter, req *http.Request) {
 		s.writeText(writer, s.cfg.InstanceID)
 	case "opc/v2/instance/compartmentId":
 		s.writeText(writer, s.cfg.CompartmentID)
-	case "opc/v2/instance/shape-config":
+	case "opc/v2/instance/shapeConfig":
 		s.writeJSON(writer, s.cfg.Shape)
 	default:
 		http.NotFound(writer, req)
