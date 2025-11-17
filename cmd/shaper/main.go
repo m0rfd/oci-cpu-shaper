@@ -984,6 +984,8 @@ func serveMetrics(
 		shutdownCtx, cancel := context.WithTimeout(ctx, metricsShutdownTimeout)
 		defer cancel()
 
+		logger.Info("stopping metrics server", zap.String("bind", server.Addr))
+
 		err := server.Shutdown(shutdownCtx)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Warn("metrics server shutdown", zap.Error(err))
@@ -994,7 +996,11 @@ func serveMetrics(
 		err := server.Serve(listener)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Warn("metrics server serve", zap.Error(err))
+
+			return
 		}
+
+		logger.Info("metrics server stopped", zap.String("bind", server.Addr))
 	}()
 }
 
