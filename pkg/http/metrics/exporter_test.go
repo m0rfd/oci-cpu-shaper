@@ -42,6 +42,9 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 		"# HELP shaper_mode Controller operating mode (value set to 1 for the active mode).",
 		"# TYPE shaper_mode gauge",
 		"shaper_mode{mode=\"dry-run\"} 1",
+		"# HELP shaper_enforcing Controller enforcement status (1 when worker targets are applied).",
+		"# TYPE shaper_enforcing gauge",
+		"shaper_enforcing 0",
 		"# HELP shaper_state Controller state machine output (value set to 1 for the active state).",
 		"# TYPE shaper_state gauge",
 		"shaper_state{state=\"fallback\"} 1",
@@ -163,6 +166,10 @@ func TestExporterGuardsAgainstInvalidInputs(t *testing.T) {
 
 	if !strings.Contains(output, "shaper_state{state=\"unknown\"} 1") {
 		t.Fatalf("expected unknown state, got %s", output)
+	}
+
+	if !strings.Contains(output, "shaper_enforcing 1") {
+		t.Fatalf("expected enforcing gauge to default to 1, got %s", output)
 	}
 
 	if !strings.Contains(output, "shaper_target_ratio 0.000000") {

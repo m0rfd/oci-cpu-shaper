@@ -52,8 +52,16 @@ func TestControllerRecorderLoggerSetModeLogsChanges(t *testing.T) {
 		t.Fatalf("expected initial mode log to capture dry-run, got %q", got)
 	}
 
+	if enforcing, ok := fieldBool(entries[0].Context, "enforcing"); !ok || enforcing {
+		t.Fatalf("expected dry-run log to mark enforcing=false, got %v (present=%v)", enforcing, ok)
+	}
+
 	if got := fieldString(entries[1].Context, "mode"); got != "enforce" {
 		t.Fatalf("expected second mode log to capture enforce, got %q", got)
+	}
+
+	if enforcing, ok := fieldBool(entries[1].Context, "enforcing"); !ok || !enforcing {
+		t.Fatalf("expected enforce log to mark enforcing=true, got %v (present=%v)", enforcing, ok)
 	}
 }
 

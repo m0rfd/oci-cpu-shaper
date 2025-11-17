@@ -884,6 +884,7 @@ func logControllerInitialization(
 
 	fields := []zap.Field{
 		zap.String("mode", controller.Mode()),
+		zap.Bool("enforcingTargets", adapt.ModeEnforcesTargets(controller.Mode())),
 		zap.String("controllerState", controller.State().String()),
 		zap.Bool("offline", cfg.OCI.Offline),
 		zap.Int("workerCount", cfg.Pool.Workers),

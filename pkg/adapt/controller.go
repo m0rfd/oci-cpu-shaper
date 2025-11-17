@@ -90,6 +90,7 @@ type Config struct {
 // DefaultConfig mirrors the initial implementation plan for control loop cadence.
 const (
 	defaultModeLabel       = "normal"
+	dryRunModeLabel        = "dry-run"
 	defaultTargetStart     = 0.25
 	defaultTargetMin       = 0.22
 	defaultTargetMax       = 0.40
@@ -126,12 +127,64 @@ func DefaultConfig() Config {
 	}
 }
 
+// ModeEnforcesTargets reports whether the provided controller mode should mutate
+// the worker pool duty cycle.
+func ModeEnforcesTargets(mode string) bool {
+	trimmed := strings.ToLower(strings.TrimSpace(mode))
+
+	return trimmed != dryRunModeLabel
+}
+
 var (
 	errMetricsClientRequired = errors.New("adapt: metrics client is required")
 	errDutyCyclerRequired    = errors.New("adapt: duty cycler is required")
 	// ErrInvalidConfig signals that the supplied controller configuration is invalid.
 	ErrInvalidConfig = errors.New("adapt: invalid config")
 )
+
+type recordingDutyCycler struct {
+	mu     sync.Mutex
+	target float64
+}
+
+//nolint:ireturn // helper returns DutyCycler interface to allow optional wrapping of the delegate.
+func newModeAwareDutyCycler(mode string, shaper DutyCycler) DutyCycler {
+	if shaper == nil {
+		return nil
+	}
+
+	if ModeEnforcesTargets(mode) {
+		return shaper
+	}
+
+	recorder := &recordingDutyCycler{
+		mu:     sync.Mutex{},
+		target: shaper.Target(),
+	}
+
+	return recorder
+}
+
+func (r *recordingDutyCycler) SetTarget(target float64) {
+	if r == nil {
+		return
+	}
+
+	r.mu.Lock()
+	r.target = target
+	r.mu.Unlock()
+}
+
+func (r *recordingDutyCycler) Target() float64 {
+	if r == nil {
+		return 0
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.target
+}
 
 // AdaptiveController orchestrates the normal/fallback state machine.
 type AdaptiveController struct {
@@ -178,10 +231,12 @@ func NewAdaptiveController(
 		return nil, err
 	}
 
+	wrappedShaper := newModeAwareDutyCycler(mode, shaper)
+
 	controller := new(AdaptiveController)
 	controller.cfg = normalized
 	controller.metrics = metrics
-	controller.shaper = shaper
+	controller.shaper = wrappedShaper
 	controller.estimator = estimator
 	controller.recorder = recorder
 	controller.state = StateFallback
@@ -191,7 +246,7 @@ func NewAdaptiveController(
 	controller.interval = normalized.Interval
 	controller.mode = mode
 
-	shaper.SetTarget(normalized.FallbackTarget)
+	wrappedShaper.SetTarget(normalized.FallbackTarget)
 
 	if recorder != nil {
 		recorder.SetMode(mode)
