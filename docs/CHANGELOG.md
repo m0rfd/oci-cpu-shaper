@@ -38,7 +38,7 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - Adaptive controller wiring from `cmd/shaper` to the OCI Monitoring client, estimator sampler, and worker pool, plus layered YAML + environment configuration for controller targets, cadences, worker counts, and HTTP binding (§§3.1, 5.2). Tests cover configuration decoding, environment overrides, and controller factory success/error paths to preserve the ≥95% coverage floor (§11).
 - Fast-loop suppression mode that adds a `suppressed` controller state, host-load hysteresis, and configuration knobs (`controller.suppressThreshold`/`controller.suppressResume`, `SHAPER_SUPPRESS_THRESHOLD`/`SHAPER_SUPPRESS_RESUME`) so the estimator can drop the worker pool to zero until the host cools (§§3.1, 5.2). Unit tests now cover suppression entry/exit and estimator error recording while docs in §§4 and 9 describe the new telemetry and structured `controllerState` logging.
 - Instance-principal Monitoring client (`pkg/oci`) exposing `QueryP95CPU` with pagination, missing-data fallbacks, and HTTP-backed mocks that keep coverage above the ≥95% floor. Documented in §5 alongside troubleshooting guidance for tenancy policy and metric gaps.
-- HTTP-backed IMDSv2 client with retried metadata lookups, shape-config decoding, and an overridable endpoint (`OCI_CPU_SHAPER_IMDS_ENDPOINT`), documented in §2 and backed by `httptest` unit coverage (§§2, 5, 11).
+- HTTP-backed IMDSv2 client with retried metadata lookups, shapeConfig decoding, and an overridable endpoint (`OCI_CPU_SHAPER_IMDS_ENDPOINT`), documented in §2 and backed by `httptest` unit coverage (§§2, 5, 11).
 - Repository-wide AGENTS policy check with `make agents` and CI coverage to enforce scoped instructions (§8.4).
 - Token-optimised AGENTS templates and directory-change checklist to keep scoped guidance current (§8.6).
 - Distroless Docker targets, Compose manifests, and runtime scripts for Komodo Mode A (§6).
@@ -61,6 +61,10 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% 
 - Distroless image builds now reference the repository-root `Dockerfile` and ship the
   offline smoke-test config from `configs/offline-smoke.yaml`, consolidating Komodo,
   CI, and release workflows on a single path (§6).
+- The distroless targets now copy the Mode A/Mode B manifests into
+  `/etc/oci-cpu-shaper/configs/` and the Compose/Quadlet/docker-run helpers default
+  to those paths, letting deployments start with baked-in YAML while retaining the
+  option to bind-mount overrides (§§6, 8).
 - Runtime metadata resolution now prefers IMDS compartment/region lookups and only
   falls back to YAML/environment overrides when the platform APIs fail or when
   `oci.offline` is set. Updated unit tests cover the IMDS-first and override fallback
@@ -73,6 +77,7 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% 
 - Rootless Mode A manifests, runtime script, and docs now restore the `SHAPER_CPU_SHARES` default to `128`, reflecting that rootless
   Docker honours delegated cgroup v2 CPU weight overrides (§6).
 - Refreshed `docs/00-overview.md` to document the current CLI flag surface, configuration layout, and navigation map, including forthcoming quick-start and CLI references (§§0, 5, 9).
+- Extended `docs/00-overview.md` with the plan-required threat model and non-goals sections and replaced the placeholder Quick Start note with a link to the published §10 onboarding guide so operators can navigate the consolidated deployment references (§§0, 10, 12).
 - Clarified the documentation roadmap to mark the published CLI/deployment guides and onboarding workflows as complete while calibrating remaining milestones for future adaptive-controller and release updates (§12).
 - CLI now starts the metrics HTTP server using `http.bind`/`HTTP_ADDR`, shuts it down with the run context, and ships container/Compose updates (`EXPOSE 9108`, `${SHAPER_METRICS_BIND}`) so `/metrics` is reachable when enabled; docs describe the exporter and monitoring workflow alignment (§§6, 9, 11).
 - CLI metadata resolution now populates `oci.compartmentId`/`OCI_COMPARTMENT_ID` alongside the new `oci.region`/`OCI_REGION` overrides using IMDS when online, threads the resolved region into the Monitoring client, and logs both identifiers for observability. Fresh unit coverage in §11 exercises the success, fallback, and error paths so the ≥95% statement floor holds.

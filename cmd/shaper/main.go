@@ -139,16 +139,35 @@ func configureMetrics(
 	pool poolStarter,
 	controller adapt.Controller,
 ) error {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	if exporter == nil {
+		logger.Warn("metrics exporter disabled", zap.String("reason", "no exporter configured"))
+
 		return nil
 	}
 
 	if pool != nil {
-		exporter.SetWorkerCount(pool.Workers())
-		exporter.SetDutyCycle(pool.Quantum())
+		workers := pool.Workers()
+		exporter.SetWorkerCount(workers)
+
+		quantum := pool.Quantum()
+		exporter.SetDutyCycle(quantum)
+
+		logger.Debug(
+			"registered worker pool metrics",
+			zap.Int("workerCount", workers),
+			zap.Duration("dutyCycle", quantum),
+		)
+	} else {
+		logger.Debug("worker pool metrics unavailable", zap.String("reason", "pool not configured"))
 	}
 
 	if deps.startMetricsServer == nil {
+		logger.Warn("metrics server disabled", zap.String("reason", "start function missing"))
+
 		return nil
 	}
 
@@ -159,7 +178,16 @@ func configureMetrics(
 		mux.Handle("/healthz", statushttp.NewHandler(controller))
 	}
 
-	return deps.startMetricsServer(ctx, logger, cfg.HTTP.Bind, mux)
+	bindAddr := strings.TrimSpace(cfg.HTTP.Bind)
+	if bindAddr == "" {
+		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
+
+		return nil
+	}
+
+	logger.Info("starting metrics server", zap.String("bind", bindAddr))
+
+	return deps.startMetricsServer(ctx, logger, bindAddr, mux)
 }
 
 // run orchestrates CLI initialization before handing execution to the controller.
@@ -210,17 +238,20 @@ func run(
 
 	info := deps.currentBuildInfo()
 	logStartup(logger, info, opts)
+	logRuntimeConfig(logger, cfg)
 
 	imdsClient := deps.newIMDS()
 
 	metricsExporter := buildMetricsExporter(deps)
 
-	cfg, _, metadataErr := prepareRunMetadata(ctx, cfg, imdsClient, opts.mode)
+	cfg, metadata, metadataErr := prepareRunMetadata(ctx, cfg, imdsClient, opts.mode)
 	if metadataErr != nil {
 		logger.Error("failed to resolve oci metadata", zap.Error(metadataErr))
 
 		return exitCodeRuntimeError
 	}
+
+	logMetadataResolution(logger, opts.mode, metadata, cfg.OCI.Offline)
 
 	controller, pool, buildErr := deps.newController(
 		ctx,
@@ -236,6 +267,8 @@ func run(
 
 		return code
 	}
+
+	logControllerInitialization(logger, cfg, controller, metricsExporter)
 
 	err = configureMetrics(ctx, deps, logger, cfg, metricsExporter, pool, controller)
 	if err != nil {
@@ -253,6 +286,12 @@ func run(
 			logger.Warn("worker failed to enter sched_idle", zap.Error(err))
 		})
 
+		logger.Info(
+			"starting worker pool",
+			zap.Int("workers", pool.Workers()),
+			zap.Duration("quantum", pool.Quantum()),
+		)
+
 		pool.Start(ctx)
 	}
 
@@ -267,11 +306,19 @@ func run(
 		cfg.OCI.Offline,
 	)
 
+	logger.Info(
+		"starting controller run",
+		zap.String("mode", controller.Mode()),
+		zap.String("controllerState", controller.State().String()),
+	)
+
 	return handleControllerRunResult(logger, controller.Run(ctx))
 }
 
 func handleControllerRunResult(logger *zap.Logger, runErr error) int {
 	if runErr == nil {
+		logger.Info("controller stopped", zap.String("reason", "completed"))
+
 		return exitCodeSuccess
 	}
 
@@ -754,6 +801,107 @@ func logStartup(logger *zap.Logger, info buildinfo.Info, opts options) {
 	logger.Info("starting oci-cpu-shaper", fields...)
 }
 
+func logRuntimeConfig(logger *zap.Logger, cfg runtimeConfig) {
+	if logger == nil {
+		return
+	}
+
+	bind := strings.TrimSpace(cfg.HTTP.Bind)
+	fields := []zap.Field{
+		zap.Int("workerCount", cfg.Pool.Workers),
+		zap.Duration("workerQuantum", cfg.Pool.Quantum),
+		zap.Duration("estimatorInterval", cfg.Estimator.Interval),
+		zap.Duration("controllerInterval", cfg.Controller.Interval),
+		zap.Duration("controllerRelaxedInterval", cfg.Controller.RelaxedInterval),
+		zap.Float64("controllerTargetMin", cfg.Controller.TargetMin),
+		zap.Float64("controllerTargetMax", cfg.Controller.TargetMax),
+		zap.Float64("controllerGoalLow", cfg.Controller.GoalLow),
+		zap.Float64("controllerGoalHigh", cfg.Controller.GoalHigh),
+		zap.Float64("suppressThreshold", cfg.Controller.SuppressThreshold),
+		zap.Float64("suppressResume", cfg.Controller.SuppressResume),
+		zap.Bool("offline", cfg.OCI.Offline),
+		zap.Bool("httpEnabled", bind != ""),
+	}
+
+	if bind != "" {
+		fields = append(fields, zap.String("httpBind", bind))
+	}
+
+	logger.Info("loaded runtime configuration", fields...)
+}
+
+func logMetadataResolution(
+	logger *zap.Logger,
+	mode string,
+	metadata ociMetadata,
+	offline bool,
+) {
+	if logger == nil {
+		return
+	}
+
+	trimmedMode := strings.TrimSpace(mode)
+	if trimmedMode == modeNoop {
+		logger.Debug("metadata resolution skipped", zap.String("mode", trimmedMode))
+
+		return
+	}
+
+	fields := []zap.Field{zap.Bool("offline", offline)}
+	if trimmed := strings.TrimSpace(metadata.CompartmentID); trimmed != "" {
+		fields = append(fields, zap.String("compartmentID", trimmed))
+	}
+
+	if trimmed := strings.TrimSpace(metadata.Region); trimmed != "" {
+		fields = append(fields, zap.String("region", trimmed))
+	}
+
+	if offline {
+		logger.Info("using offline metadata configuration", fields...)
+
+		return
+	}
+
+	if metadata.CompartmentID == "" || metadata.Region == "" {
+		logger.Warn("runtime metadata incomplete", fields...)
+
+		return
+	}
+
+	logger.Info("resolved runtime metadata", fields...)
+}
+
+func logControllerInitialization(
+	logger *zap.Logger,
+	cfg runtimeConfig,
+	controller adapt.Controller,
+	exporter *metricshttp.Exporter,
+) {
+	if logger == nil || controller == nil {
+		return
+	}
+
+	fields := []zap.Field{
+		zap.String("mode", controller.Mode()),
+		zap.String("controllerState", controller.State().String()),
+		zap.Bool("offline", cfg.OCI.Offline),
+		zap.Int("workerCount", cfg.Pool.Workers),
+		zap.Duration("workerQuantum", cfg.Pool.Quantum),
+		zap.Duration("estimatorInterval", cfg.Estimator.Interval),
+		zap.Bool("metricsEnabled", exporter != nil),
+	}
+
+	if trimmed := strings.TrimSpace(cfg.OCI.CompartmentID); trimmed != "" {
+		fields = append(fields, zap.String("compartmentID", trimmed))
+	}
+
+	if trimmed := strings.TrimSpace(cfg.OCI.Region); trimmed != "" {
+		fields = append(fields, zap.String("region", trimmed))
+	}
+
+	logger.Info("controller initialized", fields...)
+}
+
 //nolint:ireturn // helper returns MetricsClient interface for dependency substitution.
 func createMetricsClient(
 	ctx context.Context,
@@ -783,16 +931,25 @@ func startMetricsServer(
 	handler http.Handler,
 ) error {
 	trimmed := strings.TrimSpace(addr)
-	if trimmed == "" || handler == nil {
+
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	if trimmed == "" {
+		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
+
+		return nil
+	}
+
+	if handler == nil {
+		logger.Warn("metrics server disabled", zap.String("reason", "handler missing"))
+
 		return nil
 	}
 
 	if ctx == nil {
 		return errMetricsContextRequired
-	}
-
-	if logger == nil {
-		logger = zap.NewNop()
 	}
 
 	var listenCfg net.ListenConfig
@@ -808,6 +965,19 @@ func startMetricsServer(
 	server.Addr = trimmed
 	server.Handler = handler
 
+	logger.Info("metrics server listening", zap.String("bind", trimmed))
+
+	serveMetrics(ctx, logger, server, listener)
+
+	return nil
+}
+
+func serveMetrics(
+	ctx context.Context,
+	logger *zap.Logger,
+	server *http.Server,
+	listener net.Listener,
+) {
 	go func() {
 		<-ctx.Done()
 
@@ -826,8 +996,6 @@ func startMetricsServer(
 			logger.Warn("metrics server serve", zap.Error(err))
 		}
 	}()
-
-	return nil
 }
 
 type p95CPUQuerier interface {
@@ -891,7 +1059,7 @@ func logIMDSMetadata(
 			fields = append(fields, zap.String("instanceID", trimmedOverride))
 		}
 
-		logger.Debug("initialized subsystems", fields...)
+		logger.Info("initialized subsystems", fields...)
 
 		return
 	}
@@ -906,7 +1074,7 @@ func logIMDSMetadata(
 		trimmedRegion,
 	)
 
-	logger.Debug("initialized subsystems", fields...)
+	logger.Info("initialized subsystems", fields...)
 }
 
 func queryTextMetadata(

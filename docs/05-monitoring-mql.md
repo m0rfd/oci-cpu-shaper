@@ -31,7 +31,7 @@ Offline smoke tests rely on `pkg/oci.NewStaticMetricsClient`, which implements t
 
 - **`ErrNoMetricsData`** – Verify that the instance publishes `CpuUtilization` metrics (enabled by the Compute Agent) and that the queried window contains traffic. Check the Monitoring console for gaps or disablement in the agent plugin.[^oci-compute-agent]
 - **HTTP 401/403 responses** – Confirm the instance belongs to the dynamic group referenced by the policy and that the policy grants `read metrics` on the target compartment.
-- **HTTP 429/5xx responses** – The helper wraps the raw error so controllers can trigger retries or fall back to cached data. Validate regional connectivity and consider enabling per-request retry logic before escalating.
+- **HTTP 429/5xx responses** – The helper wraps the raw error so controllers can trigger retries or fall back to cached data. Validate regional connectivity and consider enabling per-request retry logic before escalating. `/healthz` mirrors this state machine output (§9.6) so Kubernetes probes can immediately observe the fallback transition and bubble up the underlying Monitoring error string.
 
 ## 5.4 Grafana dashboard setup
 
