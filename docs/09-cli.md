@@ -198,19 +198,34 @@ worker_count 4
 # HELP host_cpu_percent Last recorded host CPU utilisation percentage.
 # TYPE host_cpu_percent gauge
 host_cpu_percent 6.25
+# HELP cgroup_cpu_weight Detected cgroup v2 cpu.weight value for the process.
+# TYPE cgroup_cpu_weight gauge
+cgroup_cpu_weight 128
+# HELP cgroup_cpu_max_quota Detected cpu.max quota (microseconds). Zero when unlimited.
+# TYPE cgroup_cpu_max_quota gauge
+cgroup_cpu_max_quota 30000
+# HELP cgroup_cpu_max_period Detected cpu.max period (microseconds).
+# TYPE cgroup_cpu_max_period gauge
+cgroup_cpu_max_period 100000
+# HELP cgroup_cpu_max_unlimited Flag set to 1 when cpu.max reports "max".
+# TYPE cgroup_cpu_max_unlimited gauge
+cgroup_cpu_max_unlimited 0
 # EOF
 ```
 
 Offline mode continues to populate each series so smoke tests and container health checks can rely on the exporter without live tenancy credentials; only `oci_last_success_epoch` remains `0` until Monitoring calls succeed. Unit and CLI tests exercise the handler through `httptest.Server`, preserving the ≥95% coverage floor mandated in §11.
+
+The cgroup gauges mirror the detected `/proc/self/cgroup` path and the files under `/sys/fs/cgroup/.../cpu.weight`/`cpu.max`. Unlimited ceilings keep `cgroup_cpu_max_quota` at `0` and flip `cgroup_cpu_max_unlimited` to `1`, making it easy to alarm on drift from the §4 recommendations without shelling into the host.
 
 ## 9.6 Health Checks
 
 `cmd/shaper` now serves a lightweight JSON status document at `/healthz` on the
 same listener as `/metrics`. The handler reports the controller mode (`"noop"`,
 `"dry-run"`, or `"enforce"`), the state machine (`"normal"`, `"fallback"`, or
-`"suppressed"`), and the last OCI metrics plus estimator errors. Container
-orchestrators can poll the endpoint to surface degraded Monitoring connectivity
-or estimator stalls while the process continues to run.
+`"suppressed"`), the last OCI metrics plus estimator errors, and the detected
+`cpu.weight`/`cpu.max` values (or any file read errors). Container orchestrators
+can poll the endpoint to surface degraded Monitoring connectivity, estimator
+stalls, or cgroup drift while the process continues to run.
 
 The response mirrors this structure:
 
@@ -219,14 +234,27 @@ The response mirrors this structure:
   "mode": "dry-run",
   "state": "normal",
   "ociError": "",
-  "estimatorError": ""
+  "estimatorError": "",
+  "cgroup": {
+    "path": "/user.slice/shaper.scope",
+    "cpuWeight": {
+      "value": 128
+    },
+    "cpuMax": {
+      "quota": 30000,
+      "period": 100000,
+      "unlimited": false
+    }
+  }
 }
 ```
 
 When errors are present the strings are populated with the underlying error
-messages; otherwise they remain empty. Unit coverage in `pkg/http/status`
-verifies the handler’s JSON output while the end-to-end harness starts the CLI,
-injects a Monitoring outage, and polls `/healthz` until it reports the
-`fallback` state with the recorded error string. This keeps the ≥95% coverage
-target documented in §11 intact and proves that health probes surface Monitoring
-failures without crashing the process.
+messages; otherwise they remain empty. `cpuWeight.error`/`cpuMax.error`
+surface filesystem failures so Kubernetes probes can alarm on missing
+`/sys/fs/cgroup` files in addition to controller regressions. Unit coverage in
+`pkg/http/status` verifies the handler’s JSON output while the end-to-end
+harness starts the CLI, injects a Monitoring outage, and polls `/healthz` until
+it reports the `fallback` state with the recorded error string. This keeps the
+≥95% coverage target documented in §11 intact and proves that health probes
+surface Monitoring failures and cgroup drift without crashing the process.

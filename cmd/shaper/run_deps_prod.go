@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"oci-cpu-shaper/internal/buildinfo"
+	"oci-cpu-shaper/pkg/cgroup"
 	metricshttp "oci-cpu-shaper/pkg/http/metrics"
 )
 
@@ -19,5 +20,10 @@ func defaultRunDeps() runDeps {
 		newMetricsExporter: metricshttp.NewExporter,
 		startMetricsServer: startMetricsServer,
 		versionWriter:      os.Stdout,
+		detectCgroup: func() (*cgroup.CPU, error) {
+			var reader cgroup.Reader
+
+			return reader.Detect()
+		},
 	}
 }

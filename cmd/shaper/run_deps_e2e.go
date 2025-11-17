@@ -11,6 +11,7 @@ import (
 	"oci-cpu-shaper/internal/buildinfo"
 	"oci-cpu-shaper/internal/e2eclient"
 	"oci-cpu-shaper/pkg/adapt"
+	"oci-cpu-shaper/pkg/cgroup"
 	metricshttp "oci-cpu-shaper/pkg/http/metrics"
 	"oci-cpu-shaper/pkg/imds"
 )
@@ -40,6 +41,10 @@ func defaultRunDeps() runDeps {
 		newMetricsExporter: metricshttp.NewExporter,
 		startMetricsServer: startMetricsServer,
 		versionWriter:      os.Stdout,
+		detectCgroup: func() (*cgroup.CPU, error) {
+			var reader cgroup.Reader
+			return reader.Detect()
+		},
 	}
 
 	deps.newLogger = func(level string) (*zap.Logger, error) {

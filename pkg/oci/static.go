@@ -6,7 +6,7 @@ import "context"
 //
 // Tests and CLI wiring still depend on the interface return type.
 //
-//nolint:ireturn // helper intentionally returns interface for controller wiring
+//nolint:ireturn // helper intentionally returns the MetricsClient interface for tests.
 func NewStaticMetricsClient(
 	value float64,
 ) MetricsClient {

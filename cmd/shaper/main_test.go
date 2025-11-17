@@ -22,6 +22,7 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 	"oci-cpu-shaper/internal/buildinfo"
 	"oci-cpu-shaper/pkg/adapt"
+	"oci-cpu-shaper/pkg/cgroup"
 	metricshttp "oci-cpu-shaper/pkg/http/metrics"
 	"oci-cpu-shaper/pkg/imds"
 	"oci-cpu-shaper/pkg/oci"
@@ -3490,7 +3491,7 @@ func TestStartMetricsServerFailsWhenAddressInUse(t *testing.T) {
 func TestConfigureMetricsSkipsExporterWhenMissing(t *testing.T) {
 	t.Parallel()
 
-	handler := configureMetrics(zap.NewNop(), nil, nil, nil)
+	handler := configureMetrics(zap.NewNop(), nil, nil, nil, nil)
 	if handler != nil {
 		t.Fatal("expected handler to be nil when exporter is missing")
 	}
@@ -3502,7 +3503,7 @@ func TestConfigureMetricsSetsWorkerMetrics(t *testing.T) {
 	exporter := metricshttp.NewExporter()
 	pool := &stubPoolStarter{startCount: 0, workers: 3, quantum: 150 * time.Millisecond}
 
-	_ = configureMetrics(zap.NewNop(), exporter, pool, nil)
+	_ = configureMetrics(zap.NewNop(), exporter, pool, nil, nil)
 
 	snapshot, err := exporter.Render()
 	if err != nil {
@@ -3534,7 +3535,7 @@ func TestConfigureMetricsRegistersHandlers(t *testing.T) {
 		estErr:      errStubQueryFailure,
 	}
 
-	handler := configureMetrics(zap.NewNop(), exporter, pool, controller)
+	handler := configureMetrics(zap.NewNop(), exporter, pool, controller, nil)
 	if handler == nil {
 		t.Fatal("expected handler to be configured")
 	}
@@ -3583,7 +3584,7 @@ func TestConfigureMetricsWithoutController(t *testing.T) {
 
 	exporter := metricshttp.NewExporter()
 
-	handler := configureMetrics(zap.NewNop(), exporter, nil, nil)
+	handler := configureMetrics(zap.NewNop(), exporter, nil, nil, nil)
 	if handler == nil {
 		t.Fatal("expected handler to be configured")
 	}
@@ -3643,7 +3644,7 @@ func configureMetricsHandlerForTest(
 ) http.Handler {
 	t.Helper()
 
-	handler := configureMetrics(zap.NewNop(), exporter, pool, controller)
+	handler := configureMetrics(zap.NewNop(), exporter, pool, controller, nil)
 	if handler == nil {
 		t.Fatal("expected handler to be configured")
 	}
@@ -3699,5 +3700,141 @@ func TestConfigureMetricsServesPrometheusText(t *testing.T) {
 		if !strings.Contains(body, snippet) {
 			t.Fatalf("expected metrics output to contain %q, got:\n%s", snippet, body)
 		}
+	}
+}
+
+func TestDetectAndReportCgroupPublishesMetrics(t *testing.T) {
+	t.Parallel()
+
+	info := &cgroup.CPU{
+		Path: "/user.slice/shaper.scope",
+		Weight: cgroup.Weight{
+			Path:      "",
+			Value:     cgroupLowWeightBaseline,
+			Available: true,
+			Err:       nil,
+		},
+		Max: cgroup.Max{
+			Path:      "",
+			Quota:     60000,
+			Period:    100000,
+			Unlimited: false,
+			Available: true,
+			Err:       nil,
+		},
+	}
+
+	exporter := metricshttp.NewExporter()
+	core, observed := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	var deps runDeps
+
+	deps.detectCgroup = func() (*cgroup.CPU, error) {
+		return info, nil
+	}
+
+	got := detectAndReportCgroup(deps, logger, exporter)
+	if got != info {
+		t.Fatalf("expected cgroup info to be returned, got %+v", got)
+	}
+
+	metrics, err := exporter.Render()
+	if err != nil {
+		t.Fatalf("render metrics: %v", err)
+	}
+
+	body := string(metrics)
+	for _, snippet := range []string{
+		"cgroup_cpu_weight 128",
+		"cgroup_cpu_max_quota 60000",
+		"cgroup_cpu_max_period 100000",
+	} {
+		if !strings.Contains(body, snippet) {
+			t.Fatalf("expected metrics output to contain %q, got:\n%s", snippet, body)
+		}
+	}
+
+	entries := observed.FilterMessage("detected cgroup cpu settings").All()
+	if len(entries) == 0 {
+		logOutput := observed.All()
+		t.Fatalf("expected cgroup detection log, got %#v", logOutput)
+	}
+}
+
+func TestDetectAndReportCgroupWarnsOnHighWeight(t *testing.T) {
+	t.Parallel()
+
+	info := &cgroup.CPU{
+		Path: "/slice",
+		Weight: cgroup.Weight{
+			Path:      "",
+			Value:     cgroupLowWeightBaseline + 10,
+			Available: true,
+			Err:       nil,
+		},
+		Max: cgroup.Max{
+			Path:      "",
+			Quota:     0,
+			Period:    100000,
+			Unlimited: true,
+			Available: true,
+			Err:       nil,
+		},
+	}
+
+	var deps runDeps
+
+	deps.detectCgroup = func() (*cgroup.CPU, error) {
+		return info, nil
+	}
+	core, observed := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+	detectAndReportCgroup(deps, logger, metricshttp.NewExporter())
+
+	warnEntries := observed.FilterMessage("cpu.weight exceeds recommended low-weight baseline").
+		All()
+	if len(warnEntries) == 0 {
+		entries := observed.All()
+		t.Fatalf("expected warning about high cpu.weight, logs: %#v", entries)
+	}
+}
+
+func TestDetectAndReportCgroupHandlesErrors(t *testing.T) {
+	t.Parallel()
+
+	var deps runDeps
+
+	deps.detectCgroup = func() (*cgroup.CPU, error) {
+		return nil, errStubControllerRun
+	}
+	exporter := metricshttp.NewExporter()
+	core, observed := observer.New(zap.WarnLevel)
+	logger := zap.New(core)
+
+	info := detectAndReportCgroup(deps, logger, exporter)
+	if info != nil {
+		t.Fatalf("expected nil cgroup info on error, got %+v", info)
+	}
+
+	metrics, err := exporter.Render()
+	if err != nil {
+		t.Fatalf("render metrics: %v", err)
+	}
+
+	body := string(metrics)
+	for _, snippet := range []string{
+		"cgroup_cpu_weight 0",
+		"cgroup_cpu_max_quota 0",
+	} {
+		if !strings.Contains(body, snippet) {
+			t.Fatalf("expected metric %q to be present, output:\n%s", snippet, body)
+		}
+	}
+
+	warnEntries := observed.FilterMessage("failed to inspect cgroup cpu settings").All()
+	if len(warnEntries) == 0 {
+		logs := observed.All()
+		t.Fatalf("expected warning log, got %#v", logs)
 	}
 }
