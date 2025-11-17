@@ -76,7 +76,11 @@ func (r *controllerRecorderLogger) SetMode(mode string) {
 		return
 	}
 
-	r.logger.Info("controller mode configured", zap.String("mode", trimmed))
+	r.logger.Info(
+		"controller mode configured",
+		zap.String("mode", trimmed),
+		zap.Bool("enforcing", adapt.ModeEnforcesTargets(trimmed)),
+	)
 	r.lastMode = trimmed
 }
 

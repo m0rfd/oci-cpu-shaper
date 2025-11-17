@@ -875,6 +875,7 @@ func TestRunExposesMetricsOffline(t *testing.T) {
 		output,
 		[]string{
 			"shaper_mode{mode=\"dry-run\"} 1",
+			"shaper_enforcing 0",
 			"shaper_state{state=\"normal\"} 1",
 			"shaper_target_ratio 0.330000",
 			"worker_count 4",
@@ -1774,6 +1775,10 @@ func TestLogControllerInitialization(t *testing.T) {
 	requireLogFieldString(t, entry, "controllerState", adapt.StateFallback.String())
 	requireLogFieldString(t, entry, "compartmentID", stubCompartmentID)
 	requireLogFieldString(t, entry, "region", stubRegion)
+
+	if enforcing, ok := fieldBool(entry.Context, "enforcingTargets"); !ok || enforcing {
+		t.Fatalf("expected enforcingTargets false for dry-run, got %v (present=%v)", enforcing, ok)
+	}
 
 	if workers, ok := fieldInt(entry.Context, "workerCount"); !ok || workers != 2 {
 		t.Fatalf("expected worker count 2, got %d (present=%v)", workers, ok)
@@ -3384,6 +3389,7 @@ func TestConfigureMetricsServesPrometheusText(t *testing.T) {
 	for _, snippet := range []string{
 		"# HELP shaper_target_ratio",
 		"shaper_mode{mode=\"enforce\"} 1",
+		"shaper_enforcing 1",
 		"worker_count 3",
 		"duty_cycle_ms 2.000",
 		"oci_last_success_epoch 1700000333",

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"oci-cpu-shaper/pkg/adapt"
 )
 
 const (
@@ -34,6 +36,7 @@ type Exporter struct {
 
 	shaperTarget    float64
 	shaperMode      string
+	shaperEnforcing float64
 	shaperState     string
 	ociP95          float64
 	ociLastSuccess  time.Time
@@ -61,8 +64,14 @@ func (e *Exporter) SetMode(mode string) {
 		trimmed = "unknown"
 	}
 
+	enforcement := 0.0
+	if adapt.ModeEnforcesTargets(trimmed) {
+		enforcement = 1
+	}
+
 	e.mu.Lock()
 	e.shaperMode = trimmed
+	e.shaperEnforcing = enforcement
 	e.mu.Unlock()
 }
 
@@ -207,6 +216,9 @@ func (e *Exporter) WriteTo(dst io.Writer) (int64, error) {
 		"# HELP shaper_mode Controller operating mode (value set to 1 for the active mode).\n",
 		"# TYPE shaper_mode gauge\n",
 		fmt.Sprintf("shaper_mode{mode=\"%s\"} 1\n", snapshot.shaperMode),
+		"# HELP shaper_enforcing Controller enforcement status (1 when worker targets are applied).\n",
+		"# TYPE shaper_enforcing gauge\n",
+		fmt.Sprintf("shaper_enforcing %.0f\n", snapshot.shaperEnforcing),
 		"# HELP shaper_state Controller state machine output (value set to 1 for the active state).\n",
 		"# TYPE shaper_state gauge\n",
 		fmt.Sprintf("shaper_state{state=\"%s\"} 1\n", snapshot.shaperState),
@@ -245,6 +257,7 @@ func (e *Exporter) WriteTo(dst io.Writer) (int64, error) {
 type exporterSnapshot struct {
 	shaperTarget        float64
 	shaperMode          string
+	shaperEnforcing     float64
 	shaperState         string
 	ociP95              float64
 	ociLastSuccessEpoch float64
@@ -265,6 +278,7 @@ func (e *Exporter) snapshot() exporterSnapshot {
 	return exporterSnapshot{
 		shaperTarget:        e.shaperTarget,
 		shaperMode:          e.shaperMode,
+		shaperEnforcing:     e.shaperEnforcing,
 		shaperState:         e.shaperState,
 		ociP95:              e.ociP95,
 		ociLastSuccessEpoch: epoch,
