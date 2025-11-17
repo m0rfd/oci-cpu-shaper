@@ -20,7 +20,7 @@ import (
 const (
 	regionResourcePath          = "/opc/v2/instance/region"
 	instanceIDResourcePath      = "/opc/v2/instance/id"
-	shapeConfigResourcePath     = "/opc/v2/instance/shape-config"
+	shapeConfigResourcePath     = "/opc/v2/instance/shapeConfig"
 	canonicalRegionResourcePath = "/opc/v2/instance/"
 	compartmentIDResourcePath   = "/opc/v2/instance/compartmentId"
 	metadataAuthHeaderValue     = "Bearer Oracle"
@@ -410,7 +410,7 @@ func TestShapeConfigDecodeError(t *testing.T) {
 		t.Fatal("ShapeConfig() expected error, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "decode shape-config response") {
+	if !strings.Contains(err.Error(), "decode shapeConfig response") {
 		t.Fatalf("ShapeConfig() error = %v, want decode failure", err)
 	}
 }

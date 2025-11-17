@@ -154,7 +154,7 @@ func (c *HTTPClient) CompartmentID(ctx context.Context) (string, error) {
 func (c *HTTPClient) ShapeConfig(ctx context.Context) (ShapeConfig, error) {
 	var cfg ShapeConfig
 
-	err := c.getJSON(ctx, "shape-config", &cfg)
+	err := c.getJSON(ctx, "shapeConfig", &cfg)
 	if err != nil {
 		return ShapeConfig{}, err
 	}
