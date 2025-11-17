@@ -17,6 +17,8 @@ const (
 	modeBBaseImage          = "gcr.io/distroless/static:latest"
 	modeBConfigFilename     = "mode-b.yaml"
 	rootfulBinaryName       = "oci-cpu-shaper-rootful"
+	rootUser                = "0:0"
+	nobodyUser              = "65534:65534"
 )
 
 func TestSchedIdleWarningTracksSysNiceCapability(t *testing.T) {
@@ -36,17 +38,18 @@ func TestSchedIdleWarningTracksSysNiceCapability(t *testing.T) {
 		assetsDir:      assetsDir,
 		binaryPath:     binaryPath,
 		configFilename: filepath.Base(configPath),
-		dropSysNice:    true,
+		user:           nobodyUser,
 	})
 
-	if !strings.Contains(missingCapLogs, schedIdleWarningMessage) {
-		t.Fatalf("expected sched_idle warning when SYS_NICE is dropped. container logs:\n%s", missingCapLogs)
-	}
+if !strings.Contains(missingCapLogs, schedIdleWarningMessage) {
+t.Fatalf("expected sched_idle warning when SYS_NICE is missing. container logs:\n%s", missingCapLogs)
+}
 
 	presentCapLogs := runModeBContainer(t, schedIdleContainerConfig{
 		assetsDir:      assetsDir,
 		binaryPath:     binaryPath,
 		configFilename: filepath.Base(configPath),
+		user:           rootUser,
 		addSysNice:     true,
 	})
 
@@ -102,6 +105,7 @@ type schedIdleContainerConfig struct {
 	assetsDir      string
 	binaryPath     string
 	configFilename string
+	user           string
 	dropSysNice    bool
 	addSysNice     bool
 }
@@ -112,10 +116,13 @@ func runModeBContainer(t *testing.T, cfg schedIdleContainerConfig) string {
 	containerArgs := []string{
 		"run",
 		"--rm",
-		"--user", "0:0",
 		"-e", "OCI_OFFLINE=true",
 		"-v", fmt.Sprintf("%s:/workspace:ro", cfg.assetsDir),
 		"--entrypoint", fmt.Sprintf("/workspace/%s", filepath.Base(cfg.binaryPath)),
+	}
+
+	if cfg.user != "" {
+		containerArgs = append(containerArgs, "--user", cfg.user)
 	}
 
 	if cfg.dropSysNice {

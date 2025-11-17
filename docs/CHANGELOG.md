@@ -27,8 +27,9 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
   `unix.SchedSetScheduler` to cover success and EPERM denial paths, preserving
   the §11.1 coverage contract while documenting the new behaviour in §§6 and 9.
 - Integration test `TestSchedIdleWarningTracksSysNiceCapability` builds the
-  rootful binary with `-tags rootful`, launches the Mode B container with and
-  without `SYS_NICE`, and asserts the sched_idle warning only appears when the
+  rootful binary with `-tags rootful`, launches the Mode B container once as the
+  `nobody` user (missing capabilities) and once as `root` with `SYS_NICE`
+  explicitly granted, and asserts the sched_idle warning only appears when the
   capability is missing. README §10 now references the workflow so operators can
   validate hosts before enabling SCHED_IDLE (§§6, 10, 11).
 - Regression suite `TestControllerCpuUtilisationAcrossOCPUs` covering 1–4 OCPU CpuUtilization streams and the relaxed-interval clamp so the adaptive controller keeps the Always Free reclaim guardrails documented in §§3.1 and 5.2. Tests maintain the ≥95% statement floor by exercising the prolonged high-utilisation path in `pkg/adapt/controller.go` (§11).

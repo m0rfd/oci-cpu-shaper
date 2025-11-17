@@ -43,10 +43,12 @@ make integration INTEGRATION_KEEP_LOGS=1
 ```
 
 The new `TestSchedIdleWarningTracksSysNiceCapability` case builds the binary
-with `-tags rootful`, launches a distroless Mode B container twice, and toggles
-the capability so the warning only appears when `SYS_NICE` is intentionally
-missing. The container logs are mirrored to `artifacts/integration.log` whenever
-`INTEGRATION_KEEP_LOGS=1`, giving operators a quick signal that the host kernel
-honours the `SCHED_IDLE` downgrade before promoting the change to production.
+with `-tags rootful`, launches a distroless Mode B container twice, and runs it
+as the `nobody` user (which lacks Linux capabilities) before rerunning as
+`root` with `SYS_NICE` explicitly granted. The warning only appears when the
+capability is absent, and the container logs are mirrored to
+`artifacts/integration.log` whenever `INTEGRATION_KEEP_LOGS=1`, giving operators
+a quick signal that the host kernel honours the `SCHED_IDLE` downgrade before
+promoting the change to production.
 
 Refer to the documentation in the `docs/` directory for deeper architectural and operational context as it becomes available.
