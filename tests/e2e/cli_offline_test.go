@@ -109,8 +109,8 @@ oci:
 		t.Fatal("expected online mode to contact IMDS")
 	}
 
-requirePathObserved(t, imdsRequests, "/opc/v2/instance/region")
-requirePathObserved(t, imdsRequests, "/opc/v2/instance/compartmentId")
+	requirePathObserved(t, imdsRequests, "/opc/v2/instance/region")
+	requirePathObserved(t, imdsRequests, "/opc/v2/instance/compartmentId")
 
 	monitoringRequests := onlineMonitoring.Requests()
 	if len(monitoringRequests) < 1 {
