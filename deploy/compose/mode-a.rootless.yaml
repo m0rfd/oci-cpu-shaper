@@ -22,4 +22,5 @@ services:
     security_opt:
       - no-new-privileges:true
     cpu_shares: ${SHAPER_CPU_SHARES:-128}
+    # cpus: ${SHAPER_CPUS:-0.30}
     restart: "unless-stopped"
