@@ -24,14 +24,14 @@ func TestAdaptiveControllerRecordsIntervalAcrossP95Branches(t *testing.T) {
 		wantState    State
 	}{
 		{
-			name:         "healthy-uses-relaxed-interval",
+			name:         "hot-workload-uses-relaxed-interval",
 			p95:          cfg.RelaxedThreshold,
 			wantInterval: cfg.RelaxedInterval,
 			wantState:    StateNormal,
 		},
 		{
-			name:         "hot-workload-keeps-fast-interval",
-			p95:          cfg.RelaxedThreshold + 0.05,
+			name:         "healthy-workload-keeps-fast-interval",
+			p95:          cfg.RelaxedThreshold - 0.05,
 			wantInterval: cfg.Interval,
 			wantState:    StateNormal,
 		},
