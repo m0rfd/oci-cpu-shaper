@@ -5,6 +5,27 @@ The OCI CPU Shaper project provides tools for shaping and orchestrating CPU reso
 This overview summarizes the high-level vision and map to the supporting documentation set:
 Operators looking for the fastest onboarding path should start with the [§10 Quick Start Onboarding guide](./10-quick-start.md), which condenses the plan-mandated console tasks before diving into the deeper references below.
 
+<a id="architecture-diagram"></a>
+## §0 Architecture Diagram
+
+```mermaid
+flowchart LR
+    IMDS["IMDSv2 inputs\n(instance OCID, region, shape)"] --> CTRL["Adaptive Controller\n(policies + estimator)"]
+    MQL["OCI Monitoring queries\n(MQL responses)"] --> CTRL
+    CTRL --> POOL["Worker pools\n(cpu.weight + duty cycle)"]
+    CTRL --> HTTP["HTTP surfaces\n/metrics + /healthz"]
+    POOL --> HTTP
+    HTTP --> PROM["Prometheus / operators"]
+```
+
+## §0.1 Interface Jump Table
+
+| Interface | Purpose | Detailed guidance |
+| --- | --- | --- |
+| **IMDSv2** | Supplies compartment, region, and instance OCIDs so the adaptive controller can authenticate Monitoring clients even when configs rely on instance principals. | [§2 IMDS Integration](./02-imds-v2.md) |
+| **OCI Monitoring (MQL)** | Streams tenancy metrics (e.g., `CpuUtilization`) into the controller’s suppression logic and alarms to sustain Always Free guardrails. | [§5 Monitoring & Alerts](./05-monitoring-mql.md) |
+| **Prometheus surfaces** | Exposes `/metrics` and `/healthz` for fleet monitoring and debugging, mirroring the CLI toggles and HTTP config described in §9. | [§9 CLI Reference](./09-cli.md) |
+
 - **Threat Model** – Baseline trust boundaries, IAM scope, and exposed surfaces. See [§1 Threat Model](#%C2%A71-threat-model).
 - **Non-goals** – Out-of-scope behaviors so operators can quickly identify unsupported asks. See [§2 Non-goals](#%C2%A72-non-goals).
 - **Quick Start (§10)** – Five required deployment moves, from Monitoring enablement through alarm wiring. See [§10 Quick Start Onboarding](./10-quick-start.md).
