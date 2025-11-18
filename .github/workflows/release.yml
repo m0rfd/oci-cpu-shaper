@@ -131,7 +131,7 @@ jobs:
 
       - name: Generate SBOM (${{ matrix.image_tag }})
         id: sbom
-        uses: anchore/sbom-action@v0.20.9
+        uses: anchore/sbom-action@v0.20.10
         with:
           image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
           output-file: sbom-${{ github.ref_name }}-${{ matrix.image_tag }}.spdx.json

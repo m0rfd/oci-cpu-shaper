@@ -370,7 +370,7 @@ jobs:
           rm smoke.log
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0.20.9
+        uses: anchore/sbom-action@v0.20.10
         with:
           image: oci-cpu-shaper:test
           output-file: sbom.spdx.json
