@@ -105,6 +105,9 @@ We support two documented modes. Rootless is first-class but not exclusive.
   * `QueryP95CPU(ocid, last7d)` → float32.
   * Expression uses `CpuUtilization[1m]{resourceId="<ocid>"}.percentile(0.95)`.
   * Handle 7-day time range limits. ([Oracle Docs][7])
+  * Constructors + Instance Principal wiring stay in `client.go`, query helpers and
+    pagination folds in `query.go`, and the OCI SDK adapter lives in `sdk_client.go`
+    so additional clients can swap `metricsClient` implementations in tests.
 * `pkg/est`: `/proc/stat` reader → current host CPU% (1s moving window).
 * `pkg/shape`: worker pool and duty cycle logic.
 
