@@ -14,6 +14,11 @@
   HTTP glue (request building, response decoding) stay in `sdk_client.go`. Extend OCI
   clients by implementing the `metricsClient` interface and passing it to `newClient`
   (or `newTestClient`) so tests can continue mocking calls without build-tag changes.
+- `pkg/imds` follows a three-file split: constructor/config wiring belongs in
+  `client_config.go`, metadata operations live in `operations.go`, and HTTP/retry
+  helpers (including new IMDS endpoints) stay in `transport.go`. Keep the retry
+  budget/backoff expectations in `transport.go` aligned with §3/§5 of the plan and
+  mirror that structure in the `*_test.go` suites when adding endpoints or knobs.
 - Keep unit tests colocated with the component they cover (`pool_api_test.go`, `pause_test.go`,
   `worker_test.go`, etc.) and share fixtures via `testhelpers_test.go`. Prefer exercising exported APIs,
   only falling back to `//nolint:testpackage` access when a worker hook or probe must be overridden.
