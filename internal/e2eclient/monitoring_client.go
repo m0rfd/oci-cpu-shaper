@@ -37,7 +37,7 @@ type monitoringPayload struct {
 // by the e2e monitoring server helpers.
 //
 
-func NewMonitoringClient(
+func NewMonitoringClient( //nolint:ireturn // helper exposes interface so tests can swap transport implementations
 	endpoint string,
 ) (oci.MetricsClient, error) {
 	trimmed := strings.TrimSpace(endpoint)

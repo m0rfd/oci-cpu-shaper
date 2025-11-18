@@ -21,7 +21,7 @@ type loggingRecorder struct {
 // controller state transitions via structured logs.
 //
 
-func NewLoggingRecorder(
+func NewLoggingRecorder( //nolint:ireturn // factory decorates whichever recorder implementation is supplied
 	logger *zap.Logger,
 	delegate adapt.MetricsRecorder,
 ) adapt.MetricsRecorder {
