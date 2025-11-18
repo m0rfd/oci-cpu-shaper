@@ -24,7 +24,9 @@ OCI CPU Shaper is an adaptive controller for shaping CPU utilization of workload
 
 ## Contribution Guidelines
 
-Contributions are welcome! Please:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the complete tooling workflow,
+documentation expectations, and scoped `AGENTS.md` policy. Contributions are
+welcome! Please:
 
 1. Open an issue to discuss significant features or changes.
 2. Follow Go best practices and the formatting rules defined in `.editorconfig`.

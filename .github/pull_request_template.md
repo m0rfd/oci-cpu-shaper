@@ -1,9 +1,13 @@
 ## Summary
 - 
 
+> Coverage must remain ≥95 % and the linters must pass before requesting a
+> review. See [CONTRIBUTING.md](../CONTRIBUTING.md#tooling-workflow) for the
+> required commands.
+
 ## Testing
-- [ ] `go test ./... -race`
-- [ ] `golangci-lint run`
+- [ ] Followed the [tooling workflow](../CONTRIBUTING.md#tooling-workflow)
+      (docs-only changes can note "not applicable")
 - [ ] Other (add details)
 
 ## Checklist
