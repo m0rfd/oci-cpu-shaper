@@ -8,6 +8,12 @@
 - `pkg/shape` keeps exported pool APIs in `pool.go`; extend worker loops in `worker.go`,
   pause/resume rules in `pause.go`, and busy-wait helpers in `busywait.go` to avoid
   tangling rootful build tags with general logic.
+- `pkg/oci` splits responsibilities across files: constructors, global wiring, and
+  Instance Principal helpers live in `client.go`; query/aggregation utilities (e.g.,
+  `QueryP95CPU`, pagination folding) remain in `query.go`; the OCI SDK adapter plus
+  HTTP glue (request building, response decoding) stay in `sdk_client.go`. Extend OCI
+  clients by implementing the `metricsClient` interface and passing it to `newClient`
+  (or `newTestClient`) so tests can continue mocking calls without build-tag changes.
 - Keep unit tests colocated with the component they cover (`pool_api_test.go`, `pause_test.go`,
   `worker_test.go`, etc.) and share fixtures via `testhelpers_test.go`. Prefer exercising exported APIs,
   only falling back to `//nolint:testpackage` access when a worker hook or probe must be overridden.
