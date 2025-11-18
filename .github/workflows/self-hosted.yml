@@ -19,7 +19,7 @@ jobs:
       OCI_CLI_AUTH: instance_principal
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@v5.0.1
 
       - name: Collect IMDS metadata
         id: imds
