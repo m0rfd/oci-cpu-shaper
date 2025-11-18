@@ -8,3 +8,7 @@
 - `pkg/shape` keeps exported pool APIs in `pool.go`; extend worker loops in `worker.go`,
   pause/resume rules in `pause.go`, and busy-wait helpers in `busywait.go` to avoid
   tangling rootful build tags with general logic.
+- Keep unit tests colocated with the component they cover (`pool_api_test.go`, `pause_test.go`,
+  `worker_test.go`, etc.) and share fixtures via `testhelpers_test.go`. Prefer exercising exported APIs,
+  only falling back to `//nolint:testpackage` access when a worker hook or probe must be overridden.
+  Avoid sprawling integration-style cases outside the dedicated load/build tagged suites.
