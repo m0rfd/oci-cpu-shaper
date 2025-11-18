@@ -382,7 +382,7 @@ jobs:
           path: sbom.spdx.json
 
       - name: Scan image for vulnerabilities
-        uses: anchore/scan-action@v7.1.0
+        uses: anchore/scan-action@v7.2.0
         with:
           image: oci-cpu-shaper:test
           fail-build: true
