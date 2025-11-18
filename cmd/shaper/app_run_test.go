@@ -21,6 +21,10 @@ import (
 	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
+const metricsServerWait = time.Second
+
+var errStubLoggerBoom = errors.New("logger failure")
+
 func assertRunVersionPrints(t *testing.T, args []string, info buildinfo.Info) {
 	t.Helper()
 
@@ -835,5 +839,24 @@ func runShutdownScenario(t *testing.T, runErr error, reason string) {
 		failureEntries,
 	) != 0 {
 		t.Fatalf("expected no failure logs, got %+v", failureEntries)
+	}
+}
+
+func stubBuildInfo(version, commit, date string) buildinfo.Info {
+	return buildinfo.Info{
+		Version:   version,
+		GitCommit: commit,
+		BuildDate: date,
+	}
+}
+
+func loadConfigStub() func(string) (runtimeconfig.Config, error) {
+	return func(string) (runtimeconfig.Config, error) {
+		cfg := runtimeconfig.Default()
+		cfg.OCI.CompartmentID = stubCompartmentID
+		cfg.OCI.Region = "us-phoenix-1"
+		cfg.OCI.Offline = true
+
+		return cfg, nil
 	}
 }

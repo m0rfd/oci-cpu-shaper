@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+const (
+	imdsAuthHeaderKey = "Authorization"
+	imdsAuthHeaderVal = "Bearer Oracle"
+)
+
 func TestMainSuccessDoesNotExit(t *testing.T) { //nolint:paralleltest // mutates process-wide state
 	originalExit := exitProcess
 
