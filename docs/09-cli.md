@@ -101,7 +101,7 @@ The CLI honours the following environment variables, matching the naming in §5.
 | -------- | ----------- | ------- |
 | `SHAPER_TARGET_START` | Initial duty-cycle target when OCI data is unavailable. | `0.25` |
 | `SHAPER_TARGET_MIN` / `SHAPER_TARGET_MAX` | Bounds applied to adaptive adjustments. | `0.22` / `0.40` |
-| `SHAPER_STEP_UP` / `SHAPER_STEP_DOWN` | Target deltas when OCI P95 is below or above the goal band. | `+0.02` / `-0.01` |
+| `SHAPER_STEP_UP` / `SHAPER_STEP_DOWN` | Target deltas when OCI P95 is below or above the goal band. | `0.02` / `0.01` |
 | `SHAPER_FALLBACK_TARGET` | Fixed target while OCI metrics are unavailable. | `0.25` |
 | `SHAPER_SLOW_INTERVAL` / `SHAPER_SLOW_INTERVAL_RELAXED` | Baseline and relaxed controller cadences. | `1h` / `6h` |
 | `SHAPER_FAST_INTERVAL` | Host CPU sampling cadence for the estimator. | `1s` |
@@ -114,7 +114,10 @@ The CLI honours the following environment variables, matching the naming in §5.
 | `OCI_INSTANCE_ID` | Overrides the instance OCID used for Monitoring queries and IMDS metadata logs, skipping live metadata calls. | *(empty)* |
 | `OCI_OFFLINE` | Enables the static metrics client and metadata fallback described above so smoke tests can bootstrap without IMDS or Monitoring access. | `false` |
 
-Unset or malformed overrides fall back to the defaults shown above.
+Unset or malformed overrides fall back to the defaults shown above. The
+controller subtracts `SHAPER_STEP_DOWN` internally, so the configuration value
+remains a positive delta even though it reduces the target when OCI P95 exceeds
+the goal band.
 
 ### Layering overrides
 
