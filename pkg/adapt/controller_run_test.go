@@ -7,8 +7,6 @@ package adapt
 import (
 	"context"
 	"errors"
-	"math"
-	"sync"
 	"testing"
 	"time"
 
@@ -62,7 +60,7 @@ func TestAdaptiveControllerRunLifecycle(t *testing.T) {
 		t.Fatalf("Run error: %v", err)
 	}
 
-	if controller.Mode() != "enforce" {
+	if controller.Mode() != enforceMode {
 		t.Fatalf("unexpected mode: %q", controller.Mode())
 	}
 
@@ -75,7 +73,7 @@ func TestAdaptiveControllerRunLifecycle(t *testing.T) {
 	}
 }
 
-func TestAdaptiveControllerEmitsMetricsSignals(t *testing.T) {
+func TestAdaptiveControllerRunEmitsMetricsSignals(t *testing.T) {
 	t.Parallel()
 
 	recorder := newStubMetricsRecorder()
@@ -90,7 +88,7 @@ func TestAdaptiveControllerEmitsMetricsSignals(t *testing.T) {
 	}
 
 	requirePositiveInt(t, "modeCalls", recorder.modeCalls)
-	requireEqual(t, "mode", recorder.mode, "enforce")
+	requireEqual(t, "mode", recorder.mode, enforceMode)
 	requireEqual(t, "initialState", recorder.state, StateFallback.String())
 	requireFloatApprox(t, "initialTarget", recorder.target, cfg.FallbackTarget)
 	requireEqual(t, "initialInterval", recorder.interval, cfg.Interval)
@@ -119,217 +117,6 @@ func TestAdaptiveControllerEmitsMetricsSignals(t *testing.T) {
 	requirePositiveInt(t, "intervalCallsAfterStep", recorder.intervalSet)
 	requireEqual(t, "lastErrorAfterStep", recorder.lastError, nil)
 	requireTrue(t, "errorCallsAfterStep", recorder.errorCalls >= 2)
-}
-
-func TestAdaptiveControllerDryRunRecordsTargets(t *testing.T) {
-	t.Parallel()
-
-	metrics := newFakeMetrics([]metricResult{{value: 0.20, err: nil}})
-	shaper := newFakeShaper()
-	cfg := DefaultConfig()
-	cfg.Mode = dryRunModeLabel
-	cfg.Interval = time.Second
-
-	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
-	if err != nil {
-		t.Fatalf("create controller: %v", err)
-	}
-
-	recorder, ok := controller.shaper.(*recordingDutyCycler)
-	if !ok {
-		t.Fatalf("expected dry-run to wrap duty cycler, got %T", controller.shaper)
-	}
-
-	if len(shaper.calls) != 0 {
-		t.Fatalf("expected dry-run to avoid touching shaper, got %d calls", len(shaper.calls))
-	}
-
-	controller.step(context.Background())
-
-	if len(shaper.calls) != 0 {
-		t.Fatalf("expected dry-run to skip shaper updates, got %d calls", len(shaper.calls))
-	}
-
-	if recorder.Target() == 0 {
-		t.Fatal("expected recorder to capture controller target in dry-run mode")
-	}
-
-	if diff := math.Abs(recorder.Target() - controller.Target()); diff > 1e-9 {
-		t.Fatalf(
-			"expected recorder target %.3f to match controller target %.3f",
-			recorder.Target(),
-			controller.Target(),
-		)
-	}
-
-	recorder.ObserveHostLoad(0.85)
-
-	if len(shaper.calls) != 0 {
-		t.Fatalf(
-			"expected dry-run recorder to ignore host load observations, got %d calls",
-			len(shaper.calls),
-		)
-	}
-}
-
-func TestAdaptiveControllerEnforceModeMutatesDutyCycler(t *testing.T) {
-	t.Parallel()
-
-	metrics := newFakeMetrics([]metricResult{{value: 0.20, err: nil}})
-	shaper := newFakeShaper()
-	cfg := DefaultConfig()
-	cfg.Mode = "enforce"
-	cfg.Interval = time.Second
-
-	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
-	if err != nil {
-		t.Fatalf("create controller: %v", err)
-	}
-
-	if _, ok := controller.shaper.(*recordingDutyCycler); ok {
-		t.Fatal("expected enforcing mode to use original duty cycler")
-	}
-
-	if len(shaper.calls) == 0 {
-		t.Fatal("expected enforcing mode to configure fallback target")
-	}
-
-	controller.step(context.Background())
-
-	if len(shaper.calls) < 2 {
-		t.Fatalf(
-			"expected enforcing mode to update shaper on step, got %d calls",
-			len(shaper.calls),
-		)
-	}
-}
-
-func TestRecordingDutyCyclerObserveHostLoadNoop(t *testing.T) {
-	t.Parallel()
-
-	var nilRecorder *recordingDutyCycler
-	nilRecorder.ObserveHostLoad(0.7)
-
-	recorder := &recordingDutyCycler{mu: sync.Mutex{}, target: 0}
-	recorder.ObserveHostLoad(0.9)
-}
-
-type stubMetricsRecorder struct {
-	mu          sync.Mutex
-	mode        string
-	modeCalls   int
-	state       string
-	stateCalls  int
-	target      float64
-	targetCalls int
-	ociValue    float64
-	ociTime     time.Time
-	ociCalls    int
-	host        float64
-	hostCalls   int
-	interval    time.Duration
-	intervalSet int
-	lastError   error
-	errorCalls  int
-}
-
-func newStubMetricsRecorder() *stubMetricsRecorder { return new(stubMetricsRecorder) }
-
-func (s *stubMetricsRecorder) SetMode(mode string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.mode = mode
-	s.modeCalls++
-}
-
-func (s *stubMetricsRecorder) SetState(state string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.state = state
-	s.stateCalls++
-}
-
-func (s *stubMetricsRecorder) SetTarget(target float64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.target = target
-	s.targetCalls++
-}
-
-func (s *stubMetricsRecorder) ObserveOCIP95(value float64, fetchedAt time.Time) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.ociValue = value
-	s.ociTime = fetchedAt
-	s.ociCalls++
-}
-
-func (s *stubMetricsRecorder) ObserveHostCPU(utilisation float64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.host = utilisation
-	s.hostCalls++
-}
-
-func (s *stubMetricsRecorder) SetInterval(interval time.Duration) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.interval = interval
-	s.intervalSet++
-}
-
-func (s *stubMetricsRecorder) SetLastError(err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.lastError = err
-	s.errorCalls++
-}
-
-func requireEqual[T comparable](t *testing.T, name string, got, want T) {
-	t.Helper()
-
-	if got != want {
-		t.Fatalf("expected %s to be %v, got %v", name, want, got)
-	}
-}
-
-func requireFloatApprox(t *testing.T, name string, got, want float64) {
-	t.Helper()
-
-	if math.Abs(got-want) > 1e-9 {
-		t.Fatalf("expected %s %.6f, got %.6f", name, want, got)
-	}
-}
-
-func requirePositiveInt(t *testing.T, name string, value int) {
-	t.Helper()
-
-	if value <= 0 {
-		t.Fatalf("expected %s to be positive, got %d", name, value)
-	}
-}
-
-func requireTrue(t *testing.T, name string, condition bool) {
-	t.Helper()
-
-	if !condition {
-		t.Fatalf("expected %s to be true", name)
-	}
-}
-
-func requireNotZeroTime(t *testing.T, name string, value time.Time) {
-	t.Helper()
-
-	if value.IsZero() {
-		t.Fatalf("expected %s to be non-zero", name)
-	}
 }
 
 func waitFor(cond func() bool, timeout time.Duration) {

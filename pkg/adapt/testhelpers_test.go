@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"sync/atomic"
+	"testing"
 	"time"
 
 	"oci-cpu-shaper/pkg/est"
@@ -17,6 +19,8 @@ var (
 	errOCIDown              = errors.New("test: oci down")
 	errEstimatorObservation = errors.New("test: estimator observation failure")
 )
+
+const enforceMode = "enforce"
 
 type metricResult struct {
 	value float64
@@ -108,4 +112,126 @@ func feedObservation(controller *AdaptiveController, ts int64, utilisation float
 		TotalJiffies: 0,
 		Err:          err,
 	})
+}
+
+type controllerStepper interface {
+	step(ctx context.Context) time.Duration
+}
+
+type stubMetricsRecorder struct {
+	mu          sync.Mutex
+	mode        string
+	modeCalls   int
+	state       string
+	stateCalls  int
+	target      float64
+	targetCalls int
+	ociValue    float64
+	ociTime     time.Time
+	ociCalls    int
+	host        float64
+	hostCalls   int
+	interval    time.Duration
+	intervalSet int
+	lastError   error
+	errorCalls  int
+}
+
+func newStubMetricsRecorder() *stubMetricsRecorder { return new(stubMetricsRecorder) }
+
+func (s *stubMetricsRecorder) SetMode(mode string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.mode = mode
+	s.modeCalls++
+}
+
+func (s *stubMetricsRecorder) SetState(state string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.state = state
+	s.stateCalls++
+}
+
+func (s *stubMetricsRecorder) SetTarget(target float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.target = target
+	s.targetCalls++
+}
+
+func (s *stubMetricsRecorder) ObserveOCIP95(value float64, fetchedAt time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.ociValue = value
+	s.ociTime = fetchedAt
+	s.ociCalls++
+}
+
+func (s *stubMetricsRecorder) ObserveHostCPU(utilisation float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.host = utilisation
+	s.hostCalls++
+}
+
+func (s *stubMetricsRecorder) SetInterval(interval time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.interval = interval
+	s.intervalSet++
+}
+
+func (s *stubMetricsRecorder) SetLastError(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.lastError = err
+	s.errorCalls++
+}
+
+func requireEqual[T comparable](t *testing.T, name string, got, want T) {
+	t.Helper()
+
+	if got != want {
+		t.Fatalf("expected %s to be %v, got %v", name, want, got)
+	}
+}
+
+func requireFloatApprox(t *testing.T, name string, got, want float64) {
+	t.Helper()
+
+	if math.Abs(got-want) > 1e-9 {
+		t.Fatalf("expected %s %.6f, got %.6f", name, want, got)
+	}
+}
+
+func requirePositiveInt(t *testing.T, name string, value int) {
+	t.Helper()
+
+	if value <= 0 {
+		t.Fatalf("expected %s to be positive, got %d", name, value)
+	}
+}
+
+func requireTrue(t *testing.T, name string, condition bool) {
+	t.Helper()
+
+	if !condition {
+		t.Fatalf("expected %s to be true", name)
+	}
+}
+
+func requireNotZeroTime(t *testing.T, name string, value time.Time) {
+	t.Helper()
+
+	if value.IsZero() {
+		t.Fatalf("expected %s to be non-zero", name)
+	}
 }
