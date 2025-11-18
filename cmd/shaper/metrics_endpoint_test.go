@@ -17,6 +17,8 @@ import (
 	metricshttp "oci-cpu-shaper/pkg/http/metrics"
 )
 
+const testMetricsBind = "127.0.0.1:0"
+
 func TestStartMetricsEndpointSkipsWhenHandlerMissing(t *testing.T) {
 	t.Parallel()
 
@@ -92,6 +94,26 @@ func TestStartMetricsEndpointSkipsWhenBindAddressEmpty(t *testing.T) {
 	if shutdown != nil || cancel != nil {
 		t.Fatalf("expected nil shutdown and cancel, got %v, %v", shutdown, cancel)
 	}
+}
+
+func freeTCPAddress(t *testing.T) string {
+	t.Helper()
+
+	var listenCfg net.ListenConfig
+
+	listener, err := listenCfg.Listen(context.Background(), "tcp", testMetricsBind)
+	if err != nil {
+		t.Fatalf("allocate tcp port: %v", err)
+	}
+
+	addr := listener.Addr().String()
+
+	closeErr := listener.Close()
+	if closeErr != nil {
+		t.Fatalf("close listener: %v", closeErr)
+	}
+
+	return addr
 }
 
 func TestStartMetricsEndpointRequiresContext(t *testing.T) {

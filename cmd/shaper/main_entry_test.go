@@ -8,10 +8,17 @@ import (
 	"time"
 )
 
-func TestMainSuccessDoesNotExit(t *testing.T) { //nolint:paralleltest // mutates process-wide state
+const (
+	imdsAuthHeaderKey = "Authorization"
+	imdsAuthHeaderVal = "Bearer Oracle"
+)
+
+func TestMainSuccessDoesNotExit(t *testing.T) {
 	originalExit := exitProcess
 
 	defer func() { exitProcess = originalExit }()
+
+	t.Setenv("HTTP_ADDR", "127.0.0.1:0")
 
 	exitCalled := false
 	exitProcess = func(code int) {
@@ -35,10 +42,12 @@ func TestMainSuccessDoesNotExit(t *testing.T) { //nolint:paralleltest // mutates
 	}
 }
 
-func TestMainPropagatesNonZeroExitCode(t *testing.T) { //nolint:paralleltest // mutates global state
+func TestMainPropagatesNonZeroExitCode(t *testing.T) {
 	originalExit := exitProcess
 
 	defer func() { exitProcess = originalExit }()
+
+	t.Setenv("HTTP_ADDR", "127.0.0.1:0")
 
 	exitCodes := make(chan int, 1)
 	exitProcess = func(code int) {
@@ -94,6 +103,7 @@ func TestMainIntegratesDefaultDependencies(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	t.Setenv(imdsEndpointEnv, server.URL+"/opc/v2")
+	t.Setenv("HTTP_ADDR", "127.0.0.1:0")
 
 	originalArgs := os.Args
 	configPath := filepath.Join("..", "pkg", "runtimeconfig", "testdata", "config.yaml")
