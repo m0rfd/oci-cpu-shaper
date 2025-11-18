@@ -2,9 +2,12 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 )
+
+var errFailingWriter = errors.New("failing writer: write failed")
 
 func TestWriteErrorHandlesScenarios(t *testing.T) {
 	t.Parallel()

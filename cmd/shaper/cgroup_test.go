@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -9,6 +10,11 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 	"oci-cpu-shaper/pkg/cgroup"
 	metricshttp "oci-cpu-shaper/pkg/http/metrics"
+)
+
+var (
+	errCgroupWeightBoom = errors.New("read cpu.weight: boom")
+	errCgroupMaxBoom    = errors.New("read cpu.max: boom")
 )
 
 func TestDetectAndReportCgroupPublishesMetrics(t *testing.T) {

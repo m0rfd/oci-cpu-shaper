@@ -8,6 +8,11 @@ import (
 	"oci-cpu-shaper/pkg/oci"
 )
 
+var (
+	errStubPrincipal    = errors.New("stub: principal client")
+	errStubQueryFailure = errors.New("stub: query failure")
+)
+
 type contextMarkerKey string
 
 func TestBuildInstancePrincipalMetricsClientUsesFactory(t *testing.T) {
@@ -134,6 +139,34 @@ func TestInstancePrincipalMetricsClientDelegateError(t *testing.T) {
 	if !querier.lastLast7d {
 		t.Fatal("expected last7d flag to be true")
 	}
+}
+
+type stubP95Querier struct {
+	value        float32
+	err          error
+	calls        int
+	lastResource string
+	lastLast7d   bool
+}
+
+func (s *stubP95Querier) QueryP95CPU(
+	_ context.Context,
+	resourceID string,
+	last7d bool,
+) (float32, error) {
+	s.calls++
+	s.lastResource = resourceID
+	s.lastLast7d = last7d
+
+	if s.err != nil {
+		return 0, s.err
+	}
+
+	return s.value, nil
+}
+
+func newStubP95Querier(value float32, err error) *stubP95Querier {
+	return &stubP95Querier{value: value, err: err} //nolint:exhaustruct
 }
 
 func TestInstancePrincipalMetricsClientSuccess(t *testing.T) {
