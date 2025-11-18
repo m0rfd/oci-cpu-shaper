@@ -6,7 +6,6 @@ package adapt
 
 import (
 	"context"
-	"errors"
 	"math"
 	"testing"
 	"time"
@@ -22,10 +21,6 @@ type stepExpectation struct {
 	state        State
 	target       float64
 	nextInterval time.Duration
-}
-
-type controllerStepper interface {
-	step(ctx context.Context) time.Duration
 }
 
 func TestControllerStateTransitions(t *testing.T) {
@@ -119,31 +114,6 @@ func TestControllerCpuUtilisationAcrossOCPUs(t *testing.T) {
 	}
 }
 
-func TestAdaptiveControllerRecordsLastError(t *testing.T) {
-	t.Parallel()
-
-	metrics := newFakeMetrics([]metricResult{{value: 0, err: errOCIDown}})
-	shaper := newFakeShaper()
-	cfg := DefaultConfig()
-
-	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
-	if err != nil {
-		t.Fatalf("NewAdaptiveController: %v", err)
-	}
-
-	stepper, ok := any(controller).(controllerStepper)
-	if !ok {
-		t.Fatalf("controller does not expose stepper interface")
-	}
-
-	stepper.step(context.Background())
-
-	lastErr := controller.LastError()
-	if !errors.Is(lastErr, errOCIDown) {
-		t.Fatalf("expected last error to be errOCIDown, got %v", lastErr)
-	}
-}
-
 func runControllerScenario(t *testing.T, scenario controllerScenario) {
 	t.Helper()
 
@@ -200,5 +170,60 @@ func runControllerScenario(t *testing.T, scenario controllerScenario) {
 				expectation.nextInterval,
 			)
 		}
+	}
+}
+
+func TestAdaptiveControllerRecordsIntervalAcrossP95Branches(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Interval = time.Minute
+	cfg.RelaxedInterval = time.Hour
+
+	tests := []struct {
+		name         string
+		p95          float64
+		wantInterval time.Duration
+		wantState    State
+	}{
+		{
+			name:         "hot-workload-uses-relaxed-interval",
+			p95:          cfg.RelaxedThreshold,
+			wantInterval: cfg.RelaxedInterval,
+			wantState:    StateNormal,
+		},
+		{
+			name:         "healthy-workload-keeps-fast-interval",
+			p95:          cfg.RelaxedThreshold - 0.05,
+			wantInterval: cfg.Interval,
+			wantState:    StateNormal,
+		},
+	}
+
+	for _, testCase := range tests {
+		// range variable copy
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := newStubMetricsRecorder()
+			metrics := newFakeMetrics([]metricResult{{value: testCase.p95, err: nil}})
+			shaper := newFakeShaper()
+
+			controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, recorder)
+			if err != nil {
+				t.Fatalf("NewAdaptiveController: %v", err)
+			}
+
+			stepper, ok := any(controller).(controllerStepper)
+			if !ok {
+				t.Fatalf("controller does not expose stepper interface")
+			}
+
+			interval := stepper.step(context.Background())
+
+			requireEqual(t, "step interval", interval, testCase.wantInterval)
+			requireEqual(t, "recorded interval", recorder.interval, testCase.wantInterval)
+			requireEqual(t, "state", controller.State(), testCase.wantState)
+		})
 	}
 }

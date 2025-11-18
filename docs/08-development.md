@@ -28,6 +28,10 @@ The repository includes a `Makefile` that wraps the most common development task
 | `make govulncheck` | Scan the module and all packages with `golang.org/x/vuln/cmd/govulncheck@v1.1.4`, failing on known Go vulnerabilities before changes ship (§14). |
 | `make build` | Compile all packages to validate build readiness. |
 
+### Adaptive controller layering
+
+The adaptive controller in `pkg/adapt/` mirrors its runtime responsibilities in the file layout: `controller_ctor.go` defines the struct plus constructor wiring, `controller_run.go` owns the run loop and `step` helpers, `controller_state.go` keeps the state accessors plus shared helpers such as `clamp`, and `dutycycler_wrapper.go` contains the dry-run wrapper used in monitor-only deployments. Each file ships with a matching `*_test.go` suite (for example `controller_run_test.go` and `controller_state_test.go`) so new helpers land next to the code they exercise. When adding controller features, update the matching test file instead of piling into a monolithic suite to keep the layering obvious to future contributors.
+
 ## Local caches
 
 The Makefile defines `GOCACHE_DIR` (`.cache/go`) and `GOLANGCI_LINT_CACHE_DIR` (`.cache/golangci`) relative to the repository root and injects them into the `make test` and `make lint` targets. These locally scoped caches keep Go build artifacts and linter facts inside the workspace so commands do not hit the runner’s global `~/.cache` tree, which may be read-only in restricted sandboxes. `.gitignore` excludes the `.cache/` directory, so the caches survive between runs without leaking into commits. You can run `go env -u GOCACHE` if you temporarily need to fall back to the default global cache.
