@@ -40,9 +40,9 @@ func TestControllerStateTransitions(t *testing.T) {
 				{value: 0.29, err: nil},
 			},
 			expectations: []stepExpectation{
-				{state: StateNormal, target: 0.27, nextInterval: time.Hour},
+				{state: StateNormal, target: 0.27, nextInterval: 6 * time.Hour},
 				{state: StateFallback, target: 0.25, nextInterval: time.Hour},
-				{state: StateNormal, target: 0.25, nextInterval: 6 * time.Hour},
+				{state: StateNormal, target: 0.25, nextInterval: time.Hour},
 			},
 		},
 		{
@@ -52,8 +52,8 @@ func TestControllerStateTransitions(t *testing.T) {
 				{value: 0.50, err: nil},
 			},
 			expectations: []stepExpectation{
-				{state: StateNormal, target: 0.27, nextInterval: time.Hour},
-				{state: StateNormal, target: 0.26, nextInterval: 6 * time.Hour},
+				{state: StateNormal, target: 0.27, nextInterval: 6 * time.Hour},
+				{state: StateNormal, target: 0.26, nextInterval: time.Hour},
 			},
 		},
 	}
@@ -81,13 +81,13 @@ func TestControllerCpuUtilisationAcrossOCPUs(t *testing.T) {
 			{value: 0.45, err: nil},
 		},
 		expectations: []stepExpectation{
-			{state: StateNormal, target: 0.27, nextInterval: time.Hour},
-			{state: StateNormal, target: 0.26, nextInterval: 6 * time.Hour},
-			{state: StateNormal, target: 0.25, nextInterval: 6 * time.Hour},
-			{state: StateNormal, target: 0.24, nextInterval: 6 * time.Hour},
-			{state: StateNormal, target: 0.23, nextInterval: 6 * time.Hour},
-			{state: StateNormal, target: 0.22, nextInterval: 6 * time.Hour},
-			{state: StateNormal, target: 0.22, nextInterval: 6 * time.Hour},
+			{state: StateNormal, target: 0.27, nextInterval: 6 * time.Hour},
+			{state: StateNormal, target: 0.26, nextInterval: time.Hour},
+			{state: StateNormal, target: 0.25, nextInterval: time.Hour},
+			{state: StateNormal, target: 0.24, nextInterval: time.Hour},
+			{state: StateNormal, target: 0.23, nextInterval: time.Hour},
+			{state: StateNormal, target: 0.22, nextInterval: time.Hour},
+			{state: StateNormal, target: 0.22, nextInterval: time.Hour},
 		},
 	}
 

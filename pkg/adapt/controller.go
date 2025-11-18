@@ -344,7 +344,7 @@ func (c *AdaptiveController) handleStepSuccessLocked(
 	c.updateEffectiveStateLocked()
 
 	nextInterval := c.cfg.Interval
-	if p95 >= c.cfg.RelaxedThreshold {
+	if p95 <= c.cfg.RelaxedThreshold {
 		nextInterval = c.cfg.RelaxedInterval
 	}
 

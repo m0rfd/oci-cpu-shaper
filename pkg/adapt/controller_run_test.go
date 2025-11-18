@@ -115,7 +115,7 @@ func TestAdaptiveControllerEmitsMetricsSignals(t *testing.T) {
 	requireNotZeroTime(t, "ociTime", recorder.ociTime)
 	requireEqual(t, "stateAfterStep", recorder.state, StateNormal.String())
 	requireFloatApprox(t, "targetAfterStep", recorder.target, shaper.Target())
-	requireEqual(t, "intervalAfterStep", recorder.interval, cfg.Interval)
+	requireEqual(t, "intervalAfterStep", recorder.interval, cfg.RelaxedInterval)
 	requirePositiveInt(t, "intervalCallsAfterStep", recorder.intervalSet)
 	requireEqual(t, "lastErrorAfterStep", recorder.lastError, nil)
 	requireTrue(t, "errorCallsAfterStep", recorder.errorCalls >= 2)
