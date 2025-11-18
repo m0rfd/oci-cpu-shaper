@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 	"oci-cpu-shaper/pkg/adapt"
 	metricshttp "oci-cpu-shaper/pkg/http/metrics"
+	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
 func TestDefaultIMDSFactoryUsesEnvironmentEndpoint(t *testing.T) {
@@ -221,8 +222,8 @@ func TestLogRuntimeConfig(t *testing.T) {
 	core, observed := observer.New(zap.InfoLevel)
 	logger := zap.New(core)
 
-	cfg := runtimeConfig{
-		Controller: controllerConfig{ //nolint:exhaustruct
+	cfg := runtimeconfig.Config{
+		Controller: runtimeconfig.ControllerConfig{ //nolint:exhaustruct
 			TargetMin:         0.21,
 			TargetMax:         0.39,
 			GoalLow:           0.23,
@@ -232,15 +233,15 @@ func TestLogRuntimeConfig(t *testing.T) {
 			SuppressThreshold: 0.85,
 			SuppressResume:    0.70,
 		},
-		Estimator: estimatorConfig{Interval: 2 * time.Second},
-		Pool: poolConfig{
+		Estimator: runtimeconfig.EstimatorConfig{Interval: 2 * time.Second},
+		Pool: runtimeconfig.PoolConfig{
 			Workers:         4,
 			Quantum:         50 * time.Millisecond,
 			PauseThreshold:  0.85,
 			ResumeThreshold: 0.70,
 		},
-		HTTP: httpConfig{Bind: "127.0.0.1:9000"},
-		OCI:  ociConfig{Offline: true}, //nolint:exhaustruct
+		HTTP: runtimeconfig.HTTPConfig{Bind: "127.0.0.1:9000"},
+		OCI:  runtimeconfig.OCIConfig{Offline: true}, //nolint:exhaustruct
 	}
 
 	logRuntimeConfig(logger, cfg)
@@ -365,17 +366,20 @@ func TestLogControllerInitialization(t *testing.T) {
 	core, observed := observer.New(zap.InfoLevel)
 	logger := zap.New(core)
 
-	cfg := runtimeConfig{ //nolint:exhaustruct
-		Pool: poolConfig{
+	cfg := runtimeconfig.Config{ //nolint:exhaustruct
+		Pool: runtimeconfig.PoolConfig{
 			Workers:         2,
 			Quantum:         25 * time.Millisecond,
 			PauseThreshold:  0.85,
 			ResumeThreshold: 0.70,
 		},
-		Estimator: estimatorConfig{
+		Estimator: runtimeconfig.EstimatorConfig{
 			Interval: 750 * time.Millisecond,
 		},
-		OCI: ociConfig{CompartmentID: stubCompartmentID, Region: stubRegion}, //nolint:exhaustruct
+		OCI: runtimeconfig.OCIConfig{ //nolint:exhaustruct
+			CompartmentID: stubCompartmentID,
+			Region:        stubRegion,
+		},
 	}
 
 	ctrl := &stubController{mode: modeDryRun, state: adapt.StateFallback} //nolint:exhaustruct

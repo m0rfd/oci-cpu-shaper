@@ -18,6 +18,7 @@ import (
 	"oci-cpu-shaper/internal/buildinfo"
 	"oci-cpu-shaper/pkg/adapt"
 	"oci-cpu-shaper/pkg/imds"
+	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
 func assertRunVersionPrints(t *testing.T, args []string, info buildinfo.Info) {
@@ -29,7 +30,7 @@ func assertRunVersionPrints(t *testing.T, args []string, info buildinfo.Info) {
 	deps.newLogger = func(string) (*zap.Logger, error) {
 		panic("newLogger should not be called when printing version")
 	}
-	deps.loadConfig = func(string) (runtimeConfig, error) {
+	deps.loadConfig = func(string) (runtimeconfig.Config, error) {
 		panic("loadConfig should not be called when printing version")
 	}
 	deps.currentBuildInfo = func() buildinfo.Info {
@@ -100,7 +101,7 @@ func TestRunSuccessfulPath(t *testing.T) {
 	deps.newController = func(
 		ctx context.Context,
 		mode string,
-		cfg runtimeConfig,
+		cfg runtimeconfig.Config,
 		imdsClient imds.Client,
 		_ adapt.MetricsRecorder,
 	) (adapt.Controller, poolStarter, error) {
@@ -164,7 +165,7 @@ func TestRunAppliesShutdownAfter(t *testing.T) {
 	deps.newController = func(
 		ctx context.Context,
 		mode string,
-		cfg runtimeConfig,
+		cfg runtimeconfig.Config,
 		imdsClient imds.Client,
 		_ adapt.MetricsRecorder,
 	) (adapt.Controller, poolStarter, error) {
@@ -295,7 +296,7 @@ func TestRunHandlesControllerError(t *testing.T) {
 	deps.newController = func(
 		ctx context.Context,
 		mode string,
-		cfg runtimeConfig,
+		cfg runtimeconfig.Config,
 		imdsClient imds.Client,
 		_ adapt.MetricsRecorder,
 	) (adapt.Controller, poolStarter, error) {
@@ -337,8 +338,8 @@ func TestRunHandlesControllerFactoryError(t *testing.T) {
 	deps.newLogger = func(string) (*zap.Logger, error) {
 		return zap.NewNop(), nil
 	}
-	deps.loadConfig = func(string) (runtimeConfig, error) {
-		cfg := defaultRuntimeConfig()
+	deps.loadConfig = func(string) (runtimeconfig.Config, error) {
+		cfg := runtimeconfig.Default()
 		cfg.OCI.CompartmentID = stubCompartmentID
 
 		return cfg, nil
@@ -349,7 +350,7 @@ func TestRunHandlesControllerFactoryError(t *testing.T) {
 	deps.newController = func(
 		context.Context,
 		string,
-		runtimeConfig,
+		runtimeconfig.Config,
 		imds.Client,
 		adapt.MetricsRecorder,
 	) (adapt.Controller, poolStarter, error) {
@@ -388,7 +389,7 @@ func TestRunReturnsRuntimeErrorWhenMetricsServerFails(t *testing.T) {
 	deps.newController = func(
 		context.Context,
 		string,
-		runtimeConfig,
+		runtimeconfig.Config,
 		imds.Client,
 		adapt.MetricsRecorder,
 	) (adapt.Controller, poolStarter, error) {
@@ -431,8 +432,8 @@ func TestRunReturnsRuntimeErrorWhenMetadataResolutionFails(t *testing.T) {
 
 		return logger, nil
 	}
-	deps.loadConfig = func(string) (runtimeConfig, error) {
-		cfg := defaultRuntimeConfig()
+	deps.loadConfig = func(string) (runtimeconfig.Config, error) {
+		cfg := runtimeconfig.Default()
 		cfg.OCI.CompartmentID = ""
 		cfg.OCI.Region = ""
 
@@ -462,7 +463,7 @@ func TestRunReturnsRuntimeErrorWhenMetadataResolutionFails(t *testing.T) {
 	deps.newController = func(
 		context.Context,
 		string,
-		runtimeConfig,
+		runtimeconfig.Config,
 		imds.Client,
 		adapt.MetricsRecorder,
 	) (adapt.Controller, poolStarter, error) {
@@ -586,8 +587,8 @@ func newOfflineRunDeps(t *testing.T, serverCh chan<- *httptest.Server) runDeps {
 	deps.newLogger = func(string) (*zap.Logger, error) {
 		return zap.NewNop(), nil
 	}
-	deps.loadConfig = func(string) (runtimeConfig, error) {
-		cfg := defaultRuntimeConfig()
+	deps.loadConfig = func(string) (runtimeconfig.Config, error) {
+		cfg := runtimeconfig.Default()
 		cfg.OCI.Offline = true
 		cfg.OCI.CompartmentID = ""
 		cfg.OCI.Region = ""
@@ -620,7 +621,7 @@ func newOfflineRunDeps(t *testing.T, serverCh chan<- *httptest.Server) runDeps {
 	deps.newController = func(
 		ctx context.Context,
 		mode string,
-		cfg runtimeConfig,
+		cfg runtimeconfig.Config,
 		imdsClient imds.Client,
 		recorder adapt.MetricsRecorder,
 	) (adapt.Controller, poolStarter, error) {
@@ -807,7 +808,7 @@ func runShutdownScenario(t *testing.T, runErr error, reason string) {
 	deps.newController = func(
 		context.Context,
 		string,
-		runtimeConfig,
+		runtimeconfig.Config,
 		imds.Client,
 		adapt.MetricsRecorder,
 	) (adapt.Controller, poolStarter, error) {

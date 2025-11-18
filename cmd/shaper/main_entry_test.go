@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -95,6 +96,8 @@ func TestMainIntegratesDefaultDependencies(t *testing.T) {
 	t.Setenv(imdsEndpointEnv, server.URL+"/opc/v2")
 
 	originalArgs := os.Args
+	configPath := filepath.Join("..", "pkg", "runtimeconfig", "testdata", "config.yaml")
+
 	os.Args = []string{
 		"shaper",
 		"--mode",
@@ -102,7 +105,7 @@ func TestMainIntegratesDefaultDependencies(t *testing.T) {
 		"--log-level",
 		"error",
 		"--config",
-		"./testdata/config.yaml",
+		configPath,
 	}
 
 	defer func() { os.Args = originalArgs }()

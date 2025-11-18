@@ -19,6 +19,10 @@
   helpers (including new IMDS endpoints) stay in `transport.go`. Keep the retry
   budget/backoff expectations in `transport.go` aligned with §3/§5 of the plan and
   mirror that structure in the `*_test.go` suites when adding endpoints or knobs.
+- `pkg/runtimeconfig` owns the shared runtime configuration structs plus the defaults,
+  file loader, env overlays, adapt translation helpers, and validators used by
+  `cmd/shaper`. Push new config surface area here and extend the colocated tests
+  so future binaries can reuse the same flow.
 - Keep unit tests colocated with the component they cover (`pool_api_test.go`, `pause_test.go`,
   `worker_test.go`, etc.) and share fixtures via `testhelpers_test.go`. Prefer exercising exported APIs,
   only falling back to `//nolint:testpackage` access when a worker hook or probe must be overridden.

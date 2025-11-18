@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"flag"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -36,9 +37,11 @@ func TestParseArgsDefaults(t *testing.T) {
 func TestParseArgsValidCustomizations(t *testing.T) {
 	t.Parallel()
 
+	configPath := filepath.Join("..", "pkg", "runtimeconfig", "testdata", "config.yaml")
+
 	args := []string{
 		"--config",
-		"./testdata/config.yaml",
+		configPath,
 		"--log-level",
 		"debug",
 		"--mode",
@@ -52,7 +55,7 @@ func TestParseArgsValidCustomizations(t *testing.T) {
 		t.Fatalf("parseArgs returned error: %v", err)
 	}
 
-	if opts.configPath != "./testdata/config.yaml" {
+	if opts.configPath != configPath {
 		t.Fatalf("unexpected config path: %q", opts.configPath)
 	}
 

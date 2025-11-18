@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
 func TestResolveInstanceIDUsesConfiguredValue(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 	cfg.OCI.InstanceID = "  ocid1.instance.oc1..configured  "
 
 	imdsClient := &stubIMDSClient{ //nolint:exhaustruct
@@ -38,7 +40,7 @@ func TestResolveInstanceIDUsesConfiguredValue(t *testing.T) {
 func TestResolveInstanceIDOfflineFallback(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 	cfg.OCI.Offline = true
 
 	imdsClient := &stubIMDSClient{ //nolint:exhaustruct
@@ -62,7 +64,7 @@ func TestResolveInstanceIDOfflineFallback(t *testing.T) {
 func TestResolveInstanceIDUsesIMDSWhenOverrideMissing(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 
 	imdsClient := &stubIMDSClient{ //nolint:exhaustruct
 		instanceID: "   ocid1.instance.oc1..imds   ",
@@ -87,7 +89,7 @@ func TestResolveInstanceIDUsesIMDSWhenOverrideMissing(t *testing.T) {
 func TestResolveInstanceIDPropagatesIMDSErrors(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 
 	imdsClient := &stubIMDSClient{ //nolint:exhaustruct
 		instanceErr: errInstanceDown,

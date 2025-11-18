@@ -17,6 +17,7 @@ import (
 	"oci-cpu-shaper/internal/buildinfo"
 	"oci-cpu-shaper/pkg/adapt"
 	"oci-cpu-shaper/pkg/imds"
+	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
 func stubBuildInfo(version, commit, date string) buildinfo.Info {
@@ -27,9 +28,9 @@ func stubBuildInfo(version, commit, date string) buildinfo.Info {
 	}
 }
 
-func loadConfigStub() func(string) (runtimeConfig, error) {
-	return func(string) (runtimeConfig, error) {
-		cfg := defaultRuntimeConfig()
+func loadConfigStub() func(string) (runtimeconfig.Config, error) {
+	return func(string) (runtimeconfig.Config, error) {
+		cfg := runtimeconfig.Default()
 		cfg.OCI.CompartmentID = stubCompartmentID
 		cfg.OCI.Region = "us-phoenix-1"
 		cfg.OCI.Offline = true

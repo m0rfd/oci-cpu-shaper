@@ -1,4 +1,5 @@
-package main
+//nolint:testpackage // tests require access to unexported config helpers.
+package runtimeconfig
 
 import (
 	"testing"

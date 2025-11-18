@@ -10,6 +10,7 @@ import (
 	"oci-cpu-shaper/pkg/adapt"
 	"oci-cpu-shaper/pkg/est"
 	"oci-cpu-shaper/pkg/imds"
+	"oci-cpu-shaper/pkg/runtimeconfig"
 	"oci-cpu-shaper/pkg/shape"
 )
 
@@ -47,11 +48,11 @@ func exitCodeForConfigError(err error) int {
 	return exitCodeRuntimeError
 }
 
-//nolint:ireturn,funlen // helper returns controller interface for wiring and coordinates several setup steps
+//nolint:ireturn // helper returns controller interface for wiring and coordinates several setup steps
 func buildAdaptiveController(
 	ctx context.Context,
 	mode string,
-	cfg runtimeConfig,
+	cfg runtimeconfig.Config,
 	imdsClient imds.Client,
 	recorder adapt.MetricsRecorder,
 ) (adapt.Controller, poolStarter, error) {
@@ -86,23 +87,9 @@ func buildAdaptiveController(
 
 	sampler := est.NewSampler(nil, cfg.Estimator.Interval)
 
-	controllerCfg := adapt.Config{
-		ResourceID:        instanceID,
-		Mode:              mode,
-		TargetStart:       cfg.Controller.TargetStart,
-		TargetMin:         cfg.Controller.TargetMin,
-		TargetMax:         cfg.Controller.TargetMax,
-		StepUp:            cfg.Controller.StepUp,
-		StepDown:          cfg.Controller.StepDown,
-		FallbackTarget:    cfg.Controller.FallbackTarget,
-		GoalLow:           cfg.Controller.GoalLow,
-		GoalHigh:          cfg.Controller.GoalHigh,
-		Interval:          cfg.Controller.Interval,
-		RelaxedInterval:   cfg.Controller.RelaxedInterval,
-		RelaxedThreshold:  cfg.Controller.RelaxedThreshold,
-		SuppressThreshold: cfg.Controller.SuppressThreshold,
-		SuppressResume:    cfg.Controller.SuppressResume,
-	}
+	controllerCfg := cfg.ToAdaptConfig()
+	controllerCfg.ResourceID = instanceID
+	controllerCfg.Mode = mode
 
 	controller, err := adapt.NewAdaptiveController(
 		controllerCfg,
