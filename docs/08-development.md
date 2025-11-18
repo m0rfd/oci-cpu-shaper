@@ -34,7 +34,7 @@ The Makefile defines `GOCACHE_DIR` (`.cache/go`) and `GOLANGCI_LINT_CACHE_DIR` (
 
 ### §11.5 Duty-Cycle Benchmarks
 
-- `pkg/shape` now exposes `BenchmarkPoolDutyCycle`, which drives deterministic worker quanta across a range of duty-cycle targets and quantums, recording CPU usage, average drift per tick, and scheduler fairness. Run the suite locally with `GOCACHE=.cache/go go test -run '^$' -bench BenchmarkPoolDutyCycle ./pkg/shape` when you need raw benchmark output for exploratory tuning.
+- `pkg/shape` now exposes `BenchmarkPoolDutyCycle`, which drives deterministic worker quanta across a range of duty-cycle targets and quanta, recording CPU usage, average drift per tick, and scheduler fairness. Run the suite locally with `GOCACHE=.cache/go go test -run '^$' -bench BenchmarkPoolDutyCycle ./pkg/shape` when you need raw benchmark output for exploratory tuning.
 - Prefer `make bench` for CI-quality verification: it shells out to `hack/check_benchmarks.sh`, executes the benchmark suite, persists the log to `artifacts/benchmarks/pool-bench.txt`, and enforces the §10 duty-cycle budgets by failing when CPU usage drifts more than five percentage points from the configured target, when per-tick drift exceeds 15 percent of the quantum, or when tick variance rises above 0.01. These guards help flag regressions before cgroup-facing changes land in CI (§§5, 10, 11), and the CI workflow now runs the same target on every pull request so regressions surface automatically.
 
 ### §14 Lint Auto-Fix Workflow
