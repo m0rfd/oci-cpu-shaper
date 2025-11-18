@@ -1,4 +1,4 @@
-package main
+package runtimeconfig
 
 import (
 	"runtime"
@@ -8,10 +8,11 @@ import (
 	"oci-cpu-shaper/pkg/shape"
 )
 
-func defaultRuntimeConfig() runtimeConfig {
+// Default returns the fully merged default runtime configuration.
+func Default() Config {
 	defaults := adapt.DefaultConfig()
 
-	var cfg runtimeConfig
+	var cfg Config
 
 	cfg.Controller.TargetStart = defaults.TargetStart
 	cfg.Controller.TargetMin = defaults.TargetMin
@@ -43,7 +44,8 @@ func defaultRuntimeConfig() runtimeConfig {
 	return cfg
 }
 
-func runtimeToAdaptControllerConfig(cfg runtimeConfig) adapt.Config {
+// ToAdaptConfig maps the controller configuration into the adapt.Config struct.
+func (cfg Config) ToAdaptConfig() adapt.Config {
 	return adapt.Config{
 		ResourceID:        "",
 		Mode:              "",

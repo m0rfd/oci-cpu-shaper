@@ -19,6 +19,7 @@ import (
 	metricshttp "oci-cpu-shaper/pkg/http/metrics"
 	"oci-cpu-shaper/pkg/imds"
 	"oci-cpu-shaper/pkg/oci"
+	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
 const (
@@ -56,12 +57,12 @@ type runDeps struct {
 	newController func(
 		ctx context.Context,
 		mode string,
-		cfg runtimeConfig,
+		cfg runtimeconfig.Config,
 		imdsClient imds.Client,
 		recorder adapt.MetricsRecorder,
 	) (adapt.Controller, poolStarter, error)
 	currentBuildInfo   func() buildinfo.Info
-	loadConfig         func(path string) (runtimeConfig, error)
+	loadConfig         func(path string) (runtimeconfig.Config, error)
 	newMetricsExporter func() *metricshttp.Exporter
 	startMetricsServer func(
 		ctx context.Context,
@@ -160,7 +161,7 @@ func loadRuntimeConfigOrExit(
 	deps runDeps,
 	path string,
 	stderr io.Writer,
-) (runtimeConfig, int, bool) {
+) (runtimeconfig.Config, int, bool) {
 	cfg, loadErr := deps.loadConfig(path)
 	if loadErr != nil {
 		code := exitCodeForConfigError(loadErr)
@@ -171,7 +172,7 @@ func loadRuntimeConfigOrExit(
 			code,
 		)
 
-		var empty runtimeConfig
+		var empty runtimeconfig.Config
 
 		return empty, exitCode, false
 	}
@@ -202,7 +203,7 @@ func buildLoggerOrExit(
 func defaultControllerFactory(
 	ctx context.Context,
 	mode string,
-	cfg runtimeConfig,
+	cfg runtimeconfig.Config,
 	imdsClient imds.Client,
 	recorder adapt.MetricsRecorder,
 ) (adapt.Controller, poolStarter, error) {
@@ -230,7 +231,7 @@ func defaultControllerFactory(
 
 func resolveInstanceID(
 	ctx context.Context,
-	cfg runtimeConfig,
+	cfg runtimeconfig.Config,
 	offline bool,
 	imdsClient imds.Client,
 ) (string, error) {
@@ -258,7 +259,7 @@ type ociMetadata struct {
 
 func resolveCompartmentAndRegion(
 	ctx context.Context,
-	cfg runtimeConfig,
+	cfg runtimeconfig.Config,
 	imdsClient imds.Client,
 ) (ociMetadata, error) {
 	compartmentOverride := strings.TrimSpace(cfg.OCI.CompartmentID)
@@ -334,10 +335,10 @@ func preferMetadataValue(
 
 func prepareRunMetadata(
 	ctx context.Context,
-	cfg runtimeConfig,
+	cfg runtimeconfig.Config,
 	imdsClient imds.Client,
 	mode string,
-) (runtimeConfig, ociMetadata, error) {
+) (runtimeconfig.Config, ociMetadata, error) {
 	trimmedMode := strings.TrimSpace(mode)
 	if trimmedMode == modeNoop {
 		var empty ociMetadata
@@ -390,7 +391,7 @@ func logStartup(logger *zap.Logger, info buildinfo.Info, opts options) {
 	logger.Info("starting oci-cpu-shaper", fields...)
 }
 
-func logRuntimeConfig(logger *zap.Logger, cfg runtimeConfig) {
+func logRuntimeConfig(logger *zap.Logger, cfg runtimeconfig.Config) {
 	if logger == nil {
 		return
 	}
@@ -462,7 +463,7 @@ func logMetadataResolution(
 
 func logControllerInitialization(
 	logger *zap.Logger,
-	cfg runtimeConfig,
+	cfg runtimeconfig.Config,
 	controller adapt.Controller,
 	exporter *metricshttp.Exporter,
 ) {
@@ -495,7 +496,7 @@ func logControllerInitialization(
 //nolint:ireturn // helper returns MetricsClient interface for dependency substitution.
 func createMetricsClient(
 	ctx context.Context,
-	cfg runtimeConfig,
+	cfg runtimeconfig.Config,
 	offline bool,
 	compartmentID string,
 	region string,

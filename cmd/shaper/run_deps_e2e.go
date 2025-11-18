@@ -14,6 +14,7 @@ import (
 	"oci-cpu-shaper/pkg/cgroup"
 	metricshttp "oci-cpu-shaper/pkg/http/metrics"
 	"oci-cpu-shaper/pkg/imds"
+	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
 var e2eLogger atomic.Pointer[zap.Logger]
@@ -25,7 +26,7 @@ func defaultRunDeps() runDeps {
 		newController: func(
 			ctx context.Context,
 			mode string,
-			cfg runtimeConfig,
+			cfg runtimeconfig.Config,
 			imdsClient imds.Client,
 			recorder adapt.MetricsRecorder,
 		) (adapt.Controller, poolStarter, error) {
@@ -37,7 +38,7 @@ func defaultRunDeps() runDeps {
 			return defaultControllerFactory(ctx, mode, cfg, imdsClient, recorder)
 		},
 		currentBuildInfo:   buildinfo.Current,
-		loadConfig:         loadConfig,
+		loadConfig:         runtimeconfig.Load,
 		newMetricsExporter: metricshttp.NewExporter,
 		startMetricsServer: startMetricsServer,
 		versionWriter:      os.Stdout,

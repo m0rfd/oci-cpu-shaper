@@ -99,6 +99,11 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% 
   sizes after layering YAML files with environment overrides, returning `adapt.ErrInvalidConfig` when misconfigured values are
   detected. Fresh CLI unit tests cover invalid manifests and environment overrides so the ≥95% coverage target remains intact
   (§§3.1, 5.2, 9, 11).
+- Runtime configuration structs, defaults, YAML/env overlays, validation, and the
+  controller translation helper moved from `cmd/shaper` into the shared
+  `pkg/runtimeconfig` package. The CLI now imports this package instead of owning
+  the helpers, `docs/09-cli.md` explains the shared flow, and tests migrated with
+  the code so future binaries can consume the same API (§§3.1, 5.2, 9, 11).
 - Distroless image builds now reference the repository-root `Dockerfile` and ship the
   offline smoke-test config from `configs/offline-smoke.yaml`, consolidating Komodo,
   CI, and release workflows on a single path (§6).

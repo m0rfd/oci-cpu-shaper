@@ -10,7 +10,10 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 	"oci-cpu-shaper/pkg/adapt"
 	"oci-cpu-shaper/pkg/oci"
+	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
+
+const testCompartmentOverride = "ocid1.compartment.oc1..override"
 
 func TestDefaultControllerFactoryReturnsNoopForMode(t *testing.T) {
 	t.Parallel()
@@ -20,7 +23,7 @@ func TestDefaultControllerFactoryReturnsNoopForMode(t *testing.T) {
 	controller, pool, err := defaultControllerFactory(
 		context.Background(),
 		modeNoop,
-		defaultRuntimeConfig(),
+		runtimeconfig.Default(),
 		noopIMDS,
 		nil,
 	)
@@ -44,7 +47,7 @@ func TestDefaultControllerFactoryReturnsNoopForMode(t *testing.T) {
 func TestDefaultControllerFactoryTrimsModeToDryRun(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 	cfg.OCI.CompartmentID = stubCompartmentID
 	cfg.OCI.Region = stubRegion
 
@@ -90,7 +93,7 @@ func TestDefaultControllerFactoryBuildsAdaptiveController(t *testing.T) {
 		},
 	)
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 	cfg.OCI.CompartmentID = "ocid1.compartment.oc1..controller"
 	cfg.OCI.Region = stubRegion
 	cfg.Pool.Workers = 1
@@ -122,7 +125,7 @@ func TestDefaultControllerFactoryBuildsAdaptiveController(t *testing.T) {
 func TestDefaultControllerFactoryErrorsOnMissingCompartmentID(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 	cfg.OCI.CompartmentID = ""
 
 	imdsClient := new(stubIMDSClient)
@@ -150,7 +153,7 @@ func TestDefaultControllerFactoryPropagatesMetricsFailure(t *testing.T) {
 		},
 	)
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 	cfg.OCI.CompartmentID = "ocid1.compartment.oc1..metrics"
 	cfg.OCI.Region = stubRegion
 
@@ -172,7 +175,7 @@ func TestDefaultControllerFactoryPropagatesMetricsFailure(t *testing.T) {
 func TestDefaultControllerFactoryPropagatesIMDSError(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 	cfg.OCI.CompartmentID = "ocid1.compartment.oc1..imds"
 	cfg.OCI.Region = stubRegion
 
@@ -210,7 +213,7 @@ func TestBuildAdaptiveControllerUsesConfiguredInstanceID(t *testing.T) {
 		},
 	)
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 	cfg.OCI.CompartmentID = testCompartmentOverride
 	cfg.OCI.Region = stubRegion
 	cfg.OCI.InstanceID = "  ocid1.instance.oc1..override  "
@@ -255,7 +258,7 @@ func TestBuildAdaptiveControllerOfflineSkipsExternalDependencies(t *testing.T) {
 		},
 	)
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 	cfg.Controller.TargetStart = 0.42
 	cfg.OCI.CompartmentID = ""
 	cfg.OCI.InstanceID = ""
@@ -281,7 +284,7 @@ func TestBuildAdaptiveControllerOfflineSkipsExternalDependencies(t *testing.T) {
 func TestBuildAdaptiveControllerRequiresCompartmentID(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 	cfg.OCI.InstanceID = "ocid1.instance.oc1..missing-compartment"
 	cfg.OCI.CompartmentID = ""
 	cfg.OCI.Region = stubRegion
@@ -302,7 +305,7 @@ func TestBuildAdaptiveControllerRequiresCompartmentID(t *testing.T) {
 func TestBuildAdaptiveControllerRequiresRegion(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 	cfg.OCI.InstanceID = "ocid1.instance.oc1..missing-region"
 	cfg.OCI.CompartmentID = stubCompartmentID
 	cfg.OCI.Region = ""
@@ -342,7 +345,7 @@ func TestHandleControllerRunResultLogsCompletion(t *testing.T) {
 func TestResolveCompartmentAndRegionOfflineSkipsLookups(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 	cfg.OCI.CompartmentID = "  ocid1.compartment.oc1..offline  "
 	cfg.OCI.Region = "  us-phoenix-1  "
 	cfg.OCI.Offline = true
@@ -364,7 +367,7 @@ func TestResolveCompartmentAndRegionOfflineSkipsLookups(t *testing.T) {
 func TestResolveCompartmentAndRegionRequiresIMDSOnline(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 	cfg.OCI.CompartmentID = ""
 	cfg.OCI.Region = ""
 	cfg.OCI.Offline = false
@@ -378,7 +381,7 @@ func TestResolveCompartmentAndRegionRequiresIMDSOnline(t *testing.T) {
 func TestResolveCompartmentAndRegionFallsBackToOverrides(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 	cfg.OCI.CompartmentID = "  ocid1.compartment.oc1..override  "
 	cfg.OCI.Region = "  " + overrideRegion + "  "
 
@@ -420,7 +423,7 @@ func TestResolveCompartmentAndRegionFallsBackToOverrides(t *testing.T) {
 func TestResolveCompartmentAndRegionFetchesFromIMDS(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 	cfg.OCI.CompartmentID = ""
 	cfg.OCI.Region = ""
 
@@ -462,7 +465,7 @@ func TestResolveCompartmentAndRegionFetchesFromIMDS(t *testing.T) {
 func TestResolveCompartmentAndRegionPrefersIMDSValues(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := runtimeconfig.Default()
 	cfg.OCI.CompartmentID = "ocid1.compartment.oc1..override"
 	cfg.OCI.Region = overrideRegion
 

@@ -1,4 +1,4 @@
-package main
+package runtimeconfig
 
 import (
 	"os"
@@ -34,7 +34,7 @@ const (
 
 var lookupEnv = os.LookupEnv //nolint:gochecknoglobals // overridden in tests
 
-func applyEnvOverrides(cfg *runtimeConfig) {
+func applyEnvOverrides(cfg *Config) {
 	cfg.Controller.TargetStart = envFloat(envTargetStart, cfg.Controller.TargetStart)
 	cfg.Controller.TargetMin = envFloat(envTargetMin, cfg.Controller.TargetMin)
 	cfg.Controller.TargetMax = envFloat(envTargetMax, cfg.Controller.TargetMax)

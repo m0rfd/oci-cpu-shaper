@@ -1,14 +1,15 @@
-package main
+//nolint:testpackage // tests require access to unexported config helpers.
+package runtimeconfig
 
 import (
 	"testing"
 	"time"
 )
 
-func TestDefaultRuntimeConfigAlignsWithAdaptDefaults(t *testing.T) {
+func TestDefaultConfigAlignsWithAdaptDefaults(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := Default()
 	defaults := adaptDefault()
 
 	assertFloatEqual(t, "targetStart", cfg.Controller.TargetStart, defaults.TargetStart)
@@ -51,11 +52,11 @@ func TestDefaultRuntimeConfigAlignsWithAdaptDefaults(t *testing.T) {
 	assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9108")
 }
 
-func TestRuntimeToAdaptControllerConfig(t *testing.T) {
+func TestConfigToAdaptConfig(t *testing.T) {
 	t.Parallel()
 
-	cfg := runtimeConfig{ //nolint:exhaustruct
-		Controller: controllerConfig{
+	cfg := Config{ //nolint:exhaustruct
+		Controller: ControllerConfig{
 			TargetStart:       0.45,
 			TargetMin:         0.3,
 			TargetMax:         0.6,
@@ -72,7 +73,7 @@ func TestRuntimeToAdaptControllerConfig(t *testing.T) {
 		},
 	}
 
-	adaptCfg := runtimeToAdaptControllerConfig(cfg)
+	adaptCfg := cfg.ToAdaptConfig()
 
 	assertFloatEqual(t, "targetStart", adaptCfg.TargetStart, cfg.Controller.TargetStart)
 	assertFloatEqual(t, "targetMin", adaptCfg.TargetMin, cfg.Controller.TargetMin)

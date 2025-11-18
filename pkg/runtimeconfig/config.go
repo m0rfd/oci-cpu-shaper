@@ -1,16 +1,19 @@
-package main
+// Package runtimeconfig centralizes the shaper runtime configuration wiring.
+package runtimeconfig
 
 import "time"
 
-type runtimeConfig struct {
-	Controller controllerConfig
-	Estimator  estimatorConfig
-	Pool       poolConfig
-	HTTP       httpConfig
-	OCI        ociConfig
+// Config captures the fully materialized runtime configuration.
+type Config struct {
+	Controller ControllerConfig
+	Estimator  EstimatorConfig
+	Pool       PoolConfig
+	HTTP       HTTPConfig
+	OCI        OCIConfig
 }
 
-type controllerConfig struct {
+// ControllerConfig describes the adaptive controller thresholds.
+type ControllerConfig struct {
 	TargetStart       float64
 	TargetMin         float64
 	TargetMax         float64
@@ -26,22 +29,26 @@ type controllerConfig struct {
 	SuppressResume    float64
 }
 
-type estimatorConfig struct {
+// EstimatorConfig controls the fast estimator loop.
+type EstimatorConfig struct {
 	Interval time.Duration
 }
 
-type poolConfig struct {
+// PoolConfig captures the worker pool sizing knobs.
+type PoolConfig struct {
 	Workers         int
 	Quantum         time.Duration
 	PauseThreshold  float64
 	ResumeThreshold float64
 }
 
-type httpConfig struct {
+// HTTPConfig drives the metrics server listener wiring.
+type HTTPConfig struct {
 	Bind string
 }
 
-type ociConfig struct {
+// OCIConfig stores the Monitoring tenancy metadata and offline mode.
+type OCIConfig struct {
 	CompartmentID string
 	Region        string
 	InstanceID    string

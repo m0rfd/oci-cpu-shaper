@@ -1,4 +1,4 @@
-package main
+package runtimeconfig
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func mergeRuntimeConfigFile(cfg *runtimeConfig, path string) error {
+func mergeRuntimeConfigFile(cfg *Config, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -36,7 +36,7 @@ func mergeRuntimeConfigFile(cfg *runtimeConfig, path string) error {
 	return nil
 }
 
-func mergeControllerConfig(dst *controllerConfig, src controllerFileConfig) {
+func mergeControllerConfig(dst *ControllerConfig, src controllerFileConfig) {
 	assignFloat(&dst.TargetStart, src.TargetStart)
 	assignFloat(&dst.TargetMin, src.TargetMin)
 	assignFloat(&dst.TargetMax, src.TargetMax)
@@ -52,22 +52,22 @@ func mergeControllerConfig(dst *controllerConfig, src controllerFileConfig) {
 	assignFloat(&dst.SuppressResume, src.SuppressResume)
 }
 
-func mergeEstimatorConfig(dst *estimatorConfig, src estimatorFileConfig) {
+func mergeEstimatorConfig(dst *EstimatorConfig, src estimatorFileConfig) {
 	assignDuration(&dst.Interval, src.Interval)
 }
 
-func mergePoolConfig(dst *poolConfig, src poolFileConfig) {
+func mergePoolConfig(dst *PoolConfig, src poolFileConfig) {
 	assignInt(&dst.Workers, src.Workers)
 	assignDuration(&dst.Quantum, src.Quantum)
 	assignFloat(&dst.PauseThreshold, src.PauseThreshold)
 	assignFloat(&dst.ResumeThreshold, src.ResumeThreshold)
 }
 
-func mergeHTTPConfig(dst *httpConfig, src httpFileConfig) {
+func mergeHTTPConfig(dst *HTTPConfig, src httpFileConfig) {
 	assignString(&dst.Bind, src.Bind)
 }
 
-func mergeOCIConfig(dst *ociConfig, src ociFileConfig) {
+func mergeOCIConfig(dst *OCIConfig, src ociFileConfig) {
 	assignString(&dst.CompartmentID, src.CompartmentID)
 	assignString(&dst.Region, src.Region)
 	assignString(&dst.InstanceID, src.InstanceID)

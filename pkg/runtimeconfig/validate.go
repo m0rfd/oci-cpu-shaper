@@ -1,4 +1,4 @@
-package main
+package runtimeconfig
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 	"oci-cpu-shaper/pkg/adapt"
 )
 
-func validateRuntimeConfig(cfg runtimeConfig) error {
+func validateRuntimeConfig(cfg Config) error {
 	err := validatePoolSettings(cfg.Pool)
 	if err != nil {
 		return err
@@ -21,7 +21,7 @@ func validateRuntimeConfig(cfg runtimeConfig) error {
 	return validateControllerThresholds(cfg.Controller)
 }
 
-func validatePoolSettings(pool poolConfig) error {
+func validatePoolSettings(pool PoolConfig) error {
 	if pool.Workers <= 0 {
 		return invalidConfigError("pool.workers (%d) must be greater than zero", pool.Workers)
 	}
@@ -29,7 +29,7 @@ func validatePoolSettings(pool poolConfig) error {
 	return ensurePositiveDuration("pool.quantum", pool.Quantum)
 }
 
-func validateLoopIntervals(controller controllerConfig, estimator estimatorConfig) error {
+func validateLoopIntervals(controller ControllerConfig, estimator EstimatorConfig) error {
 	for _, interval := range []struct {
 		name  string
 		value time.Duration
@@ -60,7 +60,7 @@ func validateLoopIntervals(controller controllerConfig, estimator estimatorConfi
 	return nil
 }
 
-func validateControllerThresholds(controller controllerConfig) error {
+func validateControllerThresholds(controller ControllerConfig) error {
 	if controller.TargetMin >= controller.TargetMax {
 		return invalidConfigError(
 			"controller.targetMin (%.2f) must be less than controller.targetMax (%.2f)",

@@ -1,4 +1,5 @@
-package main
+//nolint:testpackage // tests require access to unexported config helpers.
+package runtimeconfig
 
 import (
 	"path/filepath"
@@ -9,7 +10,7 @@ import (
 func TestMergeRuntimeConfigFileIgnoresMissingFile(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := Default()
 	copyCfg := cfg
 
 	err := mergeRuntimeConfigFile(&cfg, filepath.Join(t.TempDir(), "missing.yaml"))
@@ -25,7 +26,7 @@ func TestMergeRuntimeConfigFileIgnoresMissingFile(t *testing.T) {
 func TestMergeRuntimeConfigFileAppliesOverrides(t *testing.T) {
 	t.Parallel()
 
-	cfg := defaultRuntimeConfig()
+	cfg := Default()
 	cfg.Pool.Workers = 10
 
 	path := writeTempConfig(t, mergeOverridesFixture())
@@ -70,7 +71,7 @@ oci:
 `
 }
 
-func assertMergeOverrides(t *testing.T, cfg runtimeConfig) {
+func assertMergeOverrides(t *testing.T, cfg Config) {
 	t.Helper()
 
 	assertFloatEqual(t, "targetStart", cfg.Controller.TargetStart, 0.42)
