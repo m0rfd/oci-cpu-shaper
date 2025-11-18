@@ -90,7 +90,11 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - `/metrics` exporter and Prometheus integration surfaced through the CLI, including emitted series, sample scrape output, and Compose/HTTP_ADDR wiring documented across §§4–9.
 
 ### Changed
-_Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._ 
+_Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._
+- CLI environment variable defaults now document the positive
+  `SHAPER_STEP_UP`/`SHAPER_STEP_DOWN` values enforced in code and explain that
+  `StepDown` stays positive because the controller subtracts it internally
+  (§§3.1, 5.2, 9).
 - Runtime configuration loader now validates target/goal bounds, positive controller/estimator intervals, worker counts, and step
   sizes after layering YAML files with environment overrides, returning `adapt.ErrInvalidConfig` when misconfigured values are
   detected. Fresh CLI unit tests cover invalid manifests and environment overrides so the ≥95% coverage target remains intact
