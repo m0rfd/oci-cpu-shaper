@@ -12,24 +12,20 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
+	"github.com/oracle/oci-go-sdk/v65/common/auth"
 	"github.com/oracle/oci-go-sdk/v65/monitoring"
 )
 
 var (
 	errNoMockResponse = errors.New("http mock: no response configured")
 	errForcedFailure  = errors.New("http mock: forced failure")
-
-	providerOverrides     []providerOverride   //nolint:gochecknoglobals
-	providerOverrideSeq   uint64               //nolint:gochecknoglobals
-	monitoringOverrides   []monitoringOverride //nolint:gochecknoglobals
-	monitoringOverrideSeq uint64               //nolint:gochecknoglobals
-	overrideSerialMu      sync.Mutex           //nolint:gochecknoglobals
 )
 
 type httpVerifyingClient struct {
@@ -463,17 +459,104 @@ func TestNewClientValidatesParameters(t *testing.T) {
 	}
 }
 
+func TestNewClientFactoryProvidesDefaults(t *testing.T) {
+	t.Parallel()
+
+	factory := NewClientFactory()
+
+	requireFunctionPointerEqual(
+		t,
+		factory.InstancePrincipalProvider,
+		auth.InstancePrincipalConfigurationProvider,
+		"instance principal provider",
+	)
+
+	requireFunctionPointerEqual(
+		t,
+		factory.NewMonitoringClient,
+		monitoring.NewMonitoringClientWithConfigurationProvider,
+		"monitoring client constructor",
+	)
+
+	requireFunctionPointerEqual(t, factory.Now, time.Now, "clock function")
+}
+
+func TestClientFactoryWithDefaultsFillsZeroValue(t *testing.T) {
+	t.Parallel()
+
+	var zeroFactory ClientFactory
+
+	factory := zeroFactory.withDefaults()
+
+	requireFunctionPointerEqual(
+		t,
+		factory.InstancePrincipalProvider,
+		auth.InstancePrincipalConfigurationProvider,
+		"instance principal provider",
+	)
+
+	requireFunctionPointerEqual(
+		t,
+		factory.NewMonitoringClient,
+		monitoring.NewMonitoringClientWithConfigurationProvider,
+		"monitoring client constructor",
+	)
+
+	requireFunctionPointerEqual(t, factory.Now, time.Now, "clock function")
+}
+
+func TestWithFactoryOverridesOptions(t *testing.T) {
+	t.Parallel()
+
+	customFactory := ClientFactory{
+		InstancePrincipalProvider: func() (common.ConfigurationProvider, error) {
+			return stubConfigurationProvider(t), nil
+		},
+		NewMonitoringClient: func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
+			var client monitoring.MonitoringClient
+
+			return client, nil
+		},
+		Now: func() time.Time {
+			return time.Unix(42, 0).UTC()
+		},
+	}
+
+	options := applyClientOptions([]ClientOption{WithFactory(customFactory)})
+
+	requireFunctionPointerEqual(
+		t,
+		options.factory.InstancePrincipalProvider,
+		customFactory.InstancePrincipalProvider,
+		"instance principal provider",
+	)
+
+	requireFunctionPointerEqual(
+		t,
+		options.factory.NewMonitoringClient,
+		customFactory.NewMonitoringClient,
+		"monitoring client constructor",
+	)
+
+	requireFunctionPointerEqual(t, options.factory.Now, customFactory.Now, "clock function")
+}
+
 func TestNewInstancePrincipalClientPropagatesProviderError(t *testing.T) {
 	t.Parallel()
 
-	overrideSerialMu.Lock()
-	defer overrideSerialMu.Unlock()
+	factory := ClientFactory{
+		InstancePrincipalProvider: func() (common.ConfigurationProvider, error) {
+			return nil, errForcedFailure
+		},
+		NewMonitoringClient: nil,
+		Now:                 nil,
+	}
 
-	overrideInstancePrincipalProvider(t, func() (common.ConfigurationProvider, error) {
-		return nil, errForcedFailure
-	})
-
-	_, err := NewInstancePrincipalClient("ocid1.compartment.oc1..exampleuniqueID", "us-ashburn-1")
+	_, err := NewInstancePrincipalClient(
+		"ocid1.compartment.oc1..exampleuniqueID",
+		"us-ashburn-1",
+		WithFactory(factory),
+	)
 	if err == nil || !strings.Contains(err.Error(), "build instance principal provider") {
 		t.Fatalf("expected wrapped provider error, got %v", err)
 	}
@@ -482,25 +565,25 @@ func TestNewInstancePrincipalClientPropagatesProviderError(t *testing.T) {
 func TestNewInstancePrincipalClientPropagatesClientError(t *testing.T) {
 	t.Parallel()
 
-	overrideSerialMu.Lock()
-	defer overrideSerialMu.Unlock()
-
 	provider := stubConfigurationProvider(t)
 
-	overrideInstancePrincipalProvider(t, func() (common.ConfigurationProvider, error) {
-		return provider, nil
-	})
-
-	overrideNewMonitoringClient(
-		t,
-		func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
+	factory := ClientFactory{
+		InstancePrincipalProvider: func() (common.ConfigurationProvider, error) {
+			return provider, nil
+		},
+		NewMonitoringClient: func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
 			var client monitoring.MonitoringClient
 
 			return client, errForcedFailure
 		},
-	)
+		Now: nil,
+	}
 
-	_, err := NewInstancePrincipalClient("ocid1.compartment.oc1..exampleuniqueID", "us-ashburn-1")
+	_, err := NewInstancePrincipalClient(
+		"ocid1.compartment.oc1..exampleuniqueID",
+		"us-ashburn-1",
+		WithFactory(factory),
+	)
 	if err == nil || !strings.Contains(err.Error(), "create monitoring client") {
 		t.Fatalf("expected monitoring client error, got %v", err)
 	}
@@ -509,27 +592,27 @@ func TestNewInstancePrincipalClientPropagatesClientError(t *testing.T) {
 func TestNewInstancePrincipalClientSuccess(t *testing.T) {
 	t.Parallel()
 
-	overrideSerialMu.Lock()
-	defer overrideSerialMu.Unlock()
-
 	provider := stubConfigurationProvider(t)
+	fakeNow := time.Date(2024, time.June, 30, 17, 0, 0, 0, time.UTC)
 
-	overrideInstancePrincipalProvider(t, func() (common.ConfigurationProvider, error) {
-		return provider, nil
-	})
-
-	overrideNewMonitoringClient(
-		t,
-		func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
+	factory := ClientFactory{
+		InstancePrincipalProvider: func() (common.ConfigurationProvider, error) {
+			return provider, nil
+		},
+		NewMonitoringClient: func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
 			var client monitoring.MonitoringClient
 
 			return client, nil
 		},
-	)
+		Now: func() time.Time {
+			return fakeNow
+		},
+	}
 
 	client, err := NewInstancePrincipalClient(
 		"ocid1.compartment.oc1..exampleuniqueID",
 		"us-ashburn-1",
+		WithFactory(factory),
 	)
 	requireNoError(t, err, "construct instance principal client")
 
@@ -547,6 +630,10 @@ func TestNewInstancePrincipalClientSuccess(t *testing.T) {
 	sdkClient, ok := client.metrics.(*sdkMonitoringClient)
 	if !ok || sdkClient == nil || sdkClient.client == nil {
 		t.Fatalf("expected sdkMonitoringClient, got %#v", client.metrics)
+	}
+
+	if actual := client.now(); !actual.Equal(fakeNow) {
+		t.Fatalf("expected factory clock to be used, got %v", actual)
 	}
 }
 
@@ -853,100 +940,20 @@ func assertSummaryDatapoint(
 	requireEqual(t, float32(*datapoints[0].Value), float32(expectedValue), "datapoint value")
 }
 
-func overrideInstancePrincipalProvider(
-	t *testing.T,
-	provider func() (common.ConfigurationProvider, error),
-) {
+func requireFunctionPointerEqual(t *testing.T, actual, expected any, description string) {
 	t.Helper()
 
-	instancePrincipalProviderMu.Lock()
-
-	providerOverrideSeq++
-	overrideID := providerOverrideSeq
-
-	providerOverrides = append(
-		providerOverrides,
-		providerOverride{id: overrideID, fn: provider},
-	)
-	instancePrincipalProviderFn = provider
-
-	instancePrincipalProviderMu.Unlock()
-
-	t.Cleanup(func() {
-		instancePrincipalProviderMu.Lock()
-
-		for i := range providerOverrides {
-			if providerOverrides[i].id == overrideID {
-				providerOverrides = append(
-					providerOverrides[:i],
-					providerOverrides[i+1:]...,
-				)
-
-				break
-			}
-		}
-
-		if n := len(providerOverrides); n > 0 {
-			instancePrincipalProviderFn = providerOverrides[n-1].fn
-		} else {
-			instancePrincipalProviderFn = defaultInstancePrincipalProvider
-		}
-
-		instancePrincipalProviderMu.Unlock()
-	})
+	if functionPointer(actual) != functionPointer(expected) {
+		t.Fatalf("expected %s to match default", description)
+	}
 }
 
-func overrideNewMonitoringClient(
-	t *testing.T,
-	constructor func(common.ConfigurationProvider) (monitoring.MonitoringClient, error),
-) {
-	t.Helper()
+func functionPointer(fn any) uintptr {
+	if fn == nil {
+		return 0
+	}
 
-	newMonitoringClientMu.Lock()
-
-	monitoringOverrideSeq++
-	overrideID := monitoringOverrideSeq
-
-	monitoringOverrides = append(
-		monitoringOverrides,
-		monitoringOverride{id: overrideID, fn: constructor},
-	)
-	newMonitoringClientFn = constructor
-
-	newMonitoringClientMu.Unlock()
-
-	t.Cleanup(func() {
-		newMonitoringClientMu.Lock()
-
-		for i := range monitoringOverrides {
-			if monitoringOverrides[i].id == overrideID {
-				monitoringOverrides = append(
-					monitoringOverrides[:i],
-					monitoringOverrides[i+1:]...,
-				)
-
-				break
-			}
-		}
-
-		if n := len(monitoringOverrides); n > 0 {
-			newMonitoringClientFn = monitoringOverrides[n-1].fn
-		} else {
-			newMonitoringClientFn = defaultNewMonitoringClientFn
-		}
-
-		newMonitoringClientMu.Unlock()
-	})
-}
-
-type providerOverride struct {
-	id uint64
-	fn func() (common.ConfigurationProvider, error)
-}
-
-type monitoringOverride struct {
-	id uint64
-	fn func(common.ConfigurationProvider) (monitoring.MonitoringClient, error)
+	return reflect.ValueOf(fn).Pointer()
 }
 
 func stubConfigurationProvider(t *testing.T) fakeConfigurationProvider {
