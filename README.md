@@ -9,6 +9,10 @@
 
 OCI CPU Shaper is an adaptive controller for shaping CPU utilization of workloads running on Oracle Cloud Infrastructure. The fully implemented controller now ships in the CLI and Compose/Quadlet bundles, so operators can run dry-run or enforce modes with live OCI metrics today instead of waiting for future milestones. New operators should begin with the [Quick Start](docs/10-quick-start.md) to complete the mandatory console setup before exploring the reference material.
 
+## Architecture
+
+The shaper stitches together IMDSv2 metadata, tenancy-wide Monitoring queries, the adaptive controller, worker pools, and the Prometheus HTTP surfaces described throughout the docs set. Review the [architecture diagram](docs/00-overview.md#architecture-diagram) for the canonical layout before diving into the deeper sections on policies, controller flows, and exported metrics.
+
 ## Getting Started
 
 Run the container release that matches your OCI VM architecture and follow the linked docs before wiring IAM policies:
