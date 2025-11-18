@@ -884,6 +884,16 @@ func TestAdaptiveControllerEnforceModeMutatesDutyCycler(t *testing.T) {
 	}
 }
 
+func TestRecordingDutyCyclerObserveHostLoadNoop(t *testing.T) {
+	t.Parallel()
+
+	var nilRecorder *recordingDutyCycler
+	nilRecorder.ObserveHostLoad(0.7)
+
+	recorder := &recordingDutyCycler{mu: sync.Mutex{}, target: 0}
+	recorder.ObserveHostLoad(0.9)
+}
+
 func feedObservation(controller *AdaptiveController, ts int64, utilisation float64, err error) {
 	controller.handleObservation(est.Observation{
 		Timestamp:    time.Unix(ts, 0),

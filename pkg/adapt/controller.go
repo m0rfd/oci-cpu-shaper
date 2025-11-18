@@ -190,6 +190,10 @@ func (r *recordingDutyCycler) Target() float64 {
 }
 
 func (r *recordingDutyCycler) ObserveHostLoad(float64) {
+	if r == nil {
+		return
+	}
+
 	// dry-run wrapper intentionally ignores host load updates
 }
 
