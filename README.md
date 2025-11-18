@@ -4,42 +4,43 @@
 [![Coverage ≥95%](https://img.shields.io/badge/coverage-%E2%89%A595%25-brightgreen.svg)](docs/08-development.md#-11-testing)
 [![Release](https://github.com/<owner>/oci-cpu-shaper/actions/workflows/release.yml/badge.svg)](https://github.com/<owner>/oci-cpu-shaper/actions/workflows/release.yml)
 
-- **Supported runtimes:** CLI binaries, Docker/Podman Compose Mode A (rootless), Mode B rootful Compose + Quadlet manifests, and the provided distroless images in [`deploy/`](deploy/).
+- **Supported runtimes:** Docker/Podman Compose Mode A (rootless) and Mode B (rootful) Quadlet manifests that deploy the published distroless containers onto Oracle Cloud VMs via [`deploy/`](deploy/).
 - **OCI tenancy requirements:** Instance Monitoring plugin enabled, a Dynamic Group plus tenancy policy that permits Monitoring access, and the seven-day `CpuUtilization` alarm sequence outlined in [§10 Quick Start](docs/10-quick-start.md).
 
 OCI CPU Shaper is an adaptive controller for shaping CPU utilization of workloads running on Oracle Cloud Infrastructure. The fully implemented controller now ships in the CLI and Compose/Quadlet bundles, so operators can run dry-run or enforce modes with live OCI metrics today instead of waiting for future milestones. New operators should begin with the [Quick Start](docs/10-quick-start.md) to complete the mandatory console setup before exploring the reference material.
 
 ## Getting Started
 
-Install the latest `shaper` binary, drop in the reference manifests, and read the linked docs before wiring OCI policies:
+Run the container release that matches your OCI VM architecture and follow the linked docs before wiring IAM policies:
 
 ```bash
-TAG="v1.2.3" # pin to the release you trust
-curl -fsSLO "https://github.com/<owner>/oci-cpu-shaper/releases/download/${TAG}/shaper-linux-amd64.tar.gz"
-tar -xzf "shaper-linux-amd64.tar.gz"
-sudo install -m 0755 shaper /usr/local/bin/shaper
-shaper --version
+TAG="v1.2.3"             # pin to the release you trust
+VARIANT="nonroot"        # or rootful for Mode B
+IMAGE="ghcr.io/<owner>/oci-cpu-shaper:${TAG}-${VARIANT}"
+
+docker pull "$IMAGE"
+docker image inspect "$IMAGE" | jq '.[0].Config.Labels'
 ```
 
 ```bash
-# arm64 variant
-curl -fsSLO "https://github.com/<owner>/oci-cpu-shaper/releases/download/${TAG}/shaper-linux-arm64.tar.gz"
-tar -xzf "shaper-linux-arm64.tar.gz"
-sudo install -m 0755 shaper /usr/local/bin/shaper
+# Render the provided Compose bundle locally
+cp deploy/compose/mode-a.rootless.yaml ./docker-compose.yaml
+TAG="v1.2.3" VARIANT="nonroot" envsubst < docker-compose.yaml > docker-compose.rendered.yaml
+docker compose -f docker-compose.rendered.yaml up -d
 ```
 
 - Start with the baked-in [`configs/mode-a.yaml`](configs/mode-a.yaml) or [`configs/mode-b.yaml`](configs/mode-b.yaml) manifests and override values in place or by bind-mounting host files as shown in [`deploy/compose/`](deploy/compose/).
 - Follow the five onboarding moves in [§10 Quick Start Onboarding](docs/10-quick-start.md) to enable Monitoring metrics, IAM policies, and alarms before applying enforce mode.
-- Review [`docs/09-cli.md`](docs/09-cli.md) for CLI flag details, environment overrides, and the `/metrics` expectations that Prometheus scrapes.
+- Review [`docs/09-cli.md`](docs/09-cli.md) for container environment overrides, health endpoints, and `/metrics` expectations before exposing the service to Prometheus.
 
 ## Feature Highlights
 
 | Area | Highlights |
 | --- | --- |
-| Mode A (rootless) | Ships as the default Compose stack with `cpu.weight` 128, non-root distroless images, and loopback metrics publishing suitable for managed hosts. |
-| Mode B (rootful) | Adds `SYS_NICE` for optional `SCHED_IDLE`, host networking, and Quadlet units so privileged tuning can be evaluated without rewriting manifests. |
-| Metrics endpoint | `shaper` exposes Prometheus metrics on `:9108` by default, covering controller state, OCI P95 samples, and cgroup discoveries for parity checks. |
-| Release verification | Container images and SBOM attestations are signed with Cosign; detached signatures + certificates accompany every GitHub release for offline validation. |
+| Mode A (rootless) | Ships as the default Compose stack with `cpu.weight` 128, non-root distroless images, and loopback metrics publishing so Oracle Cloud VM operators can stay within managed-host guardrails. |
+| Mode B (rootful) | Adds `SYS_NICE` for optional `SCHED_IDLE`, host networking, and Quadlet units so privileged tuning can be evaluated without rewriting manifests when deeper host control is required. |
+| Metrics endpoint | The container exposes Prometheus metrics on `:9108` by default, covering controller state, OCI P95 samples, and cgroup discoveries for parity checks with the VM’s own telemetry. |
+| Release verification | Distroless container images and SBOM attestations are signed with Cosign; detached signatures + certificates accompany every GitHub release for offline validation prior to pulling onto an OCI VM. |
 
 ## Repository Structure
 
