@@ -183,6 +183,55 @@ func TestLogIMDSMetadataUsesOverrideInstanceID(t *testing.T) {
 	}
 }
 
+func TestLogIMDSMetadataFallsBackToOverrideCanonicalRegion(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.DebugLevel)
+	logger := zap.New(core)
+
+	client := newLoggingStubIMDS(
+		overrideRegion,
+		nil,
+		"",
+		errRegionDown,
+		"ocid1.instance.oc1..override",
+		nil,
+		stubCompartmentID,
+		nil,
+		stubShapeConfig(2, 16),
+		nil,
+	)
+
+	ctrl := new(stubController)
+	ctrl.mode = modeDryRun
+	ctrl.state = adapt.StateNormal
+
+	logIMDSMetadata(
+		context.Background(),
+		logger,
+		client,
+		ctrl,
+		"  ocid1.instance.oc1..override  ",
+		stubCompartmentID,
+		overrideRegion,
+		false,
+	)
+
+	requireOverrideIMDSLookups(t, client)
+
+	entry := requireSingleEntry(t, observed, zapcore.InfoLevel)
+	requireLogFieldString(t, entry, "controllerState", adapt.StateNormal.String())
+	requireLogFieldString(t, entry, "region", overrideRegion)
+	requireLogFieldString(t, entry, "canonicalRegion", overrideRegion)
+	requireLogFieldString(t, entry, "instanceID", "ocid1.instance.oc1..override")
+	requireLogFieldString(t, entry, "compartmentID", stubCompartmentID)
+
+	warns := observed.FilterLevelExact(zapcore.WarnLevel).All()
+	if len(warns) != 1 {
+		t.Fatalf("expected single warning, got %d", len(warns))
+	}
+}
+
 func TestLogIMDSMetadataOfflineSkipsIMDS(t *testing.T) {
 	t.Parallel()
 

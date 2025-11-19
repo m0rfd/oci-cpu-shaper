@@ -84,3 +84,25 @@ func TestTrySchedIdlePropagatesUnexpectedError(t *testing.T) {
 		t.Fatalf("expected wrapped error, got %v", err)
 	}
 }
+
+func TestConfigureWorkerStartHookSetsHookOnSuccess(t *testing.T) {
+	t.Parallel()
+
+	pool := &Pool{}
+	configureWorkerStartHook(pool, nil)
+
+	if pool.workerStartHook == nil {
+		t.Fatalf("expected worker start hook to be configured")
+	}
+}
+
+func TestConfigureWorkerStartHookSkipsOnError(t *testing.T) {
+	t.Parallel()
+
+	pool := &Pool{}
+	configureWorkerStartHook(pool, errors.New("denied"))
+
+	if pool.workerStartHook != nil {
+		t.Fatalf("expected hook to remain unset when sched_idle is unavailable")
+	}
+}
