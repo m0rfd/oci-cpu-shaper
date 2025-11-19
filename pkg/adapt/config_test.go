@@ -98,6 +98,19 @@ func TestClampEnforcesBounds(t *testing.T) {
 	}
 }
 
+func TestValidateConfigAllowsDisabledSuppression(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.SuppressThreshold = 0
+	cfg.SuppressResume = 0
+
+	err := ValidateConfig(cfg)
+	if err != nil {
+		t.Fatalf("ValidateConfig returned error for disabled suppression: %v", err)
+	}
+}
+
 func TestNormalizeConfigAdjustsSuppressResume(t *testing.T) {
 	t.Parallel()
 
@@ -119,6 +132,31 @@ func TestNormalizeConfigAdjustsSuppressResume(t *testing.T) {
 		t.Fatalf(
 			"expected suppress resume %.2f, got %.2f",
 			expectedResume,
+			normalized.SuppressResume,
+		)
+	}
+}
+
+func TestNormalizeConfigDisablesSuppressionWhenThresholdZero(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.SuppressThreshold = 0
+	// Leave resume at a non-zero value to ensure normalization resets it.
+	cfg.SuppressResume = 0.5
+
+	normalized, _, err := normalizeConfig(cfg)
+	if err != nil {
+		t.Fatalf("normalizeConfig returned error: %v", err)
+	}
+
+	if normalized.SuppressThreshold != 0 {
+		t.Fatalf("expected suppress threshold to remain 0, got %.2f", normalized.SuppressThreshold)
+	}
+
+	if normalized.SuppressResume != 0 {
+		t.Fatalf(
+			"expected suppress resume to reset to 0 when suppression is disabled, got %.2f",
 			normalized.SuppressResume,
 		)
 	}
