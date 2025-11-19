@@ -72,6 +72,8 @@ func NewPool(workers int, quantum time.Duration) (*Pool, error) {
 	poolInstance.SetPauseThresholds(0, 0)
 
 	err := trySchedIdle()
+	configureWorkerStartHook(poolInstance, err)
+
 	if err != nil {
 		poolInstance.rootfulInitErr = err
 	}
