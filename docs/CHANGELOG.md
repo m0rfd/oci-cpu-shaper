@@ -4,6 +4,10 @@
 
 ### Added
 _Note coverage-impacting additions: mention new test suites or tooling that shift the CI ≥95% statement coverage budget (§11)._
+- Execution-flow reference (`docs/05-execution-flow.txt`) summarising the CLI,
+  adaptive controller loops, and supporting packages with a text diagram so
+  operators can trace the §3 runtime wiring without scanning the codebase (§§3,
+  5, 12).
 - Configurable host-load pause/resume thresholds for the worker pool plus CLI YAML and
   environment knobs so estimator observations suspend the pool until the host cools.
   `pkg/shape` now exposes pause state helpers/tests, the controller forwards host CPU
