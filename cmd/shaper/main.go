@@ -277,6 +277,7 @@ func resolveCompartmentAndRegion(
 	}
 
 	compartmentID, compartmentErr := imdsClient.CompartmentID(ctx)
+	canonicalRegion, canonicalRegionErr := imdsClient.CanonicalRegion(ctx)
 	region, regionErr := imdsClient.Region(ctx)
 
 	var metadata ociMetadata
@@ -294,12 +295,12 @@ func resolveCompartmentAndRegion(
 
 	metadata.CompartmentID = value
 
-	value, err = preferMetadataValue(
+	value, err = preferCanonicalRegionValue(
+		canonicalRegion,
+		canonicalRegionErr,
 		region,
 		regionErr,
 		regionOverride,
-		errControllerRegionRequired,
-		"lookup instance region",
 	)
 	if err != nil {
 		return ociMetadata{}, err
@@ -331,6 +332,43 @@ func preferMetadataValue(
 	}
 
 	return "", missingErr
+}
+
+func preferCanonicalRegionValue(
+	canonical string,
+	canonicalErr error,
+	legacy string,
+	legacyErr error,
+	override string,
+) (string, error) {
+	trimmedCanonical := strings.TrimSpace(canonical)
+	if trimmedCanonical != "" && canonicalErr == nil {
+		return trimmedCanonical, nil
+	}
+
+	trimmedLegacy := strings.TrimSpace(legacy)
+	if trimmedLegacy != "" && legacyErr == nil {
+		return trimmedLegacy, nil
+	}
+
+	trimmedOverride := strings.TrimSpace(override)
+	if trimmedOverride != "" {
+		return trimmedOverride, nil
+	}
+
+	if trimmedLegacy != "" {
+		return trimmedLegacy, nil
+	}
+
+	if legacyErr != nil {
+		return "", fmt.Errorf("lookup instance region: %w", legacyErr)
+	}
+
+	if canonicalErr != nil {
+		return "", fmt.Errorf("lookup canonical region: %w", canonicalErr)
+	}
+
+	return "", errControllerRegionRequired
 }
 
 func prepareRunMetadata(
@@ -775,10 +813,17 @@ func appendOnlineMetadata(
 	canonicalRegion, canonicalRegionErr := resolveMetadataValue(
 		ctx,
 		logger,
-		overrideRegion,
+		"",
 		client.CanonicalRegion,
 		"failed to query canonical region",
 	)
+
+	if canonicalRegionErr != nil || strings.TrimSpace(canonicalRegion) == "" {
+		if trimmedOverride := strings.TrimSpace(overrideRegion); trimmedOverride != "" {
+			canonicalRegion = trimmedOverride
+			canonicalRegionErr = nil
+		}
+	}
 
 	instanceID, instanceErr := resolveMetadataValue(
 		ctx,

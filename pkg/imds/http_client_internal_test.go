@@ -34,17 +34,12 @@ func TestNewClientAppliesOptions(t *testing.T) {
 
 	httpClient := newTestHTTPClient()
 
-	client := NewClient(
+	httpMetadataClient := NewClient(
 		httpClient,
 		WithBaseURL("  http://example.com/opc/v2/  "),
 		WithMaxAttempts(7),
 		WithBackoff(123*time.Millisecond),
 	)
-
-	httpMetadataClient, ok := client.(*HTTPClient)
-	if !ok {
-		t.Fatalf("expected *HTTPClient, got %T", client)
-	}
 
 	if httpMetadataClient.http != httpClient {
 		t.Fatal("expected provided http.Client to be used")
@@ -67,12 +62,7 @@ func TestNewClientAppliesOptions(t *testing.T) {
 func TestNewClientUsesDefaultsForNilInputs(t *testing.T) {
 	t.Parallel()
 
-	client := NewClient(nil, nil)
-
-	httpMetadataClient, ok := client.(*HTTPClient)
-	if !ok {
-		t.Fatalf("expected *HTTPClient, got %T", client)
-	}
+	httpMetadataClient := NewClient(nil, nil)
 
 	if httpMetadataClient.baseURL != DefaultEndpoint {
 		t.Fatalf("expected default baseURL %q, got %q", DefaultEndpoint, httpMetadataClient.baseURL)
@@ -108,17 +98,12 @@ func TestNewClientIgnoresInvalidOptionValues(t *testing.T) {
 
 	httpClient := newTestHTTPClient()
 
-	client := NewClient(
+	httpMetadataClient := NewClient(
 		httpClient,
 		WithBaseURL("   \t"),
 		WithMaxAttempts(0),
 		WithBackoff(0),
 	)
-
-	httpMetadataClient, ok := client.(*HTTPClient)
-	if !ok {
-		t.Fatalf("expected *HTTPClient, got %T", client)
-	}
 
 	if httpMetadataClient.baseURL != DefaultEndpoint {
 		t.Fatalf(

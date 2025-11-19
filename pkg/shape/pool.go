@@ -72,6 +72,8 @@ func NewPool(workers int, quantum time.Duration) (*Pool, error) {
 	poolInstance.SetPauseThresholds(0, 0)
 
 	err := trySchedIdle()
+	configureWorkerStartHook(poolInstance, err)
+
 	if err != nil {
 		poolInstance.rootfulInitErr = err
 	}
@@ -134,7 +136,6 @@ func (p *Pool) SetWorkerStartErrorHandler(handler func(error)) {
 // SetPauseThresholds configures the host utilisation band that pauses/resumes workers.
 //
 // Values outside [0,1] are clamped. A zero pause threshold disables the feature.
-// SetPauseThresholds configures the host utilisation band that pauses/resumes workers.
 func (p *Pool) SetPauseThresholds(pause, resume float64) {
 	setPauseThresholds(p, pause, resume)
 }

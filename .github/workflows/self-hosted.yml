@@ -21,6 +21,50 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5.0.1
 
+      - name: Detect container engine (Docker or Podman)
+        id: engine
+        env:
+          REQUESTED_ENGINE: ${{ env.CONTAINER_ENGINE || '' }}
+        run: |
+          set -euo pipefail
+
+          # On rootless Podman with SELinux enforcing, bind mounts must carry :Z/:z labels
+          # or the container runtime will deny access. Capture this upfront so later steps
+          # can reuse the same engine selection logic.
+          pick_engine() {
+            if [ -n "$REQUESTED_ENGINE" ] && command -v "$REQUESTED_ENGINE" >/dev/null 2>&1; then
+              echo "$REQUESTED_ENGINE"
+              return 0
+            fi
+
+            if command -v podman >/dev/null 2>&1; then
+              echo podman
+              return 0
+            fi
+
+            if command -v docker >/dev/null 2>&1; then
+              echo docker
+              return 0
+            fi
+
+            echo "::error::Neither docker nor podman is available on the runner" >&2
+            exit 1
+          }
+
+          engine_bin=$(pick_engine)
+          echo "Using container engine: $engine_bin"
+          echo "bin=$engine_bin" >>"$GITHUB_OUTPUT"
+
+          echo "Container engine version output:" >&2
+          "$engine_bin" version >&2 || true
+
+          if [ "$engine_bin" = "podman" ]; then
+            # Podman uses a different info schema than Docker; dump JSON for debugging.
+            "$engine_bin" info --format '{{json .}}' | jq . >&2 || "$engine_bin" info >&2
+          else
+            "$engine_bin" info >&2
+          fi
+
       - name: Collect IMDS metadata
         id: imds
         run: |
@@ -139,34 +183,41 @@ jobs:
 
           go run ./hack/tools/p95query "${args[@]}"
 
-      - name: Validate Docker cgroup v2 behaviour
+      - name: Validate container cgroup v2 behaviour
+        env:
+          CONTAINER_BIN: ${{ steps.engine.outputs.bin }}
         run: |
           set -euo pipefail
 
-          version=$(docker info --format '{{.CgroupVersion}}')
-          echo "Detected cgroup version: $version"
-          if [ "$version" != "2" ]; then
-            echo "::error::Expected Docker to run with cgroup v2"
+          engine_bin=${CONTAINER_BIN:-docker}
+
+          # Podman reports cgroup versions as "v2" while Docker reports "2".
+          version=$("$engine_bin" info --format '{{.CgroupVersion}}' 2>/dev/null || true)
+          if [ -z "$version" ] && [ "$engine_bin" = "podman" ]; then
+            version=$("$engine_bin" info --format '{{.Host.CgroupVersion}}')
+          fi
+
+          normalized_version=${version#v}
+          echo "Detected cgroup version (${engine_bin}): $version (normalized=$normalized_version)"
+          if [ "$normalized_version" != "2" ]; then
+            echo "::error::Expected container runtime to use cgroup v2"
+            "$engine_bin" info >&2 || true
             exit 1
           fi
 
-          docker pull --quiet alpine:3.20
-          docker run --rm alpine:3.20 sh -c 'cat /sys/fs/cgroup/cgroup.controllers'
-          docker run --rm --cpus=0.5 alpine:3.20 sh -c "echo cpu.max=\$(cat /sys/fs/cgroup/cpu.max) cpu.weight=\$(cat /sys/fs/cgroup/cpu.weight)"
+          "$engine_bin" pull --quiet alpine:3.20
+          "$engine_bin" run --rm alpine:3.20 sh -c 'cat /sys/fs/cgroup/cgroup.controllers'
+          "$engine_bin" run --rm --cpus=0.5 alpine:3.20 sh -c "echo cpu.max=\$(cat /sys/fs/cgroup/cpu.max) cpu.weight=\$(cat /sys/fs/cgroup/cpu.weight)"
 
       - name: Build rootful integration image
+        env:
+          CONTAINER_BIN: ${{ steps.engine.outputs.bin }}
         run: |
           set -euo pipefail
 
-          host_arch=$(uname -m)
-          case "$host_arch" in
-            x86_64) target_arch=amd64 ;;
-            arm64|aarch64) target_arch=arm64 ;;
-            *) target_arch=$host_arch ;;
-          esac
+          engine_bin=${CONTAINER_BIN:-docker}
 
-          docker build \
-            --build-arg TARGETARCH="$target_arch" \
+          "$engine_bin" build \
             --target rootful \
              --load \
             -t oci-cpu-shaper:integration-rootful \
@@ -176,6 +227,7 @@ jobs:
       - name: Exercise CPU weight containers and collect cgroup stats
         env:
           LOG_ROOT: ${{ github.workspace }}/artifacts/self-hosted-cgroup
+          CONTAINER_BIN: ${{ steps.engine.outputs.bin }}
         run: |
           set -euo pipefail
 
@@ -196,13 +248,15 @@ jobs:
           high_name=""
           low_name=""
 
+          engine_bin=${CONTAINER_BIN:-docker}
+
           cleanup() {
             status=$?
             set +e
             for name in "$high_name" "$low_name"; do
               if [ -n "$name" ]; then
-                docker logs "$name" >"$run_dir/${name}.log" 2>&1 || true
-                docker rm -f "$name" >/dev/null 2>&1 || true
+                "$engine_bin" logs "$name" >"$run_dir/${name}.log" 2>&1 || true
+                "$engine_bin" rm -f "$name" >/dev/null 2>&1 || true
               fi
             done
             rm "$hog_binary"
@@ -222,7 +276,9 @@ jobs:
           low_name="cpu-weight-low-$(date +%s%N)"
 
           echo "Launching high weight container: $high_name"
-          docker run \
+          # SELinux on rootless Podman requires :Z/ :z on bind mounts. Use :ro,Z to avoid
+          # unexpected label denials while keeping the mount read-only for Docker users.
+          "$engine_bin" run \
             --detach \
             --name "$high_name" \
             --cpuset-cpus=0 \
@@ -234,7 +290,7 @@ jobs:
             -workers=1
 
           echo "Launching low weight container: $low_name"
-          docker run \
+          "$engine_bin" run \
             --detach \
             --name "$low_name" \
             --cpuset-cpus=0 \
@@ -249,14 +305,13 @@ jobs:
             local name=$1
             local deadline=$((SECONDS + 45))
             while [ $SECONDS -lt $deadline ]; do
-              if [ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null || echo false)" = "true" ]; then
+              if [ "$("$engine_bin" inspect -f '{{.State.Running}}' "$name" 2>/dev/null || echo false)" = "true" ]; then
                 return 0
               fi
               sleep 1
             done
             echo "::error::container $name did not reach running state" >&2
-            docker logs "$name" >&2 || true
-            docker inspect --format 'state={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}}' "$name" >&2 || true
+            "$engine_bin" ps -a >&2 || true
             return 1
           }
 
@@ -285,46 +340,10 @@ jobs:
             local cgroup_file="$run_dir/${name}-cgroup"
             local rel_path=""
             local pid
-            local container_id
-
-            pid=$(docker inspect -f '{{.State.Pid}}' "$name" 2>/dev/null || echo "")
-            container_id=$(docker inspect -f '{{.Id}}' "$name" 2>/dev/null || echo "")
-
-            if [ -n "$pid" ] && [ "$pid" != "0" ] && [ -r "/proc/$pid/cgroup" ]; then
-              if ! cat "/proc/$pid/cgroup" >"$cgroup_file"; then
-                echo "::error::unable to fetch /proc/$pid/cgroup for $name" >&2
-                return 1
-              fi
-              rel_path=$(awk -F: '$1=="0" {print $3}' "$cgroup_file")
-            fi
-
-            if [ -z "$rel_path" ] && [ -n "$container_id" ]; then
-              local short_id="${container_id:0:12}"
-              local parent=$(docker inspect -f '{{.HostConfig.CgroupParent}}' "$name" 2>/dev/null || echo "")
-              parent="${parent#/}"
-              if [ -n "$parent" ] && [ "${parent: -1}" = "/" ]; then
-                parent="${parent%/}"
-              fi
-
-              local candidates=(
-                "/docker/$container_id"
-                "/docker/$short_id"
-                "/system.slice/docker-$container_id.scope"
-                "/system.slice/docker-$short_id.scope"
-              )
-
-              if [ -n "$parent" ]; then
-                candidates+=("/${parent}/$container_id")
-                candidates+=("/${parent}/$short_id")
-              fi
-
-              for candidate in "${candidates[@]}"; do
-                if [ -d "/sys/fs/cgroup${candidate}" ]; then
-                  rel_path="$candidate"
-                  printf '0::%s\n' "$rel_path" >"$cgroup_file"
-                  break
-                fi
-              done
+            pid=$("$engine_bin" inspect -f '{{.State.Pid}}' "$name")
+            if [ -z "$pid" ] || [ "$pid" = "0" ]; then
+              echo "::error::container $name reported invalid pid: $pid" >&2
+              return 1
             fi
 
             if [ -z "$rel_path" ]; then

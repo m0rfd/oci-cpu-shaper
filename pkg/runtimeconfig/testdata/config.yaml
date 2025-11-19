@@ -5,6 +5,8 @@ controller:
   stepUp: 0.03
   stepDown: 0.02
   fallbackTarget: 0.24
+  goalLow: 0.24
+  goalHigh: 0.34
   interval: 30m
   relaxedInterval: 4h
   relaxedThreshold: 0.27
