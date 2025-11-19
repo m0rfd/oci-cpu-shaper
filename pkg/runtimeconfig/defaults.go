@@ -1,11 +1,15 @@
 package runtimeconfig
 
 import (
-	"runtime"
 	"time"
 
 	"oci-cpu-shaper/pkg/adapt"
 	"oci-cpu-shaper/pkg/shape"
+)
+
+const (
+	defaultEstimatorInterval = 2 * time.Second
+	defaultPoolWorkers       = 2
 )
 
 // Default returns the fully merged default runtime configuration.
@@ -28,9 +32,9 @@ func Default() Config {
 	cfg.Controller.SuppressThreshold = defaults.SuppressThreshold
 	cfg.Controller.SuppressResume = defaults.SuppressResume
 
-	cfg.Estimator.Interval = time.Second
+	cfg.Estimator.Interval = defaultEstimatorInterval
 
-	cfg.Pool.Workers = runtime.NumCPU()
+	cfg.Pool.Workers = defaultPoolWorkers
 	if cfg.Pool.Workers <= 0 {
 		cfg.Pool.Workers = 1
 	}

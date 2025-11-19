@@ -36,8 +36,8 @@ type monitoringPayload struct {
 // NewMonitoringClient constructs an oci.MetricsClient backed by HTTP endpoints exposed
 // by the e2e monitoring server helpers.
 //
-
-func NewMonitoringClient( //nolint:ireturn // helper exposes interface so tests can swap transport implementations
+//nolint:ireturn // returns oci.MetricsClient so integration tests can swap monitoring backends.
+func NewMonitoringClient(
 	endpoint string,
 ) (oci.MetricsClient, error) {
 	trimmed := strings.TrimSpace(endpoint)
