@@ -45,14 +45,7 @@ func newIMDSTestClient(t *testing.T, responses map[string]string) *imds.HTTPClie
 	httpClient := server.Client()
 	httpClient.Timeout = time.Second
 
-	client := imds.NewClient(httpClient, imds.WithBaseURL(server.URL+"/opc/v2"))
-
-	httpMetadataClient, ok := client.(*imds.HTTPClient)
-	if !ok {
-		t.Fatalf("unexpected client type %T", client)
-	}
-
-	return httpMetadataClient
+	return imds.NewClient(httpClient, imds.WithBaseURL(server.URL+"/opc/v2"))
 }
 
 func newIPv4TestServer(t *testing.T, handler http.Handler) *httptest.Server {

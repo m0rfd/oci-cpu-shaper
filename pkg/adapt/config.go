@@ -31,18 +31,18 @@ const (
 	defaultModeLabel       = "normal"
 	dryRunModeLabel        = "dry-run"
 	noopModeLabel          = "noop"
-	defaultTargetStart     = 0.25
-	defaultTargetMin       = 0.22
-	defaultTargetMax       = 0.40
-	defaultStepUp          = 0.02
-	defaultStepDown        = 0.01
-	defaultFallbackTarget  = 0.25
-	defaultGoalLow         = 0.23
-	defaultGoalHigh        = 0.30
-	defaultRelaxedInterval = 6 * time.Hour
-	defaultRelaxedThresh   = 0.28
-	defaultSuppressThresh  = 0.85
-	defaultSuppressResume  = 0.70
+	defaultTargetStart     = 0.22
+	defaultTargetMin       = 0.20
+	defaultTargetMax       = 0.32
+	defaultStepUp          = 0.01
+	defaultStepDown        = 0.005
+	defaultFallbackTarget  = 0.22
+	defaultGoalLow         = 0.21
+	defaultGoalHigh        = 0.27
+	defaultRelaxedInterval = 4 * time.Hour
+	defaultRelaxedThresh   = 0.26
+	defaultSuppressThresh  = 0.80
+	defaultSuppressResume  = 0.68
 	suppressResumeScale    = 0.8
 )
 

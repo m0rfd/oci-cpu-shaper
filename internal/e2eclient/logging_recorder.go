@@ -20,8 +20,8 @@ type loggingRecorder struct {
 // NewLoggingRecorder decorates the provided MetricsRecorder so e2e tests can observe
 // controller state transitions via structured logs.
 //
-
-func NewLoggingRecorder( //nolint:ireturn // factory decorates whichever recorder implementation is supplied
+//nolint:ireturn // returns adapt.MetricsRecorder so e2e helpers can wrap arbitrary recorders.
+func NewLoggingRecorder(
 	logger *zap.Logger,
 	delegate adapt.MetricsRecorder,
 ) adapt.MetricsRecorder {

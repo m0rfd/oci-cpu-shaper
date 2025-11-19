@@ -41,11 +41,9 @@ func TestDefaultConfigAlignsWithAdaptDefaults(t *testing.T) {
 	)
 	assertFloatEqual(t, "suppressResume", cfg.Controller.SuppressResume, defaults.SuppressResume)
 
-	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, time.Second)
+	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, 2*time.Second)
 
-	if cfg.Pool.Workers <= 0 {
-		t.Fatalf("expected positive worker count, got %d", cfg.Pool.Workers)
-	}
+	assertIntEqual(t, "poolWorkers", cfg.Pool.Workers, 2)
 
 	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, defaults.SuppressThreshold)
 	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, defaults.SuppressResume)
