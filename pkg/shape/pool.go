@@ -136,7 +136,6 @@ func (p *Pool) SetWorkerStartErrorHandler(handler func(error)) {
 // SetPauseThresholds configures the host utilisation band that pauses/resumes workers.
 //
 // Values outside [0,1] are clamped. A zero pause threshold disables the feature.
-// SetPauseThresholds configures the host utilisation band that pauses/resumes workers.
 func (p *Pool) SetPauseThresholds(pause, resume float64) {
 	setPauseThresholds(p, pause, resume)
 }
