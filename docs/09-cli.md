@@ -88,7 +88,7 @@ oci:
   samples remain usable in source control. Operators should extend the manifest
   with their own `compartmentId`, `region`, and optional `instanceId` values
   before entering enforce mode.
-- `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed four-hour interval when OCI P95 remains healthy. The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) now reflect the 0.80/0.68 hysteresis that decides when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools.
+- `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed four-hour interval when OCI P95 remains healthy. The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) now reflect the 0.80/0.68 hysteresis that decides when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools. Set `controller.suppressThreshold` to `0` (or any non-positive value) to disable host-load suppression entirely; the resume threshold is ignored in that case.
 - The loader now enforces the documented ratios and cadences: `targetMin` must remain below `targetMax`, every slow-loop target and goal must fall within that band, and the `interval`, `relaxedInterval`, `stepUp`, `stepDown`, `pool.quantum`, and `pool.workers` values must be positive. Invalid manifests abort startup with an exit status of `2` so operators can fix the config before the controller touches system state (§§3.1, 5.2).
 - Configuration processing now flows through four dedicated stages, all implemented in `pkg/runtimeconfig`: an immutable defaults builder, a YAML merge helper, environment overrides, and validators. Each stage is unit-tested individually so overrides and safety rails stay predictable, and env vars always win over file-sourced values without mutating the stored defaults (§5.2).
 - Validation now enforces that every slow-loop target or goal remains below both suppression thresholds, so manifests that would immediately re-trigger the fast loop are rejected with an exit status of `2` and a descriptive error message (§§3.1, 5.2).
@@ -112,7 +112,7 @@ The CLI honours the following environment variables, matching the naming in §5.
 | `SHAPER_FALLBACK_TARGET` | Fixed target while OCI metrics are unavailable. | `0.22` |
 | `SHAPER_SLOW_INTERVAL` / `SHAPER_SLOW_INTERVAL_RELAXED` | Baseline and relaxed controller cadences. | `1h` / `4h` |
 | `SHAPER_FAST_INTERVAL` | Host CPU sampling cadence for the estimator. | `2s` |
-| `SHAPER_SUPPRESS_THRESHOLD` / `SHAPER_SUPPRESS_RESUME` | Fast-loop suppression thresholds that gate the zero-target mode. | `0.80` / `0.68` |
+| `SHAPER_SUPPRESS_THRESHOLD` / `SHAPER_SUPPRESS_RESUME` | Fast-loop suppression thresholds that gate the zero-target mode. Assign `SHAPER_SUPPRESS_THRESHOLD=0` (or any non-positive value) to disable suppression; the resume override is ignored when suppression is off. | `0.80` / `0.68` |
 | `SHAPER_WORKER_COUNT` | Number of duty-cycle workers (`>=1`). | `2` |
 | `SHAPER_POOL_PAUSE_THRESHOLD` / `SHAPER_POOL_RESUME_THRESHOLD` | Host CPU hysteresis that pauses/resumes the worker pool when the estimator detects contention. | `0.80` / `0.68` |
 | `HTTP_ADDR` | Prometheus listener bind address. | `:9108` |
@@ -125,6 +125,11 @@ Unset or malformed overrides fall back to the defaults shown above. The
 controller subtracts `SHAPER_STEP_DOWN` internally, so the configuration value
 remains a positive delta even though it reduces the target when OCI P95 exceeds
 the goal band.
+
+Setting `HTTP_ADDR` to an empty string (for example, exporting `HTTP_ADDR=`)
+disables the `/metrics` listener even when the YAML manifest enables it. This
+helps CI smoke tests and containerised diagnostics avoid exposing the endpoint
+while still recording metrics internally.
 
 ### Layering overrides
 

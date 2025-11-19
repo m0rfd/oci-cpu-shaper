@@ -92,9 +92,28 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 ### Changed
 _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._
 - CLI documentation (§9), `runtimeconfig.Default()`, and `adapt.DefaultConfig()` now
-  match the Mode A/Mode B manifests exactly (0.22 target start, 0.20–0.32 band, 4h
-  relaxed interval, 2s estimator loop, 0.80/0.68 suppression + pool thresholds,
+  match the Mode A/Mode B manifests exactly (0.22 target start, 0.20–0.32 band, 4 hour
+  relaxed interval, 2 second estimator loop, 0.80/0.68 suppression + pool thresholds,
   two-worker pool, etc.), keeping the published YAML and binary defaults aligned.
+- Metadata logging now queries IMDS for canonical-region names even when
+  `OCI_REGION` overrides are provided, only falling back to the override when
+  IMDS is unavailable so startup logs and `/healthz` continue to report the
+  true canonical region (§§2, 9).
+- The CI golangci-lint job now fails when `.golangci.yml`'s auto-fixable
+  formatters (gci, gofmt, gofumpt, goimports, golines, swaggo) mutate files
+  during `make lint`; the workflow prints the diff and reminds contributors to
+  commit the fixes instead of allowing silent changes to slip through (§§8, 11,
+  14).
+- Controller configuration now accepts `controller.suppressThreshold=0` (or
+  `SHAPER_SUPPRESS_THRESHOLD=0`) to disable host-load suppression entirely. The
+  resume threshold is ignored when disabled, normalization preserves the zero
+  values, and validation skips the previous `target*` comparisons so operators
+  can opt out of estimator-driven shutdowns without tripping the CLI safety
+  rails (§§3.1, 5.2, 9, 11).
+- `HTTP_ADDR` environment overrides now accept an empty string to disable the
+  `/metrics` listener even when the YAML manifest specifies a bind address.
+  Setting `HTTP_ADDR=` helps smoke tests and container diagnostics avoid
+  exposing the endpoint while still recording metrics internally (§§6, 9).
 - `pkg/oci` constructors now accept a `ClientFactory` via the new `WithFactory(...)` option so tests and the CLI swap Monitoring
   mocks without mutating package-level globals. `cmd/shaper` wires the factory into the production constructor and §5 documents
   the seam, keeping the existing ≥95% coverage floor intact by exercising the new paths in the unit suites.
@@ -139,6 +158,11 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% 
 - Clarified the documentation roadmap to mark the published CLI/deployment guides and onboarding workflows as complete while calibrating remaining milestones for future adaptive-controller and release updates (§12).
 - CLI now starts the metrics HTTP server using `http.bind`/`HTTP_ADDR`, shuts it down with the run context, and ships container/Compose updates (`EXPOSE 9108`, `${SHAPER_METRICS_BIND}`) so `/metrics` is reachable when enabled; the listener now logs structured bind/serve failures and returns an explicit shutdown hook so docs can describe the exporter lifecycle and monitoring workflow alignment (§§6, 9, 11).
 - CLI metadata resolution now populates `oci.compartmentId`/`OCI_COMPARTMENT_ID` alongside the new `oci.region`/`OCI_REGION` overrides using IMDS when online, threads the resolved region into the Monitoring client, and logs both identifiers for observability. Fresh unit coverage in §11 exercises the success, fallback, and error paths so the ≥95% statement floor holds.
+- Runtime metadata resolution now prefers the canonical region name exposed by IMDS and
+  only falls back to the legacy `instance/region` endpoint when that lookup is missing or
+  fails. Monitoring clients therefore receive the long-form OCI region identifiers even on
+  regions that still return short codes, and the updated CLI tests cover both the canonical
+  and fallback flows to maintain the ≥95% coverage floor (§§2, 5, 11).
 - CLI now installs `SIGINT`/`SIGTERM` handlers that cancel the run context so the controller, worker pool, and metrics HTTP server exit gracefully. The new `tests/e2e/signal_shutdown_test.go` suite delivers both signals to the binary and asserts the structured shutdown logs to keep §11’s coverage contract intact (§§5, 9, 11).
 - IMDS client now injects the required IMDSv2 authorisation header and exposes canonical-region plus compartment OCID lookups, with unit tests and docs refreshed to keep §2 aligned with the metadata surface.
 - Canonical-region lookups now read the `regionInfo` block returned by `/instance/`, aligning the IMDS client, CLI emulation server, and documentation with the current OCI metadata layout (§2).

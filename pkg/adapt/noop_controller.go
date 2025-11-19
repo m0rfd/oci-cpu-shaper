@@ -16,7 +16,7 @@ var _ Controller = (*NoopController)(nil)
 func NewNoopController(mode string) *NoopController {
 	trimmed := strings.TrimSpace(mode)
 	if trimmed == "" {
-		trimmed = "noop"
+		trimmed = noopModeLabel
 	}
 
 	return &NoopController{mode: trimmed}

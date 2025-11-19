@@ -30,6 +30,7 @@ type Config struct {
 const (
 	defaultModeLabel       = "normal"
 	dryRunModeLabel        = "dry-run"
+	noopModeLabel          = "noop"
 	defaultTargetStart     = 0.22
 	defaultTargetMin       = 0.20
 	defaultTargetMax       = 0.32
@@ -77,8 +78,16 @@ func DefaultConfig() Config {
 // the worker pool duty cycle.
 func ModeEnforcesTargets(mode string) bool {
 	trimmed := strings.ToLower(strings.TrimSpace(mode))
+	if trimmed == "" {
+		trimmed = defaultModeLabel
+	}
 
-	return trimmed != dryRunModeLabel
+	switch trimmed {
+	case dryRunModeLabel, noopModeLabel:
+		return false
+	default:
+		return true
+	}
 }
 
 func normalizeConfig(cfg Config) (Config, string, error) {
@@ -113,13 +122,15 @@ func coerceConfig(cfg Config) (Config, string) {
 	cfg.GoalLow = ensureFloat(cfg.GoalLow, defaults.GoalLow)
 	cfg.GoalHigh = ensureFloat(cfg.GoalHigh, defaults.GoalHigh)
 	cfg.RelaxedThreshold = ensureFloat(cfg.RelaxedThreshold, defaults.RelaxedThreshold)
-	cfg.SuppressThreshold = ensureFloat(cfg.SuppressThreshold, defaults.SuppressThreshold)
-	cfg.SuppressResume = ensureFloat(cfg.SuppressResume, defaults.SuppressResume)
+	cfg.SuppressThreshold = ensureFloatAllowZero(cfg.SuppressThreshold, defaults.SuppressThreshold)
+	cfg.SuppressResume = ensureFloatAllowZero(cfg.SuppressResume, defaults.SuppressResume)
 
 	cfg.SuppressThreshold = clamp(cfg.SuppressThreshold, 0, 1)
 	cfg.SuppressResume = clamp(cfg.SuppressResume, 0, 1)
 
-	if cfg.SuppressResume >= cfg.SuppressThreshold && cfg.SuppressThreshold > 0 {
+	if cfg.SuppressThreshold <= 0 {
+		cfg.SuppressResume = 0
+	} else if cfg.SuppressResume >= cfg.SuppressThreshold {
 		cfg.SuppressResume = math.Max(cfg.SuppressThreshold*suppressResumeScale, 0)
 	}
 
@@ -145,7 +156,7 @@ func validateControllerConfig(cfg Config) error {
 	}
 
 	for _, threshold := range thresholds {
-		if cfg.SuppressThreshold <= threshold.value {
+		if cfg.SuppressThreshold > 0 && cfg.SuppressThreshold <= threshold.value {
 			return fmt.Errorf(
 				"%w: controller.suppressThreshold (%.2f) must be greater than %s (%.2f)",
 				ErrInvalidConfig,
@@ -155,7 +166,7 @@ func validateControllerConfig(cfg Config) error {
 			)
 		}
 
-		if cfg.SuppressResume <= threshold.value {
+		if cfg.SuppressResume > 0 && cfg.SuppressResume <= threshold.value {
 			return fmt.Errorf(
 				"%w: controller.suppressResume (%.2f) must be greater than %s (%.2f)",
 				ErrInvalidConfig,
@@ -183,4 +194,12 @@ func ensureFloat(value, fallback float64) float64 {
 	}
 
 	return value
+}
+
+func ensureFloatAllowZero(value, fallback float64) float64 {
+	if value == 0 {
+		return 0
+	}
+
+	return ensureFloat(value, fallback)
 }
