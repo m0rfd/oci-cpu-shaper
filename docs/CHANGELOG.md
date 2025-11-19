@@ -154,6 +154,11 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% 
 - Clarified the documentation roadmap to mark the published CLI/deployment guides and onboarding workflows as complete while calibrating remaining milestones for future adaptive-controller and release updates (§12).
 - CLI now starts the metrics HTTP server using `http.bind`/`HTTP_ADDR`, shuts it down with the run context, and ships container/Compose updates (`EXPOSE 9108`, `${SHAPER_METRICS_BIND}`) so `/metrics` is reachable when enabled; the listener now logs structured bind/serve failures and returns an explicit shutdown hook so docs can describe the exporter lifecycle and monitoring workflow alignment (§§6, 9, 11).
 - CLI metadata resolution now populates `oci.compartmentId`/`OCI_COMPARTMENT_ID` alongside the new `oci.region`/`OCI_REGION` overrides using IMDS when online, threads the resolved region into the Monitoring client, and logs both identifiers for observability. Fresh unit coverage in §11 exercises the success, fallback, and error paths so the ≥95% statement floor holds.
+- Runtime metadata resolution now prefers the canonical region name exposed by IMDS and
+  only falls back to the legacy `instance/region` endpoint when that lookup is missing or
+  fails. Monitoring clients therefore receive the long-form OCI region identifiers even on
+  regions that still return short codes, and the updated CLI tests cover both the canonical
+  and fallback flows to maintain the ≥95% coverage floor (§§2, 5, 11).
 - CLI now installs `SIGINT`/`SIGTERM` handlers that cancel the run context so the controller, worker pool, and metrics HTTP server exit gracefully. The new `tests/e2e/signal_shutdown_test.go` suite delivers both signals to the binary and asserts the structured shutdown logs to keep §11’s coverage contract intact (§§5, 9, 11).
 - IMDS client now injects the required IMDSv2 authorisation header and exposes canonical-region plus compartment OCID lookups, with unit tests and docs refreshed to keep §2 aligned with the metadata surface.
 - Canonical-region lookups now read the `regionInfo` block returned by `/instance/`, aligning the IMDS client, CLI emulation server, and documentation with the current OCI metadata layout (§2).
