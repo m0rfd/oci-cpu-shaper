@@ -22,14 +22,24 @@ The repository includes a `Makefile` that wraps the most common development task
 | `make test` | Execute `go test -race ./...` across every package. |
 | `make check` | Run linting and race-enabled tests in one step. |
 | `make coverage` | Generate a race-enabled coverage profile for production packages, save `coverage.out`/`coverage.txt`, and print the total percentage (CI enforces ≥95%). |
-| `make integration` | Ensure Docker is reachable, validate cgroup v2, and run the CPU weight responsiveness suite while teeing logs to `artifacts/integration.log` for post-run inspection (§§6, 11). |
+| `make bench` | Run `hack/check_benchmarks.sh`, which executes `go test -bench BenchmarkPoolDutyCycle ./pkg/shape`, captures the output under `artifacts/benchmarks/`, and fails when CPU duty-cycle drift, per-tick fairness, or scheduler variance exceed the §10 limits described below. |
+| `make integration` | Ensure Docker is reachable, validate the cgroup v2 CPU controller, build the distroless rootful/nonroot images, and run the CPU weight responsiveness suite while teeing logs to `artifacts/integration.log` for post-run inspection (§§6, 11). |
 | `make e2e` | Build the CLI with the `e2e` tag and exercise the IMDS/Monitoring emulation suite described in §11.3 so offline/online flows and metrics wiring stay covered. |
 | `make govulncheck` | Scan the module and all packages with `golang.org/x/vuln/cmd/govulncheck@v1.1.4`, failing on known Go vulnerabilities before changes ship (§14). |
 | `make build` | Compile all packages to validate build readiness. |
 
+### Adaptive controller layering
+
+The adaptive controller in `pkg/adapt/` mirrors its runtime responsibilities in the file layout: `controller_ctor.go` defines the struct plus constructor wiring, `controller_run.go` owns the run loop and `step` helpers, `controller_state.go` keeps the state accessors plus shared helpers such as `clamp`, and `dutycycler_wrapper.go` contains the dry-run wrapper used in monitor-only deployments. Each file ships with a matching `*_test.go` suite (for example `controller_run_test.go` and `controller_state_test.go`) so new helpers land next to the code they exercise. When adding controller features, update the matching test file instead of piling into a monolithic suite to keep the layering obvious to future contributors.
+
 ## Local caches
 
 The Makefile defines `GOCACHE_DIR` (`.cache/go`) and `GOLANGCI_LINT_CACHE_DIR` (`.cache/golangci`) relative to the repository root and injects them into the `make test` and `make lint` targets. These locally scoped caches keep Go build artifacts and linter facts inside the workspace so commands do not hit the runner’s global `~/.cache` tree, which may be read-only in restricted sandboxes. `.gitignore` excludes the `.cache/` directory, so the caches survive between runs without leaking into commits. You can run `go env -u GOCACHE` if you temporarily need to fall back to the default global cache.
+
+### §11.5 Duty-Cycle Benchmarks
+
+- `pkg/shape` now exposes `BenchmarkPoolDutyCycle`, which drives deterministic worker quanta across a range of duty-cycle targets and quanta, recording CPU usage, average drift per tick, and scheduler fairness. Run the suite locally with `GOCACHE=.cache/go go test -run '^$' -bench BenchmarkPoolDutyCycle ./pkg/shape` when you need raw benchmark output for exploratory tuning.
+- Prefer `make bench` for CI-quality verification: it shells out to `hack/check_benchmarks.sh`, executes the benchmark suite, persists the log to `artifacts/benchmarks/pool-bench.txt`, and enforces the §10 duty-cycle budgets by failing when CPU usage drifts more than five percentage points from the configured target, when per-tick drift exceeds 15 percent of the quantum, or when tick variance rises above 0.01. These guards help flag regressions before cgroup-facing changes land in CI (§§5, 10, 11), and the CI workflow now runs the same target on every pull request so regressions surface automatically.
 
 ### §14 Lint Auto-Fix Workflow
 
@@ -65,11 +75,44 @@ Use `curl -fsS ${HTTP_ADDR:-http://127.0.0.1:9108}/metrics` (or the forwarded Co
 
 Rootful experiments using `deploy/compose/mode-b.rootful.yaml` or the matching Quadlet unit should run on hosts where Docker/Podman can grant UID 0 and `SYS_NICE`. The Compose manifest defaults to `network_mode: host`; switch `SHAPER_NETWORK_MODE` to an isolated network when testing on shared lab hardware, and avoid running it under rootless Docker because cgroup weight, `cpus`, and capability settings will be ignored (§6.2).
 
+## §14 Release Signing and Verification
+
+The release workflow now installs Cosign with OIDC `id-token` permissions, signs every pushed image digest (both `nonroot` and `rootful`), and produces SPDX attestations that embed the Syft-generated SBOM. Each run emits five release assets per variant so operators can perform offline verification:
+
+- `cosign-<tag>-<variant>.sig` and `cosign-<tag>-<variant>.pem` (image signature + certificate).
+- `sbom-attestation-<tag>-<variant>.jsonl`, `.sig`, and `.pem` (SPDX attestation payload + metadata).
+
+Pull the assets that match the tag and variant you plan to deploy, then verify either the image or the SBOM attestation with Cosign’s keyless verification flags:
+
+```bash
+IMAGE_TAG="v1.2.3"
+VARIANT="nonroot" # or rootful
+IMAGE="ghcr.io/${OWNER}/oci-cpu-shaper:${VARIANT}"
+
+cosign verify \
+  --certificate-identity "https://github.com/${OWNER}/${REPO}/.github/workflows/release.yml@refs/tags/${IMAGE_TAG}" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  --signature cosign-${IMAGE_TAG}-${VARIANT}.sig \
+  --certificate cosign-${IMAGE_TAG}-${VARIANT}.pem \
+  "$IMAGE"
+
+cosign verify-attestation \
+  --type spdx \
+  --certificate-identity "https://github.com/${OWNER}/${REPO}/.github/workflows/release.yml@refs/tags/${IMAGE_TAG}" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  --signature sbom-attestation-${IMAGE_TAG}-${VARIANT}.sig \
+  --certificate sbom-attestation-${IMAGE_TAG}-${VARIANT}.pem \
+  --attestation sbom-attestation-${IMAGE_TAG}-${VARIANT}.jsonl \
+  "$IMAGE"
+```
+
+Cosign ensures the OIDC issuer is GitHub Actions and that the certificate identity matches the `release.yml` workflow at the tag you selected. Because the release assets include both the detached signature and certificate, the same verification steps work even on air-gapped hosts after the OCI image has been mirrored locally.
+
 ## §11.2 CPU Weight Integration Suite
 
-End-to-end responsiveness tests live under `tests/integration/` and run with the `integration` build tag. They build the rootful container image, compile a static CPU hog helper, and launch the image alongside an `alpine` competitor constrained to the same CPU. The harness measures each container's `cpu.weight` and `cpu.stat` usage to assert the heavier workload receives at least five times the CPU time, ensuring the runtime honours the responsiveness guarantees described in §§5, 9, and 11.
+End-to-end responsiveness tests live under `tests/integration/` and run with the `integration` build tag. They build both the rootful and nonroot container images, compile a static CPU hog helper, and launch each image alongside an `alpine` competitor constrained to the same CPU. The harness measures each container's `cpu.weight` and `cpu.stat` usage to assert the heavier workload receives at least five times the CPU time, ensuring both UID profiles honour the responsiveness guarantees described in §§5, 9, and 11.
 
-Run the suite on a Linux host with Docker or Podman configured for cgroup v2 (verify with `docker info --format '{{.CgroupVersion}}'` or by checking `/sys/fs/cgroup/cgroup.controllers` for the `cpu` entry). Because the harness builds and runs containers locally, execute it from the repository root with elevated privileges when necessary. The `make integration` helper mirrors the CI workflow: it refuses to run unless Docker is reachable, enforces cgroup v2, and tees verbose output to `artifacts/integration.log`, removing the log directory on success while preserving it after failures for debugging (§§6, 11). Developers who need finer control can still invoke `go test -tags=integration -v ./tests/integration/...`, but the Makefile target should be preferred so local runs collect the same diagnostics as CI. When iterating locally, rerun the suite after modifying container entrypoints, CPU-tuning flags, or workload scripts to preserve the CI-required ≥95% coverage baseline while keeping responsiveness guardrails intact.
+Run the suite on a Linux host with Docker or Podman configured for cgroup v2 (verify with `docker info --format '{{.CgroupVersion}}'` and ensure `/sys/fs/cgroup/cgroup.controllers` lists the `cpu` entry). Because the harness builds and runs containers locally, execute it from the repository root with elevated privileges when necessary. The `make integration` helper mirrors the CI workflow: it refuses to run unless Docker is reachable, enforces cgroup v2 plus the cpu controller, builds both image targets, and tees verbose output to `artifacts/integration.log`, removing the log directory on success while preserving it after failures for debugging (§§6, 11). Developers who need finer control can still invoke `go test -tags=integration -v ./tests/integration/...`, but the Makefile target should be preferred so local runs collect the same diagnostics as CI. When iterating locally, rerun the suite after modifying container entrypoints, CPU-tuning flags, or workload scripts to preserve the CI-required ≥95% coverage baseline while keeping responsiveness guardrails intact.
 
 ## §11.3 CLI E2E Suite
 

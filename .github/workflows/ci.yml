@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@v5.0.1
 
       - name: Set up Go
         uses: actions/setup-go@v6.0.0
@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@v5.0.1
 
       - name: Set up Go
         uses: actions/setup-go@v6.0.0
@@ -71,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@v5.0.1
 
       - name: Set up Go
         uses: actions/setup-go@v6.0.0
@@ -100,6 +100,15 @@ jobs:
       - name: Run golangci-lint
         run: make lint
 
+      - name: Ensure golangci-lint did not leave uncommitted fixes
+        run: |
+          if ! git diff --quiet; then
+            echo "golangci-lint applied changes; commit the fixes before pushing." >&2
+            git status --short >&2
+            git diff >&2
+            exit 1
+          fi
+
   actionlint:
     name: actionlint (${{ matrix.workflow }})
     runs-on: ubuntu-latest
@@ -113,7 +122,7 @@ jobs:
           - go-dependency-submission.yml
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@v5.0.1
 
       - name: Set up Go
         uses: actions/setup-go@v6.0.0
@@ -150,7 +159,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@v5.0.1
 
       - name: Set up Go
         uses: actions/setup-go@v6.0.0
@@ -181,7 +190,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@v5.0.1
 
       - name: Set up Go
         uses: actions/setup-go@v6.0.0
@@ -204,10 +213,12 @@ jobs:
 
   coverage:
     name: go test & coverage
+    needs:
+      - integration
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@v5.0.1
 
       - name: Set up Go
         uses: actions/setup-go@v6.0.0
@@ -225,11 +236,19 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-cache-
 
+      - name: Download integration coverage
+        uses: actions/download-artifact@v6
+        with:
+          name: integration-coverage
+          path: artifacts
+
       - name: Run coverage suite
         env:
           MIN_COVERAGE: "95"
           COVERAGE_PROFILE: coverage.out
           COVERAGE_SUMMARY: coverage.txt
+          REUSE_INTEGRATION_COVERAGE: "1"
+          INTEGRATION_COVERAGE_PROFILE: artifacts/integration-coverage.out
         run: |
           set -o errexit
           set -o nounset
@@ -257,12 +276,45 @@ jobs:
             coverage.txt
           if-no-files-found: error
 
+  benchmarks:
+    name: duty-cycle benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@v6.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.sum
+
+      - name: Cache Go build artifacts
+        uses: actions/cache@v4
+        with:
+          path: .cache/go
+          key: ${{ runner.os }}-go-cache-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-cache-
+
+      - name: Run duty-cycle benchmarks
+        run: make bench
+
+      - name: Upload benchmark log
+        uses: actions/upload-artifact@v5
+        with:
+          name: duty-cycle-benchmarks
+          path: artifacts/benchmarks/pool-bench.txt
+          if-no-files-found: error
+
   container-smoke:
     name: container smoke
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@v5.0.1
 
       - name: Prepare build metadata
         id: build-meta
@@ -327,7 +379,7 @@ jobs:
           rm smoke.log
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0.20.9
+        uses: anchore/sbom-action@v0.20.10
         with:
           image: oci-cpu-shaper:test
           output-file: sbom.spdx.json
@@ -339,18 +391,18 @@ jobs:
           path: sbom.spdx.json
 
       - name: Scan image for vulnerabilities
-        uses: anchore/scan-action@v7.1.0
+        uses: anchore/scan-action@v7.2.0
         with:
           image: oci-cpu-shaper:test
           fail-build: true
           severity-cutoff: critical
 
   integration:
-    name: integration (cgroup v2)
+    name: integration tests (cgroup v2)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@v5.0.1
 
       - name: Set up Go
         uses: actions/setup-go@v6.0.0
@@ -382,9 +434,30 @@ jobs:
 
           echo "Cgroup version: $version"
 
+      - name: Verify cgroup v2 cpu controller
+        run: |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          controllers_path=/sys/fs/cgroup/cgroup.controllers
+          if [ ! -r "$controllers_path" ]; then
+            echo "::error::cgroup controllers file $controllers_path is not readable"
+            exit 1
+          fi
+
+          controllers=$(tr '\n' ' ' < "$controllers_path")
+          if ! grep -qw cpu "$controllers_path"; then
+            echo "::error::integration suite requires the cgroup v2 cpu controller (controllers: ${controllers:-unknown})"
+            exit 1
+          fi
+
+          echo "cgroup v2 controllers: $controllers"
+
       - name: Run integration tests
         env:
           INTEGRATION_KEEP_LOGS: "1"
+          INTEGRATION_COVERAGE_PROFILE: artifacts/integration-coverage.out
         run: |
           set -o errexit
           set -o nounset
@@ -396,4 +469,11 @@ jobs:
         with:
           name: integration-logs
           path: artifacts/integration.log
+          if-no-files-found: error
+
+      - name: Upload integration coverage
+        uses: actions/upload-artifact@v5
+        with:
+          name: integration-coverage
+          path: artifacts/integration-coverage.out
           if-no-files-found: error

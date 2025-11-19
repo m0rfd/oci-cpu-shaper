@@ -4,25 +4,22 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
 	"oci-cpu-shaper/internal/buildinfo"
 	"oci-cpu-shaper/pkg/adapt"
-	"oci-cpu-shaper/pkg/est"
+	"oci-cpu-shaper/pkg/cgroup"
 	metricshttp "oci-cpu-shaper/pkg/http/metrics"
-	statushttp "oci-cpu-shaper/pkg/http/status"
 	"oci-cpu-shaper/pkg/imds"
 	"oci-cpu-shaper/pkg/oci"
-	"oci-cpu-shaper/pkg/shape"
+	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
 const (
@@ -42,10 +39,11 @@ const (
 
 	metricsReadHeaderTimeout = 5 * time.Second
 	metricsShutdownTimeout   = 5 * time.Second
+	cgroupLowWeightBaseline  = 128
 )
 
 func main() {
-	code := run(context.Background(), os.Args[1:], defaultRunDeps(), os.Stderr)
+	code := newApp(defaultRunDeps()).Run(context.Background(), os.Args[1:], os.Stderr)
 	if code != 0 {
 		exitProcess(code)
 	}
@@ -59,20 +57,21 @@ type runDeps struct {
 	newController func(
 		ctx context.Context,
 		mode string,
-		cfg runtimeConfig,
+		cfg runtimeconfig.Config,
 		imdsClient imds.Client,
 		recorder adapt.MetricsRecorder,
 	) (adapt.Controller, poolStarter, error)
 	currentBuildInfo   func() buildinfo.Info
-	loadConfig         func(path string) (runtimeConfig, error)
+	loadConfig         func(path string) (runtimeconfig.Config, error)
 	newMetricsExporter func() *metricshttp.Exporter
 	startMetricsServer func(
 		ctx context.Context,
 		logger *zap.Logger,
 		addr string,
 		handler http.Handler,
-	) error
+	) (metricsShutdownFunc, error)
 	versionWriter io.Writer
+	detectCgroup  func() (*cgroup.CPU, error)
 }
 
 type poolStarter interface {
@@ -117,237 +116,8 @@ var (
 	errControllerRegionRequired = errors.New("controller factory: OCI region is required")
 	errMetricsDelegateNil       = errors.New("metrics client: nil delegate")
 	errMetricsContextRequired   = errors.New("metrics server: context is required")
+	errMetricsServerDisabled    = errors.New("metrics server: disabled")
 )
-
-func buildMetricsExporter(deps runDeps) *metricshttp.Exporter {
-	if deps.newMetricsExporter != nil {
-		exporter := deps.newMetricsExporter()
-		if exporter != nil {
-			return exporter
-		}
-	}
-
-	return metricshttp.NewExporter()
-}
-
-func configureMetrics(
-	ctx context.Context,
-	deps runDeps,
-	logger *zap.Logger,
-	cfg runtimeConfig,
-	exporter *metricshttp.Exporter,
-	pool poolStarter,
-	controller adapt.Controller,
-) error {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
-	if exporter == nil {
-		logger.Warn("metrics exporter disabled", zap.String("reason", "no exporter configured"))
-
-		return nil
-	}
-
-	if pool != nil {
-		workers := pool.Workers()
-		exporter.SetWorkerCount(workers)
-
-		quantum := pool.Quantum()
-		exporter.SetDutyCycle(quantum)
-
-		logger.Debug(
-			"registered worker pool metrics",
-			zap.Int("workerCount", workers),
-			zap.Duration("dutyCycle", quantum),
-		)
-	} else {
-		logger.Debug("worker pool metrics unavailable", zap.String("reason", "pool not configured"))
-	}
-
-	if deps.startMetricsServer == nil {
-		logger.Warn("metrics server disabled", zap.String("reason", "start function missing"))
-
-		return nil
-	}
-
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", exporter)
-
-	if controller != nil {
-		mux.Handle("/healthz", statushttp.NewHandler(controller))
-	}
-
-	bindAddr := strings.TrimSpace(cfg.HTTP.Bind)
-	if bindAddr == "" {
-		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
-
-		return nil
-	}
-
-	logger.Info("starting metrics server", zap.String("bind", bindAddr))
-
-	return deps.startMetricsServer(ctx, logger, bindAddr, mux)
-}
-
-// run orchestrates CLI initialization before handing execution to the controller.
-//
-//nolint:funlen,cyclop // CLI wiring composes setup steps before controller execution
-func run(
-	ctx context.Context,
-	args []string,
-	deps runDeps,
-	stderr io.Writer,
-) int {
-	opts, err := parseArgs(args)
-	if err != nil {
-		return writeError(stderr, err, exitCodeParseError)
-	}
-
-	if opts.showVersion {
-		info := deps.currentBuildInfo()
-
-		writer := deps.versionWriter
-		if writer == nil {
-			writer = os.Stdout
-		}
-
-		_, _ = fmt.Fprintf(writer, "%+v\n", info)
-
-		return exitCodeSuccess
-	}
-
-	cfg, exitCode, configLoaded := loadRuntimeConfigOrExit(deps, opts.configPath, stderr)
-	if !configLoaded {
-		return exitCode
-	}
-
-	logger, exitCode, loggerReady := buildLoggerOrExit(deps, opts.logLevel, stderr)
-	if !loggerReady {
-		return exitCode
-	}
-
-	defer func() {
-		_ = logger.Sync()
-	}()
-
-	ctx, cancel := applyShutdownTimer(ctx, opts.shutdownAfter)
-	if cancel != nil {
-		defer cancel()
-	}
-
-	info := deps.currentBuildInfo()
-	logStartup(logger, info, opts)
-	logRuntimeConfig(logger, cfg)
-
-	imdsClient := deps.newIMDS()
-
-	metricsExporter := buildMetricsExporter(deps)
-
-	cfg, metadata, metadataErr := prepareRunMetadata(ctx, cfg, imdsClient, opts.mode)
-	if metadataErr != nil {
-		logger.Error("failed to resolve oci metadata", zap.Error(metadataErr))
-
-		return exitCodeRuntimeError
-	}
-
-	logMetadataResolution(logger, opts.mode, metadata, cfg.OCI.Offline)
-
-	controller, pool, buildErr := deps.newController(
-		ctx,
-		opts.mode,
-		cfg,
-		imdsClient,
-		metricsExporter,
-	)
-	if buildErr != nil {
-		code := exitCodeForConfigError(buildErr)
-
-		logger.Error("failed to build controller", zap.Error(buildErr))
-
-		return code
-	}
-
-	logControllerInitialization(logger, cfg, controller, metricsExporter)
-
-	err = configureMetrics(ctx, deps, logger, cfg, metricsExporter, pool, controller)
-	if err != nil {
-		logger.Error("failed to start metrics server", zap.Error(err))
-
-		return exitCodeRuntimeError
-	}
-
-	if pool != nil {
-		pool.SetWorkerStartErrorHandler(func(err error) {
-			if err == nil {
-				return
-			}
-
-			logger.Warn("worker failed to enter sched_idle", zap.Error(err))
-		})
-
-		logger.Info(
-			"starting worker pool",
-			zap.Int("workers", pool.Workers()),
-			zap.Duration("quantum", pool.Quantum()),
-		)
-
-		pool.Start(ctx)
-	}
-
-	logIMDSMetadata(
-		ctx,
-		logger,
-		imdsClient,
-		controller,
-		cfg.OCI.InstanceID,
-		cfg.OCI.CompartmentID,
-		cfg.OCI.Region,
-		cfg.OCI.Offline,
-	)
-
-	logger.Info(
-		"starting controller run",
-		zap.String("mode", controller.Mode()),
-		zap.String("controllerState", controller.State().String()),
-	)
-
-	return handleControllerRunResult(logger, controller.Run(ctx))
-}
-
-func handleControllerRunResult(logger *zap.Logger, runErr error) int {
-	if runErr == nil {
-		logger.Info("controller stopped", zap.String("reason", "completed"))
-
-		return exitCodeSuccess
-	}
-
-	switch {
-	case errors.Is(runErr, context.Canceled):
-		logger.Info("controller stopped", zap.String("reason", context.Canceled.Error()))
-
-		return exitCodeSuccess
-	case errors.Is(runErr, context.DeadlineExceeded):
-		logger.Info(
-			"controller stopped",
-			zap.String("reason", context.DeadlineExceeded.Error()),
-		)
-
-		return exitCodeSuccess
-	default:
-		logger.Error("controller execution failed", zap.Error(runErr))
-
-		return exitCodeRuntimeError
-	}
-}
-
-func exitCodeForConfigError(err error) int {
-	if errors.Is(err, adapt.ErrInvalidConfig) {
-		return exitCodeParseError
-	}
-
-	return exitCodeRuntimeError
-}
 
 func writeError(dst io.Writer, err error, code int) int {
 	if err == nil {
@@ -387,116 +157,11 @@ func newLogger(level string) (*zap.Logger, error) {
 	return logger, nil
 }
 
-type options struct {
-	configPath    string
-	logLevel      string
-	mode          string
-	shutdownAfter time.Duration
-	showVersion   bool
-}
-
-func parseArgs(args []string) (options, error) {
-	var opts options
-
-	flagSet := flag.NewFlagSet("shaper", flag.ContinueOnError)
-	flagSet.SetOutput(io.Discard)
-	flagSet.BoolVar(
-		&opts.showVersion,
-		"version",
-		false,
-		"Print build information and exit",
-	)
-	flagSet.StringVar(
-		&opts.configPath,
-		"config",
-		defaultConfigPath,
-		"Path to the shaper configuration file",
-	)
-	flagSet.StringVar(
-		&opts.logLevel,
-		"log-level",
-		defaultLogLevel,
-		"Structured log level (debug, info, warn, error)",
-	)
-	flagSet.StringVar(
-		&opts.mode,
-		"mode",
-		modeDryRun,
-		"Controller mode to use (dry-run, enforce, noop)",
-	)
-	flagSet.DurationVar(
-		&opts.shutdownAfter,
-		"shutdown-after",
-		0,
-		"Gracefully stop the controller after the provided duration (0 disables the timer)",
-	)
-
-	err := flagSet.Parse(args)
-	if err != nil {
-		return options{}, fmt.Errorf("parse CLI arguments: %w", err)
-	}
-
-	if !opts.showVersion {
-		if slices.Contains(flagSet.Args(), "version") {
-			opts.showVersion = true
-		}
-	}
-
-	if opts.showVersion {
-		return opts, nil
-	}
-
-	normErr := normalizeOptions(&opts)
-	if normErr != nil {
-		return options{}, normErr
-	}
-
-	return opts, nil
-}
-
-func normalizeOptions(opts *options) error {
-	if opts == nil {
-		return nil
-	}
-
-	opts.mode = strings.ToLower(strings.TrimSpace(opts.mode))
-	if opts.mode == "" {
-		opts.mode = modeDryRun
-	}
-
-	if !isValidMode(opts.mode) {
-		return fmt.Errorf(
-			"%w: %q (supported: %s, %s, %s)",
-			errUnsupportedMode,
-			opts.mode,
-			modeDryRun,
-			modeEnforce,
-			modeNoop,
-		)
-	}
-
-	opts.logLevel = strings.TrimSpace(opts.logLevel)
-	if opts.logLevel == "" {
-		opts.logLevel = defaultLogLevel
-	}
-
-	opts.configPath = strings.TrimSpace(opts.configPath)
-	if opts.configPath == "" {
-		opts.configPath = defaultConfigPath
-	}
-
-	if opts.shutdownAfter < 0 {
-		return fmt.Errorf("%w: %v", errInvalidShutdownAfter, opts.shutdownAfter)
-	}
-
-	return nil
-}
-
 func loadRuntimeConfigOrExit(
 	deps runDeps,
 	path string,
 	stderr io.Writer,
-) (runtimeConfig, int, bool) {
+) (runtimeconfig.Config, int, bool) {
 	cfg, loadErr := deps.loadConfig(path)
 	if loadErr != nil {
 		code := exitCodeForConfigError(loadErr)
@@ -507,7 +172,7 @@ func loadRuntimeConfigOrExit(
 			code,
 		)
 
-		var empty runtimeConfig
+		var empty runtimeconfig.Config
 
 		return empty, exitCode, false
 	}
@@ -534,17 +199,11 @@ func buildLoggerOrExit(
 	return logger, exitCodeSuccess, true
 }
 
-var (
-	errInvalidLogLevel      = errors.New("invalid log level")
-	errUnsupportedMode      = errors.New("unsupported mode provided")
-	errInvalidShutdownAfter = errors.New("invalid shutdown-after duration (must be >=0)")
-)
-
 //nolint:ireturn // factory intentionally returns controller interface for wiring flexibility.
 func defaultControllerFactory(
 	ctx context.Context,
 	mode string,
-	cfg runtimeConfig,
+	cfg runtimeconfig.Config,
 	imdsClient imds.Client,
 	recorder adapt.MetricsRecorder,
 ) (adapt.Controller, poolStarter, error) {
@@ -570,78 +229,9 @@ func defaultControllerFactory(
 	return buildAdaptiveController(ctx, trimmed, cfg, imdsClient, recorder)
 }
 
-//nolint:ireturn,funlen // helper returns controller interface for wiring and coordinates several setup steps
-func buildAdaptiveController(
-	ctx context.Context,
-	mode string,
-	cfg runtimeConfig,
-	imdsClient imds.Client,
-	recorder adapt.MetricsRecorder,
-) (adapt.Controller, poolStarter, error) {
-	offline := cfg.OCI.Offline
-
-	instanceID, err := resolveInstanceID(ctx, cfg, offline, imdsClient)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	compartmentID := strings.TrimSpace(cfg.OCI.CompartmentID)
-	if compartmentID == "" && !offline {
-		return nil, nil, errControllerCompartmentRequired
-	}
-
-	region := strings.TrimSpace(cfg.OCI.Region)
-	if region == "" && !offline {
-		return nil, nil, errControllerRegionRequired
-	}
-
-	metricsClient, err := createMetricsClient(ctx, cfg, offline, compartmentID, region)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	pool, err := shape.NewPool(cfg.Pool.Workers, cfg.Pool.Quantum)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build worker pool: %w", err)
-	}
-
-	sampler := est.NewSampler(nil, cfg.Estimator.Interval)
-
-	controllerCfg := adapt.Config{
-		ResourceID:        instanceID,
-		Mode:              mode,
-		TargetStart:       cfg.Controller.TargetStart,
-		TargetMin:         cfg.Controller.TargetMin,
-		TargetMax:         cfg.Controller.TargetMax,
-		StepUp:            cfg.Controller.StepUp,
-		StepDown:          cfg.Controller.StepDown,
-		FallbackTarget:    cfg.Controller.FallbackTarget,
-		GoalLow:           cfg.Controller.GoalLow,
-		GoalHigh:          cfg.Controller.GoalHigh,
-		Interval:          cfg.Controller.Interval,
-		RelaxedInterval:   cfg.Controller.RelaxedInterval,
-		RelaxedThreshold:  cfg.Controller.RelaxedThreshold,
-		SuppressThreshold: cfg.Controller.SuppressThreshold,
-		SuppressResume:    cfg.Controller.SuppressResume,
-	}
-
-	controller, err := adapt.NewAdaptiveController(
-		controllerCfg,
-		metricsClient,
-		sampler,
-		pool,
-		recorder,
-	)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build adaptive controller: %w", err)
-	}
-
-	return controller, pool, nil
-}
-
 func resolveInstanceID(
 	ctx context.Context,
-	cfg runtimeConfig,
+	cfg runtimeconfig.Config,
 	offline bool,
 	imdsClient imds.Client,
 ) (string, error) {
@@ -669,7 +259,7 @@ type ociMetadata struct {
 
 func resolveCompartmentAndRegion(
 	ctx context.Context,
-	cfg runtimeConfig,
+	cfg runtimeconfig.Config,
 	imdsClient imds.Client,
 ) (ociMetadata, error) {
 	compartmentOverride := strings.TrimSpace(cfg.OCI.CompartmentID)
@@ -687,6 +277,7 @@ func resolveCompartmentAndRegion(
 	}
 
 	compartmentID, compartmentErr := imdsClient.CompartmentID(ctx)
+	canonicalRegion, canonicalRegionErr := imdsClient.CanonicalRegion(ctx)
 	region, regionErr := imdsClient.Region(ctx)
 
 	var metadata ociMetadata
@@ -704,12 +295,12 @@ func resolveCompartmentAndRegion(
 
 	metadata.CompartmentID = value
 
-	value, err = preferMetadataValue(
+	value, err = preferCanonicalRegionValue(
+		canonicalRegion,
+		canonicalRegionErr,
 		region,
 		regionErr,
 		regionOverride,
-		errControllerRegionRequired,
-		"lookup instance region",
 	)
 	if err != nil {
 		return ociMetadata{}, err
@@ -743,12 +334,49 @@ func preferMetadataValue(
 	return "", missingErr
 }
 
+func preferCanonicalRegionValue(
+	canonical string,
+	canonicalErr error,
+	legacy string,
+	legacyErr error,
+	override string,
+) (string, error) {
+	trimmedCanonical := strings.TrimSpace(canonical)
+	if trimmedCanonical != "" && canonicalErr == nil {
+		return trimmedCanonical, nil
+	}
+
+	trimmedLegacy := strings.TrimSpace(legacy)
+	if trimmedLegacy != "" && legacyErr == nil {
+		return trimmedLegacy, nil
+	}
+
+	trimmedOverride := strings.TrimSpace(override)
+	if trimmedOverride != "" {
+		return trimmedOverride, nil
+	}
+
+	if trimmedLegacy != "" {
+		return trimmedLegacy, nil
+	}
+
+	if legacyErr != nil {
+		return "", fmt.Errorf("lookup instance region: %w", legacyErr)
+	}
+
+	if canonicalErr != nil {
+		return "", fmt.Errorf("lookup canonical region: %w", canonicalErr)
+	}
+
+	return "", errControllerRegionRequired
+}
+
 func prepareRunMetadata(
 	ctx context.Context,
-	cfg runtimeConfig,
+	cfg runtimeconfig.Config,
 	imdsClient imds.Client,
 	mode string,
-) (runtimeConfig, ociMetadata, error) {
+) (runtimeconfig.Config, ociMetadata, error) {
 	trimmedMode := strings.TrimSpace(mode)
 	if trimmedMode == modeNoop {
 		var empty ociMetadata
@@ -801,7 +429,7 @@ func logStartup(logger *zap.Logger, info buildinfo.Info, opts options) {
 	logger.Info("starting oci-cpu-shaper", fields...)
 }
 
-func logRuntimeConfig(logger *zap.Logger, cfg runtimeConfig) {
+func logRuntimeConfig(logger *zap.Logger, cfg runtimeconfig.Config) {
 	if logger == nil {
 		return
 	}
@@ -873,7 +501,7 @@ func logMetadataResolution(
 
 func logControllerInitialization(
 	logger *zap.Logger,
-	cfg runtimeConfig,
+	cfg runtimeconfig.Config,
 	controller adapt.Controller,
 	exporter *metricshttp.Exporter,
 ) {
@@ -883,6 +511,7 @@ func logControllerInitialization(
 
 	fields := []zap.Field{
 		zap.String("mode", controller.Mode()),
+		zap.Bool("enforcingTargets", adapt.ModeEnforcesTargets(controller.Mode())),
 		zap.String("controllerState", controller.State().String()),
 		zap.Bool("offline", cfg.OCI.Offline),
 		zap.Int("workerCount", cfg.Pool.Workers),
@@ -905,7 +534,7 @@ func logControllerInitialization(
 //nolint:ireturn // helper returns MetricsClient interface for dependency substitution.
 func createMetricsClient(
 	ctx context.Context,
-	cfg runtimeConfig,
+	cfg runtimeconfig.Config,
 	offline bool,
 	compartmentID string,
 	region string,
@@ -924,12 +553,12 @@ func createMetricsClient(
 	return metricsClient, nil
 }
 
-func startMetricsServer(
+func startMetricsServer( //nolint:cyclop,funlen // listener lifecycle requires several guard branches
 	ctx context.Context,
 	logger *zap.Logger,
 	addr string,
 	handler http.Handler,
-) error {
+) (metricsShutdownFunc, error) {
 	trimmed := strings.TrimSpace(addr)
 
 	if logger == nil {
@@ -939,24 +568,32 @@ func startMetricsServer(
 	if trimmed == "" {
 		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
 
-		return nil
+		return nil, errMetricsServerDisabled
 	}
 
 	if handler == nil {
 		logger.Warn("metrics server disabled", zap.String("reason", "handler missing"))
 
-		return nil
+		return nil, errMetricsServerDisabled
 	}
 
 	if ctx == nil {
-		return errMetricsContextRequired
+		return nil, errMetricsContextRequired
 	}
+
+	baseCtx := context.WithoutCancel(ctx)
 
 	var listenCfg net.ListenConfig
 
 	listener, err := listenCfg.Listen(ctx, "tcp", trimmed)
 	if err != nil {
-		return fmt.Errorf("listen metrics endpoint %q: %w", trimmed, err)
+		logger.Error(
+			"metrics server listen failed",
+			zap.String("bind", trimmed),
+			zap.Error(err),
+		)
+
+		return nil, fmt.Errorf("listen metrics endpoint %q: %w", trimmed, err)
 	}
 
 	server := &http.Server{ //nolint:exhaustruct // only security-critical timeout configured here
@@ -967,35 +604,48 @@ func startMetricsServer(
 
 	logger.Info("metrics server listening", zap.String("bind", trimmed))
 
-	serveMetrics(ctx, logger, server, listener)
+	serveDone := make(chan struct{})
 
-	return nil
-}
-
-func serveMetrics(
-	ctx context.Context,
-	logger *zap.Logger,
-	server *http.Server,
-	listener net.Listener,
-) {
 	go func() {
-		<-ctx.Done()
+		defer close(serveDone)
 
-		shutdownCtx, cancel := context.WithTimeout(ctx, metricsShutdownTimeout)
-		defer cancel()
+		err := server.Serve(listener)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("metrics server serve", zap.String("bind", trimmed), zap.Error(err))
+
+			return
+		}
+
+		logger.Info("metrics server stopped", zap.String("bind", trimmed))
+	}()
+
+	shutdown := func(shutdownCtx context.Context) {
+		if shutdownCtx == nil {
+			shutdownCtx = baseCtx
+		}
+
+		logger.Info("stopping metrics server", zap.String("bind", trimmed))
 
 		err := server.Shutdown(shutdownCtx)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Warn("metrics server shutdown", zap.Error(err))
+			logger.Warn("metrics server shutdown", zap.String("bind", trimmed), zap.Error(err))
 		}
-	}()
+	}
 
 	go func() {
-		err := server.Serve(listener)
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Warn("metrics server serve", zap.Error(err))
-		}
+		<-ctx.Done()
+
+		shutdownCtx, cancel := context.WithTimeout(baseCtx, metricsShutdownTimeout)
+		defer cancel()
+
+		shutdown(shutdownCtx)
 	}()
+
+	return func(shutdownCtx context.Context) {
+		shutdown(shutdownCtx)
+
+		<-serveDone
+	}, nil
 }
 
 type p95CPUQuerier interface {
@@ -1163,10 +813,17 @@ func appendOnlineMetadata(
 	canonicalRegion, canonicalRegionErr := resolveMetadataValue(
 		ctx,
 		logger,
-		overrideRegion,
+		"",
 		client.CanonicalRegion,
 		"failed to query canonical region",
 	)
+
+	if canonicalRegionErr != nil || strings.TrimSpace(canonicalRegion) == "" {
+		if trimmedOverride := strings.TrimSpace(overrideRegion); trimmedOverride != "" {
+			canonicalRegion = trimmedOverride
+			canonicalRegionErr = nil
+		}
+	}
 
 	instanceID, instanceErr := resolveMetadataValue(
 		ctx,
@@ -1199,11 +856,121 @@ func appendOnlineMetadata(
 	return appendShapeFields(fields, shapeCfg, shapeErr)
 }
 
-func isValidMode(mode string) bool {
-	switch mode {
-	case modeDryRun, modeEnforce, modeNoop:
-		return true
+func detectAndReportCgroup(
+	deps runDeps,
+	logger *zap.Logger,
+	exporter *metricshttp.Exporter,
+) *cgroup.CPU {
+	info, err := detectCgroupInfo(deps)
+	if err != nil {
+		if logger != nil {
+			logger.Warn("failed to inspect cgroup cpu settings", zap.Error(err))
+		}
+
+		recordCgroupMetrics(exporter, nil)
+
+		return nil
+	}
+
+	recordCgroupMetrics(exporter, info)
+	logCgroupInfo(logger, info)
+
+	return info
+}
+
+func detectCgroupInfo(deps runDeps) (*cgroup.CPU, error) {
+	if deps.detectCgroup != nil {
+		return deps.detectCgroup()
+	}
+
+	var reader cgroup.Reader
+
+	info, err := reader.Detect()
+	if err != nil {
+		return nil, fmt.Errorf("detect cgroup: %w", err)
+	}
+
+	return info, nil
+}
+
+func recordCgroupMetrics(exporter *metricshttp.Exporter, info *cgroup.CPU) {
+	if exporter == nil {
+		return
+	}
+
+	weight := uint64(0)
+	if info != nil && info.Weight.Err == nil && info.Weight.Available {
+		weight = info.Weight.Value
+	}
+
+	exporter.SetCgroupCPUWeight(weight)
+
+	var (
+		quota  uint64
+		period uint64
+	)
+
+	unlimited := false
+
+	if info != nil && info.Max.Err == nil && info.Max.Available {
+		period = info.Max.Period
+
+		unlimited = info.Max.Unlimited
+		if !info.Max.Unlimited {
+			quota = info.Max.Quota
+		}
+	}
+
+	exporter.SetCgroupCPUMax(quota, period, unlimited)
+}
+
+func logCgroupInfo(logger *zap.Logger, info *cgroup.CPU) {
+	if logger == nil || info == nil {
+		return
+	}
+
+	fields := []zap.Field{zap.String("path", strings.TrimSpace(info.Path))}
+	fields = append(fields, cgroupWeightFields(logger, info.Weight)...)
+	fields = append(fields, cgroupMaxFields(info.Max)...)
+
+	logger.Info("detected cgroup cpu settings", fields...)
+}
+
+func cgroupWeightFields(logger *zap.Logger, weight cgroup.Weight) []zap.Field {
+	switch {
+	case weight.Err != nil:
+		return []zap.Field{zap.String("cpuWeightError", weight.Err.Error())}
+	case weight.Available:
+		field := zap.Uint64("cpuWeight", weight.Value)
+		if logger != nil && weight.Value > cgroupLowWeightBaseline {
+			logger.Warn(
+				"cpu.weight exceeds recommended low-weight baseline",
+				zap.Uint64("weight", weight.Value),
+				zap.Uint64("baseline", cgroupLowWeightBaseline),
+			)
+		}
+
+		return []zap.Field{field}
 	default:
-		return false
+		return []zap.Field{zap.String("cpuWeightStatus", "unavailable")}
+	}
+}
+
+func cgroupMaxFields(cpuMax cgroup.Max) []zap.Field {
+	switch {
+	case cpuMax.Err != nil:
+		return []zap.Field{zap.String("cpuMaxError", cpuMax.Err.Error())}
+	case cpuMax.Available:
+		fields := []zap.Field{
+			zap.Bool("cpuMaxUnlimited", cpuMax.Unlimited),
+			zap.Uint64("cpuMaxPeriod", cpuMax.Period),
+		}
+		if !cpuMax.Unlimited {
+			fields = append(fields, zap.Uint64("cpuMaxQuota", cpuMax.Quota))
+		}
+
+		return fields
+	default:
+		return []zap.Field{zap.String("cpuMaxStatus", "unavailable")}
 	}
 }

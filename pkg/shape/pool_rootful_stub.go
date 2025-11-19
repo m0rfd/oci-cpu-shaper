@@ -2,8 +2,6 @@
 
 package shape
 
-func configureRootfulHooks(pool *Pool) {
-	if pool == nil {
-		return
-	}
+func trySchedIdle() error {
+	return nil
 }

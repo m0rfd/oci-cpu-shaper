@@ -4,6 +4,8 @@ GO ?= go
 MIN_COVERAGE ?= 95.0
 COVERAGE_PROFILE ?= coverage.out
 COVERAGE_SUMMARY ?= coverage.txt
+INTEGRATION_COVERAGE_PROFILE ?=
+REUSE_INTEGRATION_COVERAGE ?= 0
 
 MODULE := $(shell $(GO) list -m 2>/dev/null)
 PKGS := $(shell $(GO) list ./... 2>/dev/null)
@@ -42,7 +44,7 @@ ACTIONLINT ?= $(ACTIONLINT_BIN)
 ACTIONLINT_FLAGS ?=
 ACTIONLINT_PATHS ?=
 
-.PHONY: fmt lint test build check tools ensure-golangci-lint ensure-gofumpt ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows
+.PHONY: fmt lint test build check tools ensure-golangci-lint ensure-gofumpt ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench
 
 tools: ensure-golangci-lint ensure-gofumpt ensure-actionlint
 
@@ -119,30 +121,43 @@ coverage:
                 excluded="$(strip $(COVERAGE_EXCLUDES))"; \
                 if [ -n "$$excluded" ]; then \
                         echo "Excluding packages from coverage: $$excluded"; \
+		fi; \
+			coverage_pkgs="$(strip $(COVERAGE_PKGS))"; \
+			coverage_csv=$$(printf '%s' "$$coverage_pkgs" | tr ' \n' ',' | sed 's/,,*/,/g; s/^,//; s/,$$//'); \
+			rm -f $(COVERAGE_PROFILE) $(COVERAGE_SUMMARY); \
+			unit_profile="coverage-unit.out"; \
+			$(GO) test -race -covermode=atomic -coverpkg="$$coverage_csv" -coverprofile="$$unit_profile" $(COVERAGE_PKGS); \
+			cat "$$unit_profile" > $(COVERAGE_PROFILE); \
+			rm -f "$$unit_profile"; \
+			if [ -n "$(strip $(INTEGRATION_PKGS))" ]; then \
+				integration_profile="$(strip $(INTEGRATION_COVERAGE_PROFILE))"; \
+				if [ -z "$$integration_profile" ]; then \
+					integration_profile="coverage-integration.out"; \
+				fi; \
+				reuse_integration="$(strip $(REUSE_INTEGRATION_COVERAGE))"; \
+				if [ "$$reuse_integration" = "1" ]; then \
+					if [ ! -f "$$integration_profile" ]; then \
+						echo "Integration coverage profile '$$integration_profile' not found."; \
+						exit 1; \
+					fi; \
+				else \
+					$(GO) test -race -covermode=atomic -tags=integration -coverpkg="$$coverage_csv" -coverprofile="$$integration_profile" $(INTEGRATION_PKGS); \
+				fi; \
+				tail -n +2 "$$integration_profile" >> $(COVERAGE_PROFILE); \
+				if [ "$$reuse_integration" != "1" ]; then \
+					rm -f "$$integration_profile"; \
+				fi; \
+			fi; \
+		if [ -n "$(strip $(E2E_PKGS))" ]; then \
+			e2e_profile="coverage-e2e.out"; \
+			if $(GO) test -race -covermode=atomic -tags=e2e -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $(E2E_PKGS); then \
+				tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
+			else \
+				echo "Skipping e2e coverage due to test failures"; \
+			fi; \
+			rm -f "$$e2e_profile"; \
                 fi; \
-                coverage_pkgs="$(strip $(COVERAGE_PKGS))"; \
-                coverage_csv=$$(printf '%s' "$$coverage_pkgs" | tr ' \n' ',' | sed 's/,,*/,/g; s/^,//; s/,$$//'); \
-                rm -f $(COVERAGE_PROFILE) $(COVERAGE_SUMMARY); \
-                unit_profile="coverage-unit.out"; \
-                $(GO) test -race -covermode=atomic -coverpkg="$$coverage_csv" -coverprofile="$$unit_profile" $(COVERAGE_PKGS); \
-                cat "$$unit_profile" > $(COVERAGE_PROFILE); \
-                rm -f "$$unit_profile"; \
-                if [ -n "$(strip $(INTEGRATION_PKGS))" ]; then \
-                        integration_profile="coverage-integration.out"; \
-                        $(GO) test -race -covermode=atomic -tags=integration -coverpkg="$$coverage_csv" -coverprofile="$$integration_profile" $(INTEGRATION_PKGS); \
-                        tail -n +2 "$$integration_profile" >> $(COVERAGE_PROFILE); \
-                        rm -f "$$integration_profile"; \
-                fi; \
-                if [ -n "$(strip $(E2E_PKGS))" ]; then \
-                        e2e_profile="coverage-e2e.out"; \
-                        if $(GO) test -race -covermode=atomic -tags=e2e -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $(E2E_PKGS); then \
-                                tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
-                        else \
-                                echo "Skipping e2e coverage due to test failures"; \
-                        fi; \
-                        rm -f "$$e2e_profile"; \
-                fi; \
-                $(GO) tool cover -func=$(COVERAGE_PROFILE) | tee $(COVERAGE_SUMMARY); \
+		$(GO) tool cover -func=$(COVERAGE_PROFILE) | tee $(COVERAGE_SUMMARY); \
                 TOTAL=$$(awk '/^total:/ {total=$$NF} END {print total}' $(COVERAGE_SUMMARY)); \
                 if [ -n "$$TOTAL" ]; then \
                         echo "Total coverage: $$TOTAL"; \
@@ -182,6 +197,10 @@ actionlint: ensure-actionlint
 
 lint-workflows: actionlint
 
+bench:
+	@set -euo pipefail; \
+	./hack/check_benchmarks.sh
+
 build:
 	$(GO) build ./...
 
@@ -197,13 +216,39 @@ integration:
 	fi; \
 	cgroup_version="$$(docker info --format '{{.CgroupVersion}}' 2>/dev/null || true)"; \
 	if [ "$$cgroup_version" != "2" ]; then \
-		echo "integration suite requires cgroup v2 (detected $${cgroup_version:-unknown})"; \
-		exit 1; \
+	echo "integration suite requires cgroup v2 (detected $${cgroup_version:-unknown})"; \
+	exit 1; \
 	fi; \
 	echo "Docker cgroup version: $$cgroup_version"; \
+	controllers_file="/sys/fs/cgroup/cgroup.controllers"; \
+	if [ ! -r "$$controllers_file" ]; then \
+	echo "cgroup controllers file $$controllers_file is not readable"; \
+	exit 1; \
+	fi; \
+	controllers=$$(tr '\n' ' ' < "$$controllers_file"); \
+	if ! grep -qw cpu "$$controllers_file"; then \
+	echo "integration suite requires the cgroup v2 cpu controller (controllers: $$controllers)"; \
+	exit 1; \
+	fi; \
+	echo "cgroup v2 controllers: $$controllers"; \
 	artifacts_dir="$(ROOT_DIR)/artifacts"; \
 	log_file="$$artifacts_dir/integration.log"; \
 	mkdir -p "$$artifacts_dir" "$(GOCACHE_DIR)"; \
+	coverage_profile="$(strip $(INTEGRATION_COVERAGE_PROFILE))"; \
+	coverage_enabled=0; \
+	coverage_pkgs=""; \
+	coverage_csv=""; \
+	if [ -n "$$coverage_profile" ]; then \
+		coverage_enabled=1; \
+		coverage_pkgs="$(strip $(COVERAGE_PKGS))"; \
+		if [ -z "$$coverage_pkgs" ]; then \
+			echo "No Go packages selected for coverage after exclusions; adjust COVERAGE_EXCLUDES."; \
+			exit 1; \
+		fi; \
+		coverage_csv=$$(printf '%s' "$$coverage_pkgs" | tr ' \n' ',' | sed 's/,,*/,/g; s/^,//; s/,$$//'); \
+		profile_dir=$$(dirname "$$coverage_profile"); \
+		mkdir -p "$$profile_dir"; \
+	fi; \
 	keep_logs="$${INTEGRATION_KEEP_LOGS:-0}"; \
 	cleanup() { \
 		status="$$?"; \
@@ -217,7 +262,12 @@ integration:
 	}; \
 	trap 'cleanup' EXIT; \
 	touch "$$log_file"; \
-	GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=integration -v ./tests/integration/... | tee "$$log_file"
+	if [ "$$coverage_enabled" -eq 1 ]; then \
+		GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=integration -covermode=atomic -coverpkg="$$coverage_csv" -coverprofile="$$coverage_profile" -v ./tests/integration/... | tee "$$log_file"; \
+	else \
+		GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=integration -v ./tests/integration/... | tee "$$log_file"; \
+	fi
+
 e2e:
 	@set -euo pipefail; \
 	if [ ! -d "$(ROOT_DIR)/tests/e2e" ]; then \

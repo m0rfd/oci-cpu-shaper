@@ -2,6 +2,7 @@
 package e2eclient
 
 import (
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -46,6 +47,9 @@ func TestLoggingRecorderForwardsCalls(t *testing.T) {
 	recorder.SetTarget(0.37)
 	recorder.ObserveOCIP95(0.42, time.Unix(100, 0))
 	recorder.ObserveHostCPU(0.55)
+	recorder.SetInterval(42 * time.Second)
+	recorder.SetLastError(errLoggingStepFailure)
+	recorder.SetLastError(nil)
 
 	if delegate.mode != "observe" {
 		t.Fatalf("expected mode to be forwarded, got %q", delegate.mode)
@@ -65,6 +69,18 @@ func TestLoggingRecorderForwardsCalls(t *testing.T) {
 
 	if delegate.hostCPU != 0.55 {
 		t.Fatalf("unexpected host cpu %.2f", delegate.hostCPU)
+	}
+
+	if delegate.interval != 42*time.Second {
+		t.Fatalf("expected interval to be forwarded, got %v", delegate.interval)
+	}
+
+	if delegate.errorCleared <= 0 || delegate.errorSet <= 0 {
+		t.Fatalf(
+			"expected error callbacks to fire, got set=%d cleared=%d",
+			delegate.errorSet,
+			delegate.errorCleared,
+		)
 	}
 
 	entries := logs.FilterMessage("controller state transition").All()
@@ -119,7 +135,12 @@ type recordingDelegate struct {
 	hostCPU      float64
 	lastResource string
 	ocip95Count  int64
+	interval     time.Duration
+	errorSet     int
+	errorCleared int
 }
+
+var errLoggingStepFailure = errors.New("step failure")
 
 func newRecordingDelegate() *recordingDelegate {
 	return &recordingDelegate{} //nolint:exhaustruct // zero-value setup suffices for tests
@@ -144,4 +165,16 @@ func (r *recordingDelegate) ObserveOCIP95(value float64, _ time.Time) {
 
 func (r *recordingDelegate) ObserveHostCPU(utilisation float64) {
 	r.hostCPU = utilisation
+}
+
+func (r *recordingDelegate) SetInterval(interval time.Duration) {
+	r.interval = interval
+}
+
+func (r *recordingDelegate) SetLastError(err error) {
+	if err != nil {
+		r.errorSet++
+	} else {
+		r.errorCleared++
+	}
 }

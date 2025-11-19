@@ -33,9 +33,21 @@ Three foundational flags align with §§3.1 and 5.2 of the implementation plan:
 
 Flags remain intentionally minimal so orchestration tools can template them alongside file-based configuration and environment overrides. When `--shutdown-after` is non-zero the CLI installs a context deadline and treats the resulting `context deadline exceeded`/`context canceled` errors as clean shutdowns so smoke tests can rely on exit status `0`.
 
+The CLI also installs `SIGINT`/`SIGTERM` handlers that wrap the run loop in a
+`context.WithCancel`. Delivering either signal now cancels the controller,
+worker pool, and HTTP server contexts just like the time-bounded shutdown,
+letting supervisors stop the process without forcing an unclean exit or leaking
+goroutines.
+
 ## 9.2 Configuration Layout
 
 Bootstrap deployments rely on a compact YAML manifest that mirrors §§3.1 and 5.2 thresholds:
+
+`pkg/runtimeconfig` now owns these structs and helpers so every binary can reuse the
+same layering flow. `cmd/shaper` calls `runtimeconfig.Load` to stack the immutable defaults,
+optional YAML file, and environment overlays before handing the values to
+`runtimeconfig.Config.ToAdaptConfig()`, letting other entrypoints plug into the same
+validated config without duplicating conversions or field assignments.
 
 ```yaml
 controller:
@@ -57,6 +69,8 @@ estimator:
 pool:
   workers: 2
   quantum: 1ms
+  pauseThreshold: 0.80
+  resumeThreshold: 0.68
 http:
   bind: ":9108"
 oci:
@@ -67,15 +81,18 @@ oci:
 ```
 
 - The repository publishes these defaults as ready-to-use manifests at
-  `configs/mode-a.yaml` and `configs/mode-b.yaml`. Both files match the
-  controller, estimator, pool, HTTP, and `oci.offline` defaults above; they
-  intentionally omit tenancy-specific OCIDs so the samples remain usable in
-  source control. Operators should extend the manifest with their own
-  `compartmentId`, `region`, and optional `instanceId` values before entering
-  enforce mode.
-- `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed four-hour interval when OCI P95 remains healthy. The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) decide when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools.
+  `configs/mode-a.yaml` and `configs/mode-b.yaml`. Both files copy the controller,
+  estimator, pool thresholds, HTTP, and `oci.offline` defaults above (including
+  the tighter 0.20–0.32 band, four-hour relaxed interval, two-second estimator
+  cadence, and two-worker pool) while omitting tenancy-specific OCIDs so the
+  samples remain usable in source control. Operators should extend the manifest
+  with their own `compartmentId`, `region`, and optional `instanceId` values
+  before entering enforce mode.
+- `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed four-hour interval when OCI P95 remains healthy. The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) now reflect the 0.80/0.68 hysteresis that decides when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools. Set `controller.suppressThreshold` to `0` (or any non-positive value) to disable host-load suppression entirely; the resume threshold is ignored in that case.
+- The loader now enforces the documented ratios and cadences: `targetMin` must remain below `targetMax`, every slow-loop target and goal must fall within that band, and the `interval`, `relaxedInterval`, `stepUp`, `stepDown`, `pool.quantum`, and `pool.workers` values must be positive. Invalid manifests abort startup with an exit status of `2` so operators can fix the config before the controller touches system state (§§3.1, 5.2).
+- Configuration processing now flows through four dedicated stages, all implemented in `pkg/runtimeconfig`: an immutable defaults builder, a YAML merge helper, environment overrides, and validators. Each stage is unit-tested individually so overrides and safety rails stay predictable, and env vars always win over file-sourced values without mutating the stored defaults (§5.2).
 - Validation now enforces that every slow-loop target or goal remains below both suppression thresholds, so manifests that would immediately re-trigger the fast loop are rejected with an exit status of `2` and a descriptive error message (§§3.1, 5.2).
-- `estimator.interval` controls the fast `/proc/stat` sampler cadence (§5.2) while the worker `pool` exposes quantum sizing that stays within the 1–5 ms duty-cycle budget.
+- `estimator.interval` controls the fast `/proc/stat` sampler cadence (§5.2) while the worker `pool` exposes quantum sizing that stays within the 1–5 ms duty-cycle budget. `pool.pauseThreshold`/`pool.resumeThreshold` mirror the controller suppression hysteresis (0.80/0.68) so the worker pool pauses entirely when host utilisation crosses the configured limit and only resumes once the load cools. The manifests now explicitly pin `pool.workers` to `2` to keep deterministic load across instance shapes.
 - `http.bind` retains the Prometheus listener address and now backs the `/metrics` exporter described in §9.5, while `oci.compartmentId` supplies the tenancy scope required by the Monitoring client and `oci.region` pins the Monitoring endpoint region when IMDS access is unavailable (for example, CI smoke tests).
 - `oci.instanceId` is optional and lets operators bypass IMDS lookups when metadata access is blocked (for example, CI smoke tests or staging environments without instance principals). When `oci.offline` is set the CLI injects a static metrics client and fallback instance ID so dry-run/enforce can exercise the adaptive controller without IMDS or Monitoring access (§§5.2, 11).
 
@@ -89,21 +106,30 @@ The CLI honours the following environment variables, matching the naming in §5.
 
 | Variable | Description | Default |
 | -------- | ----------- | ------- |
-| `SHAPER_TARGET_START` | Initial duty-cycle target when OCI data is unavailable. | `0.25` |
-| `SHAPER_TARGET_MIN` / `SHAPER_TARGET_MAX` | Bounds applied to adaptive adjustments. | `0.22` / `0.40` |
-| `SHAPER_STEP_UP` / `SHAPER_STEP_DOWN` | Target deltas when OCI P95 is below or above the goal band. | `+0.02` / `-0.01` |
-| `SHAPER_FALLBACK_TARGET` | Fixed target while OCI metrics are unavailable. | `0.25` |
-| `SHAPER_SLOW_INTERVAL` / `SHAPER_SLOW_INTERVAL_RELAXED` | Baseline and relaxed controller cadences. | `1h` / `6h` |
-| `SHAPER_FAST_INTERVAL` | Host CPU sampling cadence for the estimator. | `1s` |
-| `SHAPER_SUPPRESS_THRESHOLD` / `SHAPER_SUPPRESS_RESUME` | Fast-loop suppression thresholds that gate the zero-target mode. | `0.85` / `0.70` |
-| `SHAPER_WORKER_COUNT` | Number of duty-cycle workers (`>=1`). | `runtime.NumCPU()` |
+| `SHAPER_TARGET_START` | Initial duty-cycle target when OCI data is unavailable. | `0.22` |
+| `SHAPER_TARGET_MIN` / `SHAPER_TARGET_MAX` | Bounds applied to adaptive adjustments. | `0.20` / `0.32` |
+| `SHAPER_STEP_UP` / `SHAPER_STEP_DOWN` | Target deltas when OCI P95 is below or above the goal band. | `0.01` / `0.005` |
+| `SHAPER_FALLBACK_TARGET` | Fixed target while OCI metrics are unavailable. | `0.22` |
+| `SHAPER_SLOW_INTERVAL` / `SHAPER_SLOW_INTERVAL_RELAXED` | Baseline and relaxed controller cadences. | `1h` / `4h` |
+| `SHAPER_FAST_INTERVAL` | Host CPU sampling cadence for the estimator. | `2s` |
+| `SHAPER_SUPPRESS_THRESHOLD` / `SHAPER_SUPPRESS_RESUME` | Fast-loop suppression thresholds that gate the zero-target mode. Assign `SHAPER_SUPPRESS_THRESHOLD=0` (or any non-positive value) to disable suppression; the resume override is ignored when suppression is off. | `0.80` / `0.68` |
+| `SHAPER_WORKER_COUNT` | Number of duty-cycle workers (`>=1`). | `2` |
+| `SHAPER_POOL_PAUSE_THRESHOLD` / `SHAPER_POOL_RESUME_THRESHOLD` | Host CPU hysteresis that pauses/resumes the worker pool when the estimator detects contention. | `0.80` / `0.68` |
 | `HTTP_ADDR` | Prometheus listener bind address. | `:9108` |
 | `OCI_COMPARTMENT_ID` | Tenancy scope for OCI Monitoring API calls. | *(required for enforce/dry-run unless offline mode is enabled)* |
 | `OCI_REGION` | Overrides the Monitoring region, avoiding live IMDS lookups when running in smoke-test environments. | *(empty)* |
 | `OCI_INSTANCE_ID` | Overrides the instance OCID used for Monitoring queries and IMDS metadata logs, skipping live metadata calls. | *(empty)* |
 | `OCI_OFFLINE` | Enables the static metrics client and metadata fallback described above so smoke tests can bootstrap without IMDS or Monitoring access. | `false` |
 
-Unset or malformed overrides fall back to the defaults shown above.
+Unset or malformed overrides fall back to the defaults shown above. The
+controller subtracts `SHAPER_STEP_DOWN` internally, so the configuration value
+remains a positive delta even though it reduces the target when OCI P95 exceeds
+the goal band.
+
+Setting `HTTP_ADDR` to an empty string (for example, exporting `HTTP_ADDR=`)
+disables the `/metrics` listener even when the YAML manifest enables it. This
+helps CI smoke tests and containerised diagnostics avoid exposing the endpoint
+while still recording metrics internally.
 
 ### Layering overrides
 
@@ -128,21 +154,25 @@ At startup the binary emits a structured log line containing build metadata deri
 
 Invalid flag values are rejected during argument parsing: unknown controller modes surface an error and cause the program to exit with status `2`, unsupported log levels report a structured error before the logger is constructed, and negative `--shutdown-after` durations are rejected. This keeps early runs predictable while new policy engines are still being prototyped.
 
-Configuration validation shares this behaviour: when thresholds conflict with the suppression bounds the CLI prints the descriptive failure and exits with code `2`, preventing partially initialised controllers (§§3.1, 5.2).
+Configuration validation shares this behaviour: when thresholds conflict with the suppression bounds, when targets/goals drift outside `targetMin`/`targetMax`, or when intervals/worker counts fall to zero the CLI prints the descriptive failure and exits with code `2`, preventing partially initialised controllers (§§3.1, 5.2).
 
 Smoke tests introduced in §11 now cover the dependency-injected entrypoint as well as adaptive-controller wiring, ensuring that enforce/dry-run builds start the OCI client, estimator sampler, and worker pool while `noop` preserves the bypass path for validation scenarios. Offline mode keeps this wiring intact by substituting the static metrics client so container smoke tests can run without live tenancy credentials, and new unit coverage exercises the IMDS-backed region/compartment resolver plus its failure modes to keep the ≥95% statement coverage guarantee intact.
 
 Local contributors can validate the CLI wiring the same way: run `make lint` and `make test` before checking in changes and finish with `make coverage MIN_COVERAGE=95` to confirm the documentation’s QA promise remains true.
 
-Rootful binaries built with `-tags rootful` log a warning if the kernel rejects the
-`SCHED_IDLE` request emitted when the worker pool starts (§§6, 9). Hosts running
-the Compose or Quadlet stacks must grant `CAP_SYS_NICE`/`SYS_NICE` so the
+Rootful binaries built with `-tags rootful` now issue their
+`sched_setscheduler(0, SCHED_IDLE, ...)` request as soon as the worker pool is
+constructed, before goroutines start consuming CPU (§§6, 9). Hosts running the
+Compose or Quadlet stacks must grant `CAP_SYS_NICE`/`SYS_NICE` so the
 `worker failed to enter sched_idle` warning remains informational rather than a
-permanent indicator that the downgrade could not be applied.
+permanent indicator that the downgrade could not be applied; `EPERM` rejections
+are silently ignored when the capability is intentionally withheld.
 
 ## 9.5 Metrics Exporter
 
-`cmd/shaper` instantiates the lightweight OpenMetrics exporter from `pkg/http/metrics` and serves it at `/metrics` using the `http.bind` configuration (or `HTTP_ADDR` environment override). The listener defaults to `:9108`, matching the Compose port mapping in §6 and the container `EXPOSE 9108` declaration. Production Prometheus servers can scrape the endpoint directly when the rootful stack runs in host-network mode, while rootless deployments forward `${SHAPER_METRICS_BIND:-127.0.0.1:9108}:9108` from the host loopback to the container port.
+`cmd/shaper` instantiates the lightweight OpenMetrics exporter from `pkg/http/metrics` and serves it at `/metrics` using the `http.bind` configuration (or `HTTP_ADDR` environment override). The listener defaults to `:9108`, matching the Compose port mapping in §6 and the container `EXPOSE 9108` declaration. Production Prometheus servers can scrape the endpoint directly when the rootful stack runs in host-network mode, while rootless deployments forward `${SHAPER_METRICS_BIND:-127.0.0.1:9108}:9108` from the host loopback to the container port. The CLI now derives a per-run context for the HTTP listener and invokes the returned shutdown hook when the controller exits so `/metrics` follows the process lifecycle even when the ambient context stays open.
+
+Binding failures now abort startup: when the requested `http.bind` address is already in use the CLI logs `failed to start metrics server`, exits with a runtime error, and leaves the controller uninitialised so systemd or Kubernetes can retry immediately. The metrics helper also emits structured `metrics server listen failed`/`metrics server serve` entries when the bind or serve loops encounter errors, making it obvious which phase failed before the controller came up. Unit coverage in §11 confirms the fast-fail path, the graceful shutdown, and the `/metrics` content-type expectations.
 
 ### Emitted series
 
@@ -184,34 +214,63 @@ worker_count 4
 # HELP host_cpu_percent Last recorded host CPU utilisation percentage.
 # TYPE host_cpu_percent gauge
 host_cpu_percent 6.25
+# HELP cgroup_cpu_weight Detected cgroup v2 cpu.weight value for the process.
+# TYPE cgroup_cpu_weight gauge
+cgroup_cpu_weight 128
+# HELP cgroup_cpu_max_quota Detected cpu.max quota (microseconds). Zero when unlimited.
+# TYPE cgroup_cpu_max_quota gauge
+cgroup_cpu_max_quota 30000
+# HELP cgroup_cpu_max_period Detected cpu.max period (microseconds).
+# TYPE cgroup_cpu_max_period gauge
+cgroup_cpu_max_period 100000
+# HELP cgroup_cpu_max_unlimited Flag set to 1 when cpu.max reports "max".
+# TYPE cgroup_cpu_max_unlimited gauge
+cgroup_cpu_max_unlimited 0
 # EOF
 ```
 
 Offline mode continues to populate each series so smoke tests and container health checks can rely on the exporter without live tenancy credentials; only `oci_last_success_epoch` remains `0` until Monitoring calls succeed. Unit and CLI tests exercise the handler through `httptest.Server`, preserving the ≥95% coverage floor mandated in §11.
 
+The cgroup gauges mirror the detected `/proc/self/cgroup` path and the files under `/sys/fs/cgroup/.../cpu.weight`/`cpu.max`. Unlimited ceilings keep `cgroup_cpu_max_quota` at `0` and flip `cgroup_cpu_max_unlimited` to `1`, making it easy to alarm on drift from the §4 recommendations without shelling into the host.
+
 ## 9.6 Health Checks
 
 `cmd/shaper` now serves a lightweight JSON status document at `/healthz` on the
-same listener as `/metrics`. The handler reports the controller state machine
-(`"normal"`, `"fallback"`, or `"suppressed"`) alongside the last OCI metrics error
-and most recent estimator error snapshot. Container orchestrators can poll the
-endpoint to surface degraded Monitoring connectivity or estimator stalls while
-the process continues to run.
+same listener as `/metrics`. The handler reports the controller mode (`"noop"`,
+`"dry-run"`, or `"enforce"`), the state machine (`"normal"`, `"fallback"`, or
+`"suppressed"`), the last OCI metrics plus estimator errors, and the detected
+`cpu.weight`/`cpu.max` values (or any file read errors). Container orchestrators
+can poll the endpoint to surface degraded Monitoring connectivity, estimator
+stalls, or cgroup drift while the process continues to run.
 
 The response mirrors this structure:
 
 ```json
 {
+  "mode": "dry-run",
   "state": "normal",
   "ociError": "",
-  "estimatorError": ""
+  "estimatorError": "",
+  "cgroup": {
+    "path": "/user.slice/shaper.scope",
+    "cpuWeight": {
+      "value": 128
+    },
+    "cpuMax": {
+      "quota": 30000,
+      "period": 100000,
+      "unlimited": false
+    }
+  }
 }
 ```
 
 When errors are present the strings are populated with the underlying error
-messages; otherwise they remain empty. Unit coverage in `pkg/http/status`
-verifies the handler’s JSON output while the end-to-end harness starts the CLI,
-injects a Monitoring outage, and polls `/healthz` until it reports the
-`fallback` state with the recorded error string. This keeps the ≥95% coverage
-target documented in §11 intact and proves that health probes surface Monitoring
-failures without crashing the process.
+messages; otherwise they remain empty. `cpuWeight.error`/`cpuMax.error`
+surface filesystem failures so Kubernetes probes can alarm on missing
+`/sys/fs/cgroup` files in addition to controller regressions. Unit coverage in
+`pkg/http/status` verifies the handler’s JSON output while the end-to-end
+harness starts the CLI, injects a Monitoring outage, and polls `/healthz` until
+it reports the `fallback` state with the recorded error string. This keeps the
+≥95% coverage target documented in §11 intact and proves that health probes
+surface Monitoring failures and cgroup drift without crashing the process.

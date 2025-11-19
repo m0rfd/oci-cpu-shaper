@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   packages: write
+  id-token: write
 
 jobs:
   release:
@@ -29,13 +30,16 @@ jobs:
       IMAGE_NAME: oci-cpu-shaper
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@v5.0.1
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3.7.0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3.11.1
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.0.0
 
       - name: Log in to registry
         uses: docker/login-action@v3.6.0
@@ -71,6 +75,7 @@ jobs:
           tags: ${{ steps.tagset.outputs.tags }}
 
       - name: Build and push multi-arch image (${{ matrix.image_tag }})
+        id: build
         uses: docker/build-push-action@v6.18.0
         with:
           context: .
@@ -87,9 +92,46 @@ jobs:
             GIT_COMMIT=${{ github.sha }}
             BUILD_DATE=${{ steps.buildmeta.outputs.date }}
 
+      - name: Sign container image (${{ matrix.image_tag }})
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          COSIGN_YES: "true"
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          image_ref="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
+          signature_file="cosign-${{ github.ref_name }}-${{ matrix.image_tag }}.sig"
+          certificate_file="cosign-${{ github.ref_name }}-${{ matrix.image_tag }}.pem"
+
+          cosign sign \
+            --keyless \
+            --output-signature "$signature_file" \
+            --output-certificate "$certificate_file" \
+            "$image_ref"
+
+      - name: Generate SBOM attestation (${{ matrix.image_tag }})
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          COSIGN_YES: "true"
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          image_ref="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
+          predicate="sbom-${{ github.ref_name }}-${{ matrix.image_tag }}.spdx.json"
+          attestation_file="sbom-attestation-${{ github.ref_name }}-${{ matrix.image_tag }}.jsonl"
+          attestation_signature="sbom-attestation-${{ github.ref_name }}-${{ matrix.image_tag }}.sig"
+          attestation_certificate="sbom-attestation-${{ github.ref_name }}-${{ matrix.image_tag }}.pem"
+
+          cosign attest \
+            --keyless \
+            --predicate "$predicate" \
+            --type spdx \
+            --output-attestation "$attestation_file" \
+            --output-signature "$attestation_signature" \
+            --output-certificate "$attestation_certificate" \
+            "$image_ref"
+
       - name: Generate SBOM (${{ matrix.image_tag }})
         id: sbom
-        uses: anchore/sbom-action@v0.20.9
+        uses: anchore/sbom-action@v0.20.10
         with:
           image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
           output-file: sbom-${{ github.ref_name }}-${{ matrix.image_tag }}.spdx.json
@@ -101,3 +143,14 @@ jobs:
           name: sbom-${{ github.ref_name }}-${{ matrix.image_tag }}
           path: sbom-${{ github.ref_name }}-${{ matrix.image_tag }}.spdx.json
           retention-days: 7
+
+      - name: Upload signing assets to release (${{ matrix.image_tag }})
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            cosign-${{ github.ref_name }}-${{ matrix.image_tag }}.sig
+            cosign-${{ github.ref_name }}-${{ matrix.image_tag }}.pem
+            sbom-attestation-${{ github.ref_name }}-${{ matrix.image_tag }}.jsonl
+            sbom-attestation-${{ github.ref_name }}-${{ matrix.image_tag }}.sig
+            sbom-attestation-${{ github.ref_name }}-${{ matrix.image_tag }}.pem

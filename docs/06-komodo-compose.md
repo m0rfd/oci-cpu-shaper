@@ -37,6 +37,8 @@ Compose deployments for Mode A live in `deploy/compose/`. The rootless manifest
 - `HTTP_ADDR` – overrides the Prometheus listener bind address (defaults to `:9108` and must match the exposed port below).
 - `SHAPER_CPU_SHARES` – defaults to `128`, matching the architecture plan’s low-weight guidance now that rootless Docker honours
   delegated cgroup v2 CPU weights.
+- `SHAPER_CPUS` – optional fractional CPU quota that lines up with the commented `cpus: ${SHAPER_CPUS:-0.30}` entry from the
+  implementation plan. Leave the line commented to keep best-effort scheduling or uncomment it when hosts require a hard cap.
 - `SHAPER_MODE`/`SHAPER_LOG_LEVEL` – passed through as CLI arguments.
 
 Launch the stack with:
@@ -55,6 +57,10 @@ Override `SHAPER_METRICS_BIND` when collectors run outside the host or to expose
 TLS-terminating sidecars. With the configs copied into the image, the stack can
 start immediately using `/etc/oci-cpu-shaper/configs/mode-a.yaml`; mount a
 custom manifest over that path if tenancy-specific tuning is required.
+
+To enforce the optional CPU cap, set `SHAPER_CPUS` in `mode-a.env.example` (for example, `SHAPER_CPUS=0.30`) and remove the `#`
+in front of the `cpus:` line or mirror the stanza in an override file. Run `docker compose --file deploy/compose/mode-a.rootless.yaml config`
+to confirm the rendered service now includes a `cpus:` entry before rolling the stack to production.
 
 ## §6.3 Rootful Mode B stack
 
@@ -75,11 +81,14 @@ node’s address and the container honours whatever `HTTP_ADDR` the binary is
 configured with (typically `:9108`). Override `SHAPER_NETWORK_MODE` when a
 bridge network is preferable, and adjust `SHAPER_RESTART_POLICY` if the Docker daemon should stop
 restarting the container after failures. Rootful builds compiled with
-`-tags rootful` now ask the kernel for `SCHED_IDLE` scheduling on each worker
-thread as soon as the pool starts (§6.2). The Compose manifest already grants
-`SYS_NICE`, which is required to let the kernel honour the request; when the
-capability is missing the controller logs `worker failed to enter sched_idle`
-at `warn` level and continues without downgrading the scheduler policy.
+`-tags rootful` now call `sched_setscheduler(0, SCHED_IDLE, ...)` as the worker
+pool is constructed so the downgrade request lands before controller threads
+spin up (§6.2). The Compose manifest already grants `SYS_NICE`, which is
+required to let the kernel honour the request; when the capability is missing
+the controller logs `worker failed to enter sched_idle` at `warn` level and
+continues without downgrading the scheduler policy. The helper ignores
+`EPERM` rejections so operators that intentionally omit the capability keep a
+noise-free log while experimentation remains safe on hosts that do grant it.
 
 Bring the Mode B stack up with:
 
@@ -130,6 +139,7 @@ container.
 ## §6.7 Responsiveness verification
 Before promoting a new image or Compose bundle, run the CPU weight integration suite described in
 [`docs/08-development.md`](08-development.md#-112-cpu-weight-integration-suite). The harness builds
-the rootful image, launches a low-weight instance beside a competing CPU-bound container, and asserts
-that cgroup v2 honours the expected `cpu.weight` ratios. Capturing the logs (as CI does via
-artifacts) provides an audit trail for the responsiveness guarantees promised in §§5 and 9.
+both the rootful and nonroot images, launches a low-weight instance beside a competing CPU-bound
+container, and asserts that cgroup v2 honours the expected `cpu.weight` ratios for each UID profile.
+Capturing the logs (as CI does via artifacts) provides an audit trail for the responsiveness guarantees
+promised in §§5 and 9.

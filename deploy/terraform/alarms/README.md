@@ -1,10 +1,12 @@
 # Always Free P95 Alarm
 
-This configuration provisions an OCI Monitoring alarm that enforces the Always Free reclaim guardrail. It evaluates the instance-specific P95 CpuUtilization over a seven-day window and fires when the metric drops below 20% using the following MQL expression:
+This configuration provisions an OCI Monitoring alarm that enforces the Always Free reclaim guardrail. Oracle Monitoring alarms cannot apply a rolling seven-day window to CpuUtilization directly, so the guardrail instead evaluates the instance-specific P95 CpuUtilization over the maximum one-day interval and fires when the metric drops below 20% using the following MQL expression:
 
 ```text
-CpuUtilization[1m]{resourceId="<instance_ocid>"}.window(7d).percentile(0.95) < 20
+CpuUtilization[1d]{resourceId="<instance_ocid>"}.percentile(0.95) < 20
 ```
+
+The module pins the Monitoring resolution to `1d` so the service evaluates the full day of samples at P95. Confirm the console shows the one-day interval after Terraform applies.
 
 ## Inputs
 
@@ -20,7 +22,7 @@ CpuUtilization[1m]{resourceId="<instance_ocid>"}.window(7d).percentile(0.95) < 2
 | `is_enabled` | Whether the alarm is enabled immediately after creation. Defaults to `true`. |
 | `alarm_body` | Notification body. Defaults to a short remediation message. |
 | `pending_duration` | ISO-8601 duration that CpuUtilization must remain below threshold before firing. Defaults to `PT1H`. |
-| `resolution` | Monitoring resolution to evaluate. Defaults to `1m`. |
+| `resolution` | Monitoring resolution to evaluate. Defaults to `1d`. |
 | `freeform_tags` | Additional freeform tags. |
 | `defined_tags` | Additional defined tags. |
 

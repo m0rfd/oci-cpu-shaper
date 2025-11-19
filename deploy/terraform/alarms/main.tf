@@ -17,7 +17,7 @@ locals {
   alarm_display_name = coalesce(var.display_name, "oci-cpu-shaper-p95-guard")
   metric_compartment = coalesce(var.metric_compartment_ocid, var.compartment_ocid)
 
-  alarm_query = "CpuUtilization[1m]{resourceId=\"${var.instance_ocid}\"}.window(7d).percentile(0.95) < 20"
+  alarm_query = "CpuUtilization[1d]{resourceId=\"${var.instance_ocid}\"}.percentile(0.95) < 20"
 
   default_freeform_tags = {
     "oci-cpu-shaper" = "always-free-guardrail"

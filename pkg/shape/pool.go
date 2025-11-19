@@ -22,8 +22,12 @@ type Pool struct {
 
 	workerStartHook         func() error
 	workerStartErrorHandler func(error)
+	rootfulInitErr          error
 
-	targetBits atomic.Uint64
+	targetBits          atomic.Uint64
+	pauseThresholdBits  atomic.Uint64
+	resumeThresholdBits atomic.Uint64
+	paused              atomic.Uint32
 }
 
 // DefaultQuantum bounds the busy loop to a responsive interval.
@@ -65,8 +69,14 @@ func NewPool(workers int, quantum time.Duration) (*Pool, error) {
 	}
 	poolInstance.SetWorkerStartErrorHandler(nil)
 	poolInstance.SetTarget(0)
+	poolInstance.SetPauseThresholds(0, 0)
 
-	configureRootfulHooks(poolInstance)
+	err := trySchedIdle()
+	configureWorkerStartHook(poolInstance, err)
+
+	if err != nil {
+		poolInstance.rootfulInitErr = err
+	}
 
 	return poolInstance, nil
 }
@@ -117,78 +127,25 @@ func (p *Pool) SetWorkerStartErrorHandler(handler func(error)) {
 	}
 
 	p.workerStartErrorHandler = handler
-}
-
-func (p *Pool) worker(ctx context.Context) {
-	quantum := p.quantum
-	busyFn := p.busyFunc
-	sleepFn := p.sleepFunc
-	yieldFn := p.yieldFunc
-	startHook := p.workerStartHook
-	startErrorHandler := p.workerStartErrorHandler
-
-	ticker := p.tickerFactory(quantum)
-	defer ticker.Stop()
-
-	if startHook != nil {
-		err := startHook()
-		if err != nil && startErrorHandler != nil {
-			startErrorHandler(err)
-		}
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C():
-			target := p.Target()
-
-			busyDuration := min(time.Duration(target*float64(quantum)), quantum)
-
-			idleDuration := quantum - busyDuration
-
-			if busyDuration > 0 {
-				busyFn(busyDuration)
-			} else {
-				yieldFn()
-			}
-
-			if idleDuration > 0 {
-				sleepFn(idleDuration)
-			} else {
-				yieldFn()
-			}
-
-			yieldFn()
-		}
+	if p.rootfulInitErr != nil {
+		handler(p.rootfulInitErr)
+		p.rootfulInitErr = nil
 	}
 }
 
-func busyWait(duration time.Duration) {
-	if duration <= 0 {
-		return
-	}
-
-	deadline := time.Now().Add(duration)
-	for time.Now().Before(deadline) {
-		runtime.Gosched()
-	}
+// SetPauseThresholds configures the host utilisation band that pauses/resumes workers.
+//
+// Values outside [0,1] are clamped. A zero pause threshold disables the feature.
+func (p *Pool) SetPauseThresholds(pause, resume float64) {
+	setPauseThresholds(p, pause, resume)
 }
 
-type ticker interface {
-	C() <-chan time.Time
-	Stop()
+// ObserveHostLoad toggles the paused state based on the configured thresholds.
+func (p *Pool) ObserveHostLoad(utilisation float64) {
+	observeHostLoad(p, utilisation)
 }
 
-type runtimeTicker struct {
-	ticker *time.Ticker
-}
-
-func (t *runtimeTicker) C() <-chan time.Time {
-	return t.ticker.C
-}
-
-func (t *runtimeTicker) Stop() {
-	t.ticker.Stop()
+// Paused returns true when the worker pool is temporarily suspended.
+func (p *Pool) Paused() bool {
+	return isPaused(p)
 }

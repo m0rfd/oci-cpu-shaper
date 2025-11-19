@@ -1,7 +1,7 @@
 # Roadmap
 
 ## 3.1 Adaptive control loop
-- Implement the fast one-second duty-cycle workers that react to host load and drop activity when contention is detected (§3.1).
+- Implement the fast one-second duty-cycle workers that react to host load, drop activity when contention is detected, and now expose configurable pause/resume thresholds so the pool sleeps entirely when host utilisation crosses the limit (§3.1).
 - Wire the hourly P95 feedback loop with fallback mode and relaxed cadence handling for sustained healthy readings (§3.1).
 - Export controller state via the `/metrics` endpoint so operators can compare local telemetry with OCI Monitoring (§3.2).
 
