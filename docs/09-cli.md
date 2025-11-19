@@ -51,26 +51,26 @@ validated config without duplicating conversions or field assignments.
 
 ```yaml
 controller:
-  targetStart: 0.22
-  targetMin: 0.20
-  targetMax: 0.32
-  stepUp: 0.01
-  stepDown: 0.005
-  fallbackTarget: 0.22
-  goalLow: 0.21
-  goalHigh: 0.27
+  targetStart: 0.25
+  targetMin: 0.22
+  targetMax: 0.40
+  stepUp: 0.02
+  stepDown: 0.01
+  fallbackTarget: 0.25
+  goalLow: 0.23
+  goalHigh: 0.30
   interval: 1h
-  relaxedInterval: 4h
-  relaxedThreshold: 0.26
-  suppressThreshold: 0.80
-  suppressResume: 0.68
+  relaxedInterval: 6h
+  relaxedThreshold: 0.28
+  suppressThreshold: 0.85
+  suppressResume: 0.70
 estimator:
-  interval: 2s
+  interval: 1s
 pool:
-  workers: 2
+  # workers inherit runtime.NumCPU() (>=1)
   quantum: 1ms
-  pauseThreshold: 0.80
-  resumeThreshold: 0.68
+  pauseThreshold: 0.85
+  resumeThreshold: 0.70
 http:
   bind: ":9108"
 oci:
@@ -81,17 +81,18 @@ oci:
 ```
 
 - The repository publishes these defaults as ready-to-use manifests at
-  `configs/mode-a.yaml` and `configs/mode-b.yaml`. Both files match the
-  controller, estimator, pool, HTTP, and `oci.offline` defaults above; they
-  intentionally omit tenancy-specific OCIDs so the samples remain usable in
-  source control. Operators should extend the manifest with their own
+  `configs/mode-a.yaml` and `configs/mode-b.yaml`. Both files now copy the
+  controller, estimator, pool thresholds, HTTP, and `oci.offline` defaults
+  above; they intentionally omit tenancy-specific OCIDs so the samples remain
+  usable in source control. Operators should extend the manifest with their own
   `compartmentId`, `region`, and optional `instanceId` values before entering
-  enforce mode.
-- `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed four-hour interval when OCI P95 remains healthy. The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) decide when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools.
+  enforce mode, and the manifests leave `pool.workers` unset so the binary can
+  derive `runtime.NumCPU()` at runtime.
+- `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed six-hour interval when OCI P95 remains healthy. The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) now reflect the 0.85/0.70 hysteresis that decides when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools.
 - The loader now enforces the documented ratios and cadences: `targetMin` must remain below `targetMax`, every slow-loop target and goal must fall within that band, and the `interval`, `relaxedInterval`, `stepUp`, `stepDown`, `pool.quantum`, and `pool.workers` values must be positive. Invalid manifests abort startup with an exit status of `2` so operators can fix the config before the controller touches system state (§§3.1, 5.2).
 - Configuration processing now flows through four dedicated stages, all implemented in `pkg/runtimeconfig`: an immutable defaults builder, a YAML merge helper, environment overrides, and validators. Each stage is unit-tested individually so overrides and safety rails stay predictable, and env vars always win over file-sourced values without mutating the stored defaults (§5.2).
 - Validation now enforces that every slow-loop target or goal remains below both suppression thresholds, so manifests that would immediately re-trigger the fast loop are rejected with an exit status of `2` and a descriptive error message (§§3.1, 5.2).
-- `estimator.interval` controls the fast `/proc/stat` sampler cadence (§5.2) while the worker `pool` exposes quantum sizing that stays within the 1–5 ms duty-cycle budget. `pool.pauseThreshold`/`pool.resumeThreshold` mirror the estimator hysteresis so the worker pool pauses entirely when host utilisation crosses the configured limit and only resumes once the load cools.
+- `estimator.interval` controls the fast `/proc/stat` sampler cadence (§5.2) while the worker `pool` exposes quantum sizing that stays within the 1–5 ms duty-cycle budget. `pool.pauseThreshold`/`pool.resumeThreshold` now mirror the controller suppression hysteresis (0.85/0.70) so the worker pool pauses entirely when host utilisation crosses the configured limit and only resumes once the load cools. Leaving `pool.workers` unset in the manifest preserves the runtime `runtime.NumCPU()` default.
 - `http.bind` retains the Prometheus listener address and now backs the `/metrics` exporter described in §9.5, while `oci.compartmentId` supplies the tenancy scope required by the Monitoring client and `oci.region` pins the Monitoring endpoint region when IMDS access is unavailable (for example, CI smoke tests).
 - `oci.instanceId` is optional and lets operators bypass IMDS lookups when metadata access is blocked (for example, CI smoke tests or staging environments without instance principals). When `oci.offline` is set the CLI injects a static metrics client and fallback instance ID so dry-run/enforce can exercise the adaptive controller without IMDS or Monitoring access (§§5.2, 11).
 
