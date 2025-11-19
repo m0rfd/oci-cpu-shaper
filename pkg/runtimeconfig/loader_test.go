@@ -138,11 +138,10 @@ func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
 	assertBoolEqual(t, "offline", cfg.OCI.Offline, true)
 }
 
-
 func TestLoadConfigAllowsClearingHTTPBindViaEnv(t *testing.T) {
-t.Setenv(envHTTPBind, "   ")
+	t.Setenv(envHTTPBind, "   ")
 
-cfg, err := Load(filepath.Join("testdata", "config.yaml"))
+	cfg, err := Load(filepath.Join("testdata", "config.yaml"))
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
