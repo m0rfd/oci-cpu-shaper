@@ -91,6 +91,11 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 
 ### Changed
 _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._
+- The CI golangci-lint job now fails when `.golangci.yml`'s auto-fixable
+  formatters (gci, gofmt, gofumpt, goimports, golines, swaggo) mutate files
+  during `make lint`; the workflow prints the diff and reminds contributors to
+  commit the fixes instead of allowing silent changes to slip through (§§8, 11,
+  14).
 - Controller configuration now accepts `controller.suppressThreshold=0` (or
   `SHAPER_SUPPRESS_THRESHOLD=0`) to disable host-load suppression entirely. The
   resume threshold is ignored when disabled, normalization preserves the zero
