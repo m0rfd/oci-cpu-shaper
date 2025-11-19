@@ -4,6 +4,10 @@
 
 ### Added
 _Note coverage-impacting additions: mention new test suites or tooling that shift the CI ≥95% statement coverage budget (§11)._
+- Execution-flow reference (`docs/05-execution-flow.txt`) summarising the CLI,
+  adaptive controller loops, and supporting packages with a text diagram so
+  operators can trace the §3 runtime wiring without scanning the codebase (§§3,
+  5, 12).
 - Grafana dashboard export (`deploy/grafana/oci-cpu-shaper-dashboard.json`) covering OCI
   P95, controller target/state, and host CPU overlays, plus §5.4 import instructions so
   operators can wire the Prometheus feed into Grafana without rebuilding the charts (§§3,
