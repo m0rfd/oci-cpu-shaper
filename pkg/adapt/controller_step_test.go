@@ -26,6 +26,18 @@ type stepExpectation struct {
 func TestControllerStateTransitions(t *testing.T) {
 	t.Parallel()
 
+	defaults := DefaultConfig()
+	fastInterval := defaults.Interval
+	relaxedInterval := defaults.RelaxedInterval
+	clampTarget := func(value float64) float64 {
+		return clamp(value, defaults.TargetMin, defaults.TargetMax)
+	}
+
+	targetAfterStepUp := clampTarget(defaults.TargetStart + defaults.StepUp)
+	fallbackTarget := clampTarget(defaults.FallbackTarget)
+	fallbackRecoveryTarget := clampTarget(fallbackTarget - defaults.StepDown)
+	clampedDecrease := clampTarget(targetAfterStepUp - defaults.StepDown)
+
 	scenarios := []controllerScenario{
 		{
 			name: "success then fallback recovery",
@@ -35,9 +47,9 @@ func TestControllerStateTransitions(t *testing.T) {
 				{value: 0.29, err: nil},
 			},
 			expectations: []stepExpectation{
-				{state: StateNormal, target: 0.27, nextInterval: time.Hour},
-				{state: StateFallback, target: 0.25, nextInterval: time.Hour},
-				{state: StateNormal, target: 0.25, nextInterval: 6 * time.Hour},
+				{state: StateNormal, target: targetAfterStepUp, nextInterval: fastInterval},
+				{state: StateFallback, target: fallbackTarget, nextInterval: fastInterval},
+				{state: StateNormal, target: fallbackRecoveryTarget, nextInterval: relaxedInterval},
 			},
 		},
 		{
@@ -47,8 +59,8 @@ func TestControllerStateTransitions(t *testing.T) {
 				{value: 0.50, err: nil},
 			},
 			expectations: []stepExpectation{
-				{state: StateNormal, target: 0.27, nextInterval: time.Hour},
-				{state: StateNormal, target: 0.26, nextInterval: 6 * time.Hour},
+				{state: StateNormal, target: targetAfterStepUp, nextInterval: fastInterval},
+				{state: StateNormal, target: clampedDecrease, nextInterval: relaxedInterval},
 			},
 		},
 	}
@@ -64,27 +76,8 @@ func TestControllerStateTransitions(t *testing.T) {
 func TestControllerCpuUtilisationAcrossOCPUs(t *testing.T) {
 	t.Parallel()
 
-	highUtilisationScenario := controllerScenario{
-		name: "baseline ocpu burst",
-		results: []metricResult{
-			{value: 0.15, err: nil},
-			{value: 0.32, err: nil},
-			{value: 0.34, err: nil},
-			{value: 0.36, err: nil},
-			{value: 0.38, err: nil},
-			{value: 0.40, err: nil},
-			{value: 0.45, err: nil},
-		},
-		expectations: []stepExpectation{
-			{state: StateNormal, target: 0.27, nextInterval: time.Hour},
-			{state: StateNormal, target: 0.26, nextInterval: 6 * time.Hour},
-			{state: StateNormal, target: 0.25, nextInterval: 6 * time.Hour},
-			{state: StateNormal, target: 0.24, nextInterval: 6 * time.Hour},
-			{state: StateNormal, target: 0.23, nextInterval: 6 * time.Hour},
-			{state: StateNormal, target: 0.22, nextInterval: 6 * time.Hour},
-			{state: StateNormal, target: 0.22, nextInterval: 6 * time.Hour},
-		},
-	}
+	defaults := DefaultConfig()
+	highUtilisationScenario := buildHighUtilisationScenario(defaults)
 
 	cases := []struct {
 		name  string
@@ -114,14 +107,57 @@ func TestControllerCpuUtilisationAcrossOCPUs(t *testing.T) {
 	}
 }
 
+func buildHighUtilisationScenario(defaults Config) controllerScenario {
+	clampTarget := func(value float64) float64 {
+		return clamp(value, defaults.TargetMin, defaults.TargetMax)
+	}
+
+	scenario := controllerScenario{
+		name: "baseline ocpu burst",
+		results: []metricResult{
+			{value: 0.15, err: nil},
+			{value: 0.32, err: nil},
+			{value: 0.34, err: nil},
+			{value: 0.36, err: nil},
+			{value: 0.38, err: nil},
+			{value: 0.40, err: nil},
+			{value: 0.45, err: nil},
+		},
+		expectations: nil,
+	}
+
+	decayingTargets := make([]float64, len(scenario.results))
+
+	decayingTargets[0] = clampTarget(defaults.TargetStart + defaults.StepUp)
+	for index := 1; index < len(decayingTargets); index++ {
+		decayingTargets[index] = clampTarget(decayingTargets[index-1] - defaults.StepDown)
+	}
+
+	expectations := make([]stepExpectation, len(decayingTargets))
+	for index, target := range decayingTargets {
+		interval := defaults.Interval
+		if scenario.results[index].value >= defaults.RelaxedThreshold {
+			interval = defaults.RelaxedInterval
+		}
+
+		expectations[index] = stepExpectation{
+			state:        StateNormal,
+			target:       target,
+			nextInterval: interval,
+		}
+	}
+
+	scenario.expectations = expectations
+
+	return scenario
+}
+
 func runControllerScenario(t *testing.T, scenario controllerScenario) {
 	t.Helper()
 
 	metrics := newFakeMetrics(scenario.results)
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
-	cfg.Interval = time.Hour
-	cfg.RelaxedInterval = 6 * time.Hour
 
 	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
 	if err != nil {
