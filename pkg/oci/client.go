@@ -6,10 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/oracle/oci-go-sdk/v65/common/auth"
 	"github.com/oracle/oci-go-sdk/v65/monitoring"
 )
 
@@ -23,13 +21,6 @@ var (
 	errMissingMetricsClient = errors.New("oci: metrics client is required")
 	errNilClient            = errors.New("oci: metrics client receiver is nil")
 	errMissingInstanceOCID  = errors.New("oci: instance OCID is required")
-
-	defaultInstancePrincipalProvider = auth.InstancePrincipalConfigurationProvider             //nolint:gochecknoglobals
-	defaultNewMonitoringClientFn     = monitoring.NewMonitoringClientWithConfigurationProvider //nolint:gochecknoglobals
-	instancePrincipalProviderFn      = defaultInstancePrincipalProvider                        //nolint:gochecknoglobals
-	newMonitoringClientFn            = defaultNewMonitoringClientFn                            //nolint:gochecknoglobals
-	instancePrincipalProviderMu      sync.RWMutex                                              //nolint:gochecknoglobals
-	newMonitoringClientMu            sync.RWMutex                                              //nolint:gochecknoglobals
 )
 
 type metricsClient interface {
@@ -49,29 +40,22 @@ type Client struct {
 
 // NewInstancePrincipalClient constructs a Client backed by the OCI Go SDK using instance principal
 // authentication. The compartment OCID identifies the tenancy scope for Monitoring queries.
-func NewInstancePrincipalClient(compartmentID, region string) (*Client, error) {
+func NewInstancePrincipalClient(
+	compartmentID, region string,
+	opts ...ClientOption,
+) (*Client, error) {
 	if compartmentID == "" {
 		return nil, errMissingCompartmentID
 	}
 
-	instancePrincipalProviderMu.RLock()
+	factory := resolveFactory(opts)
 
-	providerFn := instancePrincipalProviderFn
-
-	instancePrincipalProviderMu.RUnlock()
-
-	provider, err := providerFn()
+	provider, err := factory.InstancePrincipalProvider()
 	if err != nil {
 		return nil, fmt.Errorf("build instance principal provider: %w", err)
 	}
 
-	newMonitoringClientMu.RLock()
-
-	monitoringClientFn := newMonitoringClientFn
-
-	newMonitoringClientMu.RUnlock()
-
-	monitoringClient, err := monitoringClientFn(provider)
+	monitoringClient, err := factory.MonitoringClient(provider)
 	if err != nil {
 		return nil, fmt.Errorf("create monitoring client: %w", err)
 	}
@@ -81,7 +65,7 @@ func NewInstancePrincipalClient(compartmentID, region string) (*Client, error) {
 		monitoringClient.SetRegion(trimmedRegion)
 	}
 
-	return newClient(&sdkMonitoringClient{client: &monitoringClient}, compartmentID, time.Now)
+	return newClient(&sdkMonitoringClient{client: &monitoringClient}, compartmentID, factory.Clock)
 }
 
 func newClient(
