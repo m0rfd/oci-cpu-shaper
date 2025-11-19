@@ -30,7 +30,8 @@ func TestLoadConfigUsesDefaultsWhenFileMissing(t *testing.T) {
 
 	assertFloatEqual(t, "targetStart", cfg.Controller.TargetStart, defaults.TargetStart)
 	assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9108")
-	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, time.Second)
+	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, 2*time.Second)
+	assertIntEqual(t, "poolWorkers", cfg.Pool.Workers, 2)
 	assertBoolEqual(t, "offline", cfg.OCI.Offline, false)
 	assertStringEqual(t, "region", cfg.OCI.Region, "")
 	assertFloatEqual(
@@ -98,7 +99,7 @@ func TestLoadConfigAppliesFileOverrides(t *testing.T) {
 }
 
 func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
-	t.Setenv(envTargetStart, "0.33")
+	t.Setenv(envTargetStart, "0.30")
 	t.Setenv(envTargetMin, "0.20")
 	t.Setenv(envStepUp, "0.05")
 	t.Setenv(envSlowInterval, "2h")
@@ -120,7 +121,7 @@ func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
 		t.Fatalf("Load returned error: %v", err)
 	}
 
-	assertFloatEqual(t, "targetStart", cfg.Controller.TargetStart, 0.33)
+	assertFloatEqual(t, "targetStart", cfg.Controller.TargetStart, 0.30)
 	assertFloatEqual(t, "targetMin", cfg.Controller.TargetMin, 0.20)
 	assertFloatEqual(t, "stepUp", cfg.Controller.StepUp, 0.05)
 	assertDurationEqual(t, "interval", cfg.Controller.Interval, 2*time.Hour)
@@ -139,8 +140,8 @@ func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
 }
 
 func TestLoadConfigRejectsTargetsExceedingSuppressThreshold(t *testing.T) {
-	t.Setenv(envSuppressThreshold, "0.35")
-	t.Setenv(envSuppressResume, "0.34")
+	t.Setenv(envSuppressThreshold, "0.25")
+	t.Setenv(envSuppressResume, "0.24")
 
 	_, err := Load("")
 	if err == nil {

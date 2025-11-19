@@ -6,7 +6,7 @@ import "context"
 //
 // Tests and CLI wiring still depend on the interface return type.
 //
-//nolint:ireturn // CLI and tests rely on the MetricsClient interface for substitution.
+//nolint:ireturn // tests rely on the interface return type for mocks.
 func NewStaticMetricsClient(
 	value float64,
 ) MetricsClient {

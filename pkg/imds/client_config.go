@@ -62,7 +62,7 @@ type HTTPClient struct {
 // NewClient constructs an HTTP-backed IMDS client. A nil httpClient uses a
 // private instance with a conservative timeout suitable for link-local access.
 //
-//nolint:ireturn // controller wiring depends on the Client interface for swapping transports in tests.
+
 func NewClient(httpClient *http.Client, opts ...Option) Client {
 	cfg := clientConfig{
 		baseURL:    DefaultEndpoint,

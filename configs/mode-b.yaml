@@ -1,24 +1,25 @@
 # Example Mode B configuration tuned for production guardrails.
 controller:
-  targetStart: 0.25
-  targetMin: 0.22
-  targetMax: 0.40
-  stepUp: 0.02
-  stepDown: 0.01
-  fallbackTarget: 0.25
-  goalLow: 0.23
-  goalHigh: 0.30
+  targetStart: 0.22
+  targetMin: 0.20
+  targetMax: 0.32
+  stepUp: 0.01
+  stepDown: 0.005
+  fallbackTarget: 0.22
+  goalLow: 0.21
+  goalHigh: 0.27
   interval: 1h
-  relaxedInterval: 6h
-  relaxedThreshold: 0.28
-  suppressThreshold: 0.85
-  suppressResume: 0.70
+  relaxedInterval: 4h
+  relaxedThreshold: 0.26
+  suppressThreshold: 0.80
+  suppressResume: 0.68
 estimator:
-  interval: 1s
+  interval: 2s
 pool:
+  workers: 2
   quantum: 1ms
-  pauseThreshold: 0.85
-  resumeThreshold: 0.70
+  pauseThreshold: 0.80
+  resumeThreshold: 0.68
 http:
   bind: ":9108"
 oci:

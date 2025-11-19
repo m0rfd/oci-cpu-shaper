@@ -91,11 +91,10 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 
 ### Changed
 _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._
-- CLI documentation (§9) and the published Mode A/Mode B manifests now show the exact
-  `runtimeconfig.Default()`/`adapt.DefaultConfig()` values (0.25 target start,
-  0.23–0.30 goal band, 6h relaxed interval, 1s estimator loop, 0.85/0.70
-  suppression + pool thresholds, etc.), ensuring `configs/mode-a.yaml` and
-  `configs/mode-b.yaml` inherit the same defaults shipped in the binaries.
+- CLI documentation (§9), `runtimeconfig.Default()`, and `adapt.DefaultConfig()` now
+  match the Mode A/Mode B manifests exactly (0.22 target start, 0.20–0.32 band, 4h
+  relaxed interval, 2s estimator loop, 0.80/0.68 suppression + pool thresholds,
+  two-worker pool, etc.), keeping the published YAML and binary defaults aligned.
 - `pkg/oci` constructors now accept a `ClientFactory` via the new `WithFactory(...)` option so tests and the CLI swap Monitoring
   mocks without mutating package-level globals. `cmd/shaper` wires the factory into the production constructor and §5 documents
   the seam, keeping the existing ≥95% coverage floor intact by exercising the new paths in the unit suites.
