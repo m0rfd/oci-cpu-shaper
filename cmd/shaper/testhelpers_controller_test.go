@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	stubCompartmentID = "ocid1.compartment.oc1..test"
-	stubRegion        = "us-ashburn-1"
-	overrideRegion    = "us-chicago-1"
+	stubCompartmentID   = "ocid1.compartment.oc1..test"
+	stubRegion          = "us-ashburn-1"
+	stubCanonicalRegion = "us-phoenix-1"
+	overrideRegion      = "us-chicago-1"
 )
 
 var (

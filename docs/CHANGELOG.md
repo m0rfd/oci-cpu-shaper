@@ -90,7 +90,11 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - `/metrics` exporter and Prometheus integration surfaced through the CLI, including emitted series, sample scrape output, and Compose/HTTP_ADDR wiring documented across §§4–9.
 
 ### Changed
-_Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._
+_Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._ 
+- Metadata logging now queries IMDS for canonical-region names even when
+  `OCI_REGION` overrides are provided, only falling back to the override when
+  IMDS is unavailable so startup logs and `/healthz` continue to report the
+  true canonical region (§§2, 9).
 - The CI golangci-lint job now fails when `.golangci.yml`'s auto-fixable
   formatters (gci, gofmt, gofumpt, goimports, golines, swaggo) mutate files
   during `make lint`; the workflow prints the diff and reminds contributors to
