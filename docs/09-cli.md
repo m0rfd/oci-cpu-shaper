@@ -125,6 +125,11 @@ controller subtracts `SHAPER_STEP_DOWN` internally, so the configuration value
 remains a positive delta even though it reduces the target when OCI P95 exceeds
 the goal band.
 
+Setting `HTTP_ADDR` to an empty string (for example, exporting `HTTP_ADDR=`)
+disables the `/metrics` listener even when the YAML manifest enables it. This
+helps CI smoke tests and containerised diagnostics avoid exposing the endpoint
+while still recording metrics internally.
+
 ### Layering overrides
 
 Environment variables sit on top of the YAML file, so operators can mount

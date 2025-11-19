@@ -93,6 +93,27 @@ func TestEnvStringTrimsAndFallback(t *testing.T) {
 	}
 }
 
+func TestEnvStringAllowEmpty(t *testing.T) {
+	keyMissing := "OCI_CPU_SHAPER_TEST_STRING_ALLOW_EMPTY_MISSING"
+	if got := envStringAllowEmpty(keyMissing, "fallback"); got != "fallback" {
+		t.Fatalf("expected missing env to use fallback, got %q", got)
+	}
+
+	keyBlank := "OCI_CPU_SHAPER_TEST_STRING_ALLOW_EMPTY_BLANK"
+	t.Setenv(keyBlank, "  ")
+
+	if got := envStringAllowEmpty(keyBlank, "fallback"); got != "" {
+		t.Fatalf("expected blank string override to produce empty value, got %q", got)
+	}
+
+	keyValue := "OCI_CPU_SHAPER_TEST_STRING_ALLOW_EMPTY_VALUE"
+	t.Setenv(keyValue, " custom ")
+
+	if got := envStringAllowEmpty(keyValue, "fallback"); got != "custom" {
+		t.Fatalf("expected trimmed override, got %q", got)
+	}
+}
+
 func TestEnvBoolEvaluation(t *testing.T) {
 	if got := envBool("OCI_CPU_SHAPER_TEST_BOOL_MISSING", true); got != true {
 		t.Fatalf("expected missing env bool to return fallback, got %t", got)
