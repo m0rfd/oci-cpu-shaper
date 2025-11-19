@@ -8,52 +8,7 @@ import (
 	"testing"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
-	"github.com/oracle/oci-go-sdk/v65/monitoring"
 )
-
-func overrideInstancePrincipalProvider(
-	t *testing.T,
-	provider func() (common.ConfigurationProvider, error),
-) {
-	t.Helper()
-
-	instancePrincipalProviderMu.Lock()
-
-	previous := instancePrincipalProviderFn
-	instancePrincipalProviderFn = provider
-
-	instancePrincipalProviderMu.Unlock()
-
-	t.Cleanup(func() {
-		instancePrincipalProviderMu.Lock()
-
-		instancePrincipalProviderFn = previous
-
-		instancePrincipalProviderMu.Unlock()
-	})
-}
-
-func overrideNewMonitoringClient(
-	t *testing.T,
-	constructor func(common.ConfigurationProvider) (monitoring.MonitoringClient, error),
-) {
-	t.Helper()
-
-	newMonitoringClientMu.Lock()
-
-	previous := newMonitoringClientFn
-	newMonitoringClientFn = constructor
-
-	newMonitoringClientMu.Unlock()
-
-	t.Cleanup(func() {
-		newMonitoringClientMu.Lock()
-
-		newMonitoringClientFn = previous
-
-		newMonitoringClientMu.Unlock()
-	})
-}
 
 func stubConfigurationProvider(t *testing.T) fakeConfigurationProvider {
 	t.Helper()

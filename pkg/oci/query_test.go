@@ -333,11 +333,16 @@ func TestNewClientValidatesParameters(t *testing.T) {
 func TestNewInstancePrincipalClientPropagatesProviderError(t *testing.T) {
 	t.Parallel()
 
-	overrideInstancePrincipalProvider(t, func() (common.ConfigurationProvider, error) {
+	factory := NewClientFactory()
+	factory.InstancePrincipalProvider = func() (common.ConfigurationProvider, error) {
 		return nil, errForcedFailure
-	})
+	}
 
-	_, err := NewInstancePrincipalClient("ocid1.compartment.oc1..exampleuniqueID", "us-ashburn-1")
+	_, err := NewInstancePrincipalClient(
+		"ocid1.compartment.oc1..exampleuniqueID",
+		"us-ashburn-1",
+		WithFactory(factory),
+	)
 	if err == nil || !strings.Contains(err.Error(), "build instance principal provider") {
 		t.Fatalf("expected wrapped provider error, got %v", err)
 	}
@@ -348,20 +353,21 @@ func TestNewInstancePrincipalClientPropagatesClientError(t *testing.T) {
 
 	provider := stubConfigurationProvider(t)
 
-	overrideInstancePrincipalProvider(t, func() (common.ConfigurationProvider, error) {
+	factory := NewClientFactory()
+	factory.InstancePrincipalProvider = func() (common.ConfigurationProvider, error) {
 		return provider, nil
-	})
+	}
+	factory.MonitoringClient = func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
+		var client monitoring.MonitoringClient
 
-	overrideNewMonitoringClient(
-		t,
-		func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
-			var client monitoring.MonitoringClient
+		return client, errForcedFailure
+	}
 
-			return client, errForcedFailure
-		},
+	_, err := NewInstancePrincipalClient(
+		"ocid1.compartment.oc1..exampleuniqueID",
+		"us-ashburn-1",
+		WithFactory(factory),
 	)
-
-	_, err := NewInstancePrincipalClient("ocid1.compartment.oc1..exampleuniqueID", "us-ashburn-1")
 	if err == nil || !strings.Contains(err.Error(), "create monitoring client") {
 		t.Fatalf("expected monitoring client error, got %v", err)
 	}
@@ -372,22 +378,20 @@ func TestNewInstancePrincipalClientSuccess(t *testing.T) {
 
 	provider := stubConfigurationProvider(t)
 
-	overrideInstancePrincipalProvider(t, func() (common.ConfigurationProvider, error) {
+	factory := NewClientFactory()
+	factory.InstancePrincipalProvider = func() (common.ConfigurationProvider, error) {
 		return provider, nil
-	})
+	}
+	factory.MonitoringClient = func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
+		var client monitoring.MonitoringClient
 
-	overrideNewMonitoringClient(
-		t,
-		func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
-			var client monitoring.MonitoringClient
-
-			return client, nil
-		},
-	)
+		return client, nil
+	}
 
 	client, err := NewInstancePrincipalClient(
 		"ocid1.compartment.oc1..exampleuniqueID",
 		"us-ashburn-1",
+		WithFactory(factory),
 	)
 	requireNoError(t, err, "create instance principal client")
 
