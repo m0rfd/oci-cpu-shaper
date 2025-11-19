@@ -187,6 +187,7 @@ func TestModeEnforcesTargets(t *testing.T) {
 		{name: "explicit enforce", mode: "enforce", enforcing: true},
 		{name: "case insensitive", mode: " EnFoRcE ", enforcing: true},
 		{name: "unknown modes enforce", mode: "observe", enforcing: true},
+		{name: "noop disables enforcement", mode: " NoOp ", enforcing: false},
 	}
 
 	for _, tc := range cases {

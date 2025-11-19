@@ -58,7 +58,7 @@ func applyEnvOverrides(cfg *Config) {
 	cfg.Pool.PauseThreshold = envFloat(envPoolPauseThreshold, cfg.Pool.PauseThreshold)
 	cfg.Pool.ResumeThreshold = envFloat(envPoolResumeThreshold, cfg.Pool.ResumeThreshold)
 
-	cfg.HTTP.Bind = envString(envHTTPBind, cfg.HTTP.Bind)
+	cfg.HTTP.Bind = envStringAllowEmpty(envHTTPBind, cfg.HTTP.Bind)
 
 	cfg.OCI.CompartmentID = envString(envCompartmentID, cfg.OCI.CompartmentID)
 	cfg.OCI.Region = envString(envOCIRegion, cfg.OCI.Region)
@@ -125,6 +125,15 @@ func envString(key, fallback string) string {
 	}
 
 	return trimmed
+}
+
+func envStringAllowEmpty(key, fallback string) string {
+	value, ok := lookupEnv(key)
+	if !ok {
+		return fallback
+	}
+
+	return strings.TrimSpace(value)
 }
 
 func envBool(key string, fallback bool) bool {
