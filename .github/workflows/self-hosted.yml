@@ -322,7 +322,6 @@ jobs:
 
           record_stats() {
             local name=$1
-            local cgroup_file="$run_dir/${name}-cgroup"
             local rel_path=""
             local pid
             pid=$("$engine_bin" inspect -f '{{.State.Pid}}' "$name")
