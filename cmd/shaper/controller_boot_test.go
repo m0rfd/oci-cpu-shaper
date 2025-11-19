@@ -418,6 +418,13 @@ func TestResolveCompartmentAndRegionFallsBackToOverrides(t *testing.T) {
 	if client.regionCalls != 1 {
 		t.Fatalf("expected region lookup despite overrides, got %d", client.regionCalls)
 	}
+
+	if client.canonicalRegionCalls != 1 {
+		t.Fatalf(
+			"expected canonical region lookup despite overrides, got %d",
+			client.canonicalRegionCalls,
+		)
+	}
 }
 
 func TestResolveCompartmentAndRegionFetchesFromIMDS(t *testing.T) {
@@ -460,6 +467,86 @@ func TestResolveCompartmentAndRegionFetchesFromIMDS(t *testing.T) {
 	if client.regionCalls != 1 {
 		t.Fatalf("expected single region lookup, got %d", client.regionCalls)
 	}
+
+	if client.canonicalRegionCalls != 1 {
+		t.Fatalf("expected single canonical region lookup, got %d", client.canonicalRegionCalls)
+	}
+}
+
+func TestResolveCompartmentAndRegionPrefersCanonicalRegion(t *testing.T) {
+	t.Parallel()
+
+	cfg := runtimeconfig.Default()
+	cfg.OCI.CompartmentID = ""
+	cfg.OCI.Region = ""
+
+	client := newLoggingStubIMDS(
+		"phx",
+		nil,
+		overrideRegion,
+		nil,
+		"",
+		nil,
+		stubCompartmentID,
+		nil,
+		stubShapeConfig(0, 0),
+		nil,
+	)
+
+	metadata, err := resolveCompartmentAndRegion(t.Context(), cfg, client)
+	if err != nil {
+		t.Fatalf("resolveCompartmentAndRegion returned error: %v", err)
+	}
+
+	if metadata.Region != overrideRegion {
+		t.Fatalf("expected canonical region %s, got %q", overrideRegion, metadata.Region)
+	}
+
+	if client.canonicalRegionCalls != 1 {
+		t.Fatalf("expected canonical lookup, got %d", client.canonicalRegionCalls)
+	}
+
+	if client.regionCalls != 1 {
+		t.Fatalf("expected region lookup for logging, got %d", client.regionCalls)
+	}
+}
+
+func TestResolveCompartmentAndRegionFallsBackToLegacyRegion(t *testing.T) {
+	t.Parallel()
+
+	cfg := runtimeconfig.Default()
+	cfg.OCI.CompartmentID = ""
+	cfg.OCI.Region = ""
+
+	client := newLoggingStubIMDS(
+		stubRegion,
+		nil,
+		"",
+		errRegionDown,
+		"",
+		nil,
+		stubCompartmentID,
+		nil,
+		stubShapeConfig(0, 0),
+		nil,
+	)
+
+	metadata, err := resolveCompartmentAndRegion(t.Context(), cfg, client)
+	if err != nil {
+		t.Fatalf("resolveCompartmentAndRegion returned error: %v", err)
+	}
+
+	if metadata.Region != stubRegion {
+		t.Fatalf("expected fallback region %s, got %q", stubRegion, metadata.Region)
+	}
+
+	if client.canonicalRegionCalls != 1 {
+		t.Fatalf("expected canonical lookup, got %d", client.canonicalRegionCalls)
+	}
+
+	if client.regionCalls != 1 {
+		t.Fatalf("expected legacy region lookup, got %d", client.regionCalls)
+	}
 }
 
 func TestResolveCompartmentAndRegionPrefersIMDSValues(t *testing.T) {
@@ -493,6 +580,10 @@ func TestResolveCompartmentAndRegionPrefersIMDSValues(t *testing.T) {
 
 	if metadata.Region != stubRegion {
 		t.Fatalf("expected region %s, got %q", stubRegion, metadata.Region)
+	}
+
+	if client.canonicalRegionCalls != 1 {
+		t.Fatalf("expected canonical region lookup, got %d", client.canonicalRegionCalls)
 	}
 }
 
