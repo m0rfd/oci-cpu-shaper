@@ -90,7 +90,10 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - `/metrics` exporter and Prometheus integration surfaced through the CLI, including emitted series, sample scrape output, and Compose/HTTP_ADDR wiring documented across §§4–9.
 
 ### Changed
-_Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._
+_Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._ 
+- `pkg/oci` constructors now accept a `ClientFactory` via the new `WithFactory(...)` option so tests and the CLI swap Monitoring
+  mocks without mutating package-level globals. `cmd/shaper` wires the factory into the production constructor and §5 documents
+  the seam, keeping the existing ≥95% coverage floor intact by exercising the new paths in the unit suites.
 - CLI environment variable defaults now document the positive
   `SHAPER_STEP_UP`/`SHAPER_STEP_DOWN` values enforced in code and explain that
   `StepDown` stays positive because the controller subtracts it internally

@@ -15,6 +15,9 @@ func TestNewClientFactoryProvidesDefaults(t *testing.T) {
 	t.Parallel()
 
 	factory := NewClientFactory()
+	if factory == nil {
+		t.Fatalf("expected client factory")
+	}
 
 	requireFunctionPointerEqual(
 		t,
@@ -25,20 +28,18 @@ func TestNewClientFactoryProvidesDefaults(t *testing.T) {
 
 	requireFunctionPointerEqual(
 		t,
-		factory.NewMonitoringClient,
+		factory.MonitoringClient,
 		monitoring.NewMonitoringClientWithConfigurationProvider,
 		"monitoring client constructor",
 	)
 
-	requireFunctionPointerEqual(t, factory.Now, time.Now, "clock function")
+	requireFunctionPointerEqual(t, factory.Clock, time.Now, "clock function")
 }
 
-func TestClientFactoryWithDefaultsFillsZeroValue(t *testing.T) {
+func TestResolveFactoryReturnsDefaultsWhenOptionsEmpty(t *testing.T) {
 	t.Parallel()
 
-	var zeroFactory ClientFactory
-
-	factory := zeroFactory.withDefaults()
+	factory := resolveFactory(nil)
 
 	requireFunctionPointerEqual(
 		t,
@@ -49,59 +50,59 @@ func TestClientFactoryWithDefaultsFillsZeroValue(t *testing.T) {
 
 	requireFunctionPointerEqual(
 		t,
-		factory.NewMonitoringClient,
+		factory.MonitoringClient,
 		monitoring.NewMonitoringClientWithConfigurationProvider,
 		"monitoring client constructor",
 	)
 
-	requireFunctionPointerEqual(t, factory.Now, time.Now, "clock function")
+	requireFunctionPointerEqual(t, factory.Clock, time.Now, "clock function")
 }
 
-func TestWithFactoryOverridesOptions(t *testing.T) {
+func TestResolveFactoryAppliesOverrides(t *testing.T) {
 	t.Parallel()
 
-	customFactory := ClientFactory{
+	customFactory := &ClientFactory{
 		InstancePrincipalProvider: func() (common.ConfigurationProvider, error) {
 			return stubConfigurationProvider(t), nil
 		},
-		NewMonitoringClient: func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
+		MonitoringClient: func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
 			var client monitoring.MonitoringClient
 
 			return client, nil
 		},
-		Now: func() time.Time {
+		Clock: func() time.Time {
 			return time.Unix(42, 0).UTC()
 		},
 	}
 
-	options := applyClientOptions([]ClientOption{WithFactory(customFactory)})
+	resolved := resolveFactory([]ClientOption{WithFactory(customFactory)})
 
 	requireFunctionPointerEqual(
 		t,
-		options.factory.InstancePrincipalProvider,
+		resolved.InstancePrincipalProvider,
 		customFactory.InstancePrincipalProvider,
 		"instance principal provider",
 	)
 
 	requireFunctionPointerEqual(
 		t,
-		options.factory.NewMonitoringClient,
-		customFactory.NewMonitoringClient,
+		resolved.MonitoringClient,
+		customFactory.MonitoringClient,
 		"monitoring client constructor",
 	)
 
-	requireFunctionPointerEqual(t, options.factory.Now, customFactory.Now, "clock function")
+	requireFunctionPointerEqual(t, resolved.Clock, customFactory.Clock, "clock function")
 }
 
 func TestNewInstancePrincipalClientPropagatesProviderError(t *testing.T) {
 	t.Parallel()
 
-	factory := ClientFactory{
+	factory := &ClientFactory{
 		InstancePrincipalProvider: func() (common.ConfigurationProvider, error) {
 			return nil, errForcedFailure
 		},
-		NewMonitoringClient: nil,
-		Now:                 nil,
+		MonitoringClient: nil,
+		Clock:            nil,
 	}
 
 	_, err := NewInstancePrincipalClient(
@@ -119,16 +120,16 @@ func TestNewInstancePrincipalClientPropagatesClientError(t *testing.T) {
 
 	provider := stubConfigurationProvider(t)
 
-	factory := ClientFactory{
+	factory := &ClientFactory{
 		InstancePrincipalProvider: func() (common.ConfigurationProvider, error) {
 			return provider, nil
 		},
-		NewMonitoringClient: func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
+		MonitoringClient: func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
 			var client monitoring.MonitoringClient
 
 			return client, errForcedFailure
 		},
-		Now: nil,
+		Clock: nil,
 	}
 
 	_, err := NewInstancePrincipalClient(
@@ -147,16 +148,16 @@ func TestNewInstancePrincipalClientSuccess(t *testing.T) {
 	provider := stubConfigurationProvider(t)
 	fakeNow := time.Date(2024, time.June, 30, 17, 0, 0, 0, time.UTC)
 
-	factory := ClientFactory{
+	factory := &ClientFactory{
 		InstancePrincipalProvider: func() (common.ConfigurationProvider, error) {
 			return provider, nil
 		},
-		NewMonitoringClient: func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
+		MonitoringClient: func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
 			var client monitoring.MonitoringClient
 
 			return client, nil
 		},
-		Now: func() time.Time {
+		Clock: func() time.Time {
 			return fakeNow
 		},
 	}
