@@ -90,7 +90,13 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - `/metrics` exporter and Prometheus integration surfaced through the CLI, including emitted series, sample scrape output, and Compose/HTTP_ADDR wiring documented across §§4–9.
 
 ### Changed
-_Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._ 
+_Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._
+- Controller configuration now accepts `controller.suppressThreshold=0` (or
+  `SHAPER_SUPPRESS_THRESHOLD=0`) to disable host-load suppression entirely. The
+  resume threshold is ignored when disabled, normalization preserves the zero
+  values, and validation skips the previous `target*` comparisons so operators
+  can opt out of estimator-driven shutdowns without tripping the CLI safety
+  rails (§§3.1, 5.2, 9, 11).
 - `pkg/oci` constructors now accept a `ClientFactory` via the new `WithFactory(...)` option so tests and the CLI swap Monitoring
   mocks without mutating package-level globals. `cmd/shaper` wires the factory into the production constructor and §5 documents
   the seam, keeping the existing ≥95% coverage floor intact by exercising the new paths in the unit suites.
