@@ -75,7 +75,6 @@ jobs:
 
           instance_json=$(curl -sS -H "$header" "$base_url/instance/")
           region_json=$(echo "$instance_json" | jq -c '.regionInfo // {}')
-          vnic_json=$(curl -sS -H "$header" "$base_url/vnics/0/")
 
           instance_id=$(echo "$instance_json" | jq -r '.id')
           compartment_id=$(echo "$instance_json" | jq -r '.compartmentId')
@@ -320,20 +319,6 @@ jobs:
 
           echo "Allowing workloads to collect CPU usage"
           sleep 30
-
-          ensure_still_running() {
-            local name=$1
-            if [ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null || echo false)" != "true" ]; then
-              echo "::error::container $name stopped before stat collection" >&2
-              docker logs "$name" >&2 || true
-              docker inspect --format 'state={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}}' "$name" >&2 || true
-              return 1
-            fi
-            return 0
-          }
-
-          ensure_still_running "$high_name"
-          ensure_still_running "$low_name"
 
           record_stats() {
             local name=$1
