@@ -30,6 +30,7 @@ type Config struct {
 const (
 	defaultModeLabel       = "normal"
 	dryRunModeLabel        = "dry-run"
+	noopModeLabel          = "noop"
 	defaultTargetStart     = 0.25
 	defaultTargetMin       = 0.22
 	defaultTargetMax       = 0.40
@@ -77,8 +78,16 @@ func DefaultConfig() Config {
 // the worker pool duty cycle.
 func ModeEnforcesTargets(mode string) bool {
 	trimmed := strings.ToLower(strings.TrimSpace(mode))
+	if trimmed == "" {
+		trimmed = defaultModeLabel
+	}
 
-	return trimmed != dryRunModeLabel
+	switch trimmed {
+	case dryRunModeLabel, noopModeLabel:
+		return false
+	default:
+		return true
+	}
 }
 
 func normalizeConfig(cfg Config) (Config, string, error) {

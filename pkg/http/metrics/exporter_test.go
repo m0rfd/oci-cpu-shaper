@@ -98,6 +98,27 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 	}
 }
 
+func TestExporterSetModeNoopDisablesEnforcement(t *testing.T) {
+	t.Parallel()
+
+	exporter := metrics.NewExporter()
+	exporter.SetMode(" NoOp ")
+
+	body, err := exporter.Render()
+	if err != nil {
+		t.Fatalf("Render() returned error: %v", err)
+	}
+
+	output := string(body)
+	if !strings.Contains(output, "shaper_mode{mode=\"NoOp\"} 1") {
+		t.Fatalf("expected noop mode metric in %s", output)
+	}
+
+	if !strings.Contains(output, "shaper_enforcing 0") {
+		t.Fatalf("expected noop mode to report shaper_enforcing 0, got %s", output)
+	}
+}
+
 func TestExporterObserveOCIP95TracksTimestamp(t *testing.T) {
 	t.Parallel()
 
