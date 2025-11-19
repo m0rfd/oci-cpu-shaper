@@ -97,6 +97,10 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% 
   values, and validation skips the previous `target*` comparisons so operators
   can opt out of estimator-driven shutdowns without tripping the CLI safety
   rails (§§3.1, 5.2, 9, 11).
+- `HTTP_ADDR` environment overrides now accept an empty string to disable the
+  `/metrics` listener even when the YAML manifest specifies a bind address.
+  Setting `HTTP_ADDR=` helps smoke tests and container diagnostics avoid
+  exposing the endpoint while still recording metrics internally (§§6, 9).
 - `pkg/oci` constructors now accept a `ClientFactory` via the new `WithFactory(...)` option so tests and the CLI swap Monitoring
   mocks without mutating package-level globals. `cmd/shaper` wires the factory into the production constructor and §5 documents
   the seam, keeping the existing ≥95% coverage floor intact by exercising the new paths in the unit suites.

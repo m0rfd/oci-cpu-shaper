@@ -138,6 +138,20 @@ func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
 	assertBoolEqual(t, "offline", cfg.OCI.Offline, true)
 }
 
+
+func TestLoadConfigAllowsClearingHTTPBindViaEnv(t *testing.T) {
+t.Setenv(envHTTPBind, "   ")
+
+cfg, err := Load(filepath.Join("testdata", "config.yaml"))
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if cfg.HTTP.Bind != "" {
+		t.Fatalf("expected HTTP bind to be cleared by env override, got %q", cfg.HTTP.Bind)
+	}
+}
+
 func TestLoadConfigRejectsTargetsExceedingSuppressThreshold(t *testing.T) {
 	t.Setenv(envSuppressThreshold, "0.35")
 	t.Setenv(envSuppressResume, "0.34")
