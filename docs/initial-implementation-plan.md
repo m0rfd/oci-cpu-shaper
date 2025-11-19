@@ -93,30 +93,23 @@ We support two documented modes. Rootless is first-class but not exclusive.
 
 ## 5) Detailed module plan
 
-### 5.1 Packages
+### 5.1 Packages and CLI wiring
 
-* `pkg/imds`: v2 client.
+* `cmd/shaper`: CLI wiring stays thin. `app.go`/`app_run.go` handle signal plumbing, `main.go` only builds `runDeps`, and `controller_helpers.go` bridges the CLI to `pkg/adapt`. Flag parsing belongs in `options.go` with matching `*_test.go` coverage, while configuration loading/validation is layered across `config_defaults.go`, `config_loader.go`, `config_merge.go`, `config_env.go`, and `config_validate.go`.
+* `pkg/imds`: IMDSv2 client.
 
-  * `GetInstance()` → OCID, Compartment OCID, Region.
-  * `GetShapeConfig()` → ocpus, memory.
-  * Add retry on 404/429/5xx as per doc. ([Oracle Docs][3])
+  * `client_config.go` wires constructor options and endpoint overrides; `operations.go` exposes typed getters such as `GetInstance()`/`GetShapeConfig()`; `transport.go` owns the HTTP/retry helpers that enforce the documented 404/429/5xx backoff guidance. ([Oracle Docs][3])
 * `pkg/oci`: Monitoring client using Instance Principals.
 
-  * `QueryP95CPU(ocid, last7d)` → float32.
-  * Expression uses `CpuUtilization[1m]{resourceId="<ocid>"}.percentile(0.95)`.
-  * Handle 7-day time range limits. ([Oracle Docs][7])
+  * `client.go` constructs the client (and holds Instance Principal wiring), `query.go` keeps the `CpuUtilization[1m]{resourceId="<ocid>"}.percentile(0.95)` helpers plus pagination folds, `sdk_client.go` isolates the OCI SDK adapter, and `static.go` carries the offline fixtures for tests. Handle 7-day time range limits. ([Oracle Docs][7])
 * `pkg/est`: `/proc/stat` reader → current host CPU% (1s moving window).
 * `pkg/shape`: worker pool and duty cycle logic.
 
-  * Workers spin in short bursts; sleep uses `clock_nanosleep`.
-  * **No busy loops** longer than a few ms.
-  * If built with `-tags rootful`, call `trySchedIdle()` once; ignore errors. ([man7.org][8])
+  * Exported pool APIs stay in `pool.go`, the worker loop plus `trySchedIdle()` hook remain in `worker.go`/`pool_rootful.go`, pause thresholds live in `pause.go`, and busy-wait helpers stay in `busywait.go`. Workers spin in short bursts (sleep via `clock_nanosleep`) and must avoid busy loops longer than a few ms even when `-tags rootful` enables the optional SCHED_IDLE downgrade. ([man7.org][8])
 * `pkg/adapt`: slow controller.
 
-  * State machine: normal, fallback, suppressed.
-  * Adaptive interval: 1 h default; 6 h when P95 is comfortably above 28%.
-* `pkg/http`: `/metrics` endpoint.
-* `cmd/shaper`: wiring, config, logging.
+  * State machine and run loop remain in `controller.go`, state structs/interfaces live in `state.go`, configuration helpers in `config.go`, suppression math in `suppression.go`, and the dry-run implementation in `noop_controller.go`. Adaptive interval: 1 h default; 6 h when P95 is comfortably above 28%.
+* `pkg/http`: `/metrics` endpoint (`pkg/http/metrics/exporter.go`).
 
 ### 5.2 Config (env or flags). Defaults chosen to avoid manual tuning
 
@@ -130,6 +123,8 @@ We support two documented modes. Rootless is first-class but not exclusive.
 * `SHAPER_SLOW_INTERVAL_RELAXED=6h`
 * `HTTP_ADDR=:9108`
 * No region/OCID input needed; IMDSv2 supplies them.
+
+`cmd/shaper/options.go` keeps the authoritative flag/env list so new knobs land there with matching unit tests, while the YAML/env loader path flows through `config_defaults.go` → `config_loader.go` → `config_merge.go`/`config_env.go` before `config_validate.go` enforces constraints. The `docs/09-cli.md` table must be updated whenever this stack changes.
 
 ---
 

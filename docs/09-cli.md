@@ -43,6 +43,12 @@ goroutines.
 
 Bootstrap deployments rely on a compact YAML manifest that mirrors §§3.1 and 5.2 thresholds:
 
+`pkg/runtimeconfig` now owns these structs and helpers so every binary can reuse the
+same layering flow. `cmd/shaper` calls `runtimeconfig.Load` to stack the immutable defaults,
+optional YAML file, and environment overlays before handing the values to
+`runtimeconfig.Config.ToAdaptConfig()`, letting other entrypoints plug into the same
+validated config without duplicating conversions or field assignments.
+
 ```yaml
 controller:
   targetStart: 0.22
@@ -81,8 +87,9 @@ oci:
   source control. Operators should extend the manifest with their own
   `compartmentId`, `region`, and optional `instanceId` values before entering
   enforce mode.
-- `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed four-hour interval when OCI P95 remains healthy. The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) decide when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools.
+- `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed four-hour interval when OCI P95 remains healthy. The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) decide when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools. Set `controller.suppressThreshold` to `0` (or any non-positive value) to disable host-load suppression entirely; the resume threshold is ignored in that case.
 - The loader now enforces the documented ratios and cadences: `targetMin` must remain below `targetMax`, every slow-loop target and goal must fall within that band, and the `interval`, `relaxedInterval`, `stepUp`, `stepDown`, `pool.quantum`, and `pool.workers` values must be positive. Invalid manifests abort startup with an exit status of `2` so operators can fix the config before the controller touches system state (§§3.1, 5.2).
+- Configuration processing now flows through four dedicated stages, all implemented in `pkg/runtimeconfig`: an immutable defaults builder, a YAML merge helper, environment overrides, and validators. Each stage is unit-tested individually so overrides and safety rails stay predictable, and env vars always win over file-sourced values without mutating the stored defaults (§5.2).
 - Validation now enforces that every slow-loop target or goal remains below both suppression thresholds, so manifests that would immediately re-trigger the fast loop are rejected with an exit status of `2` and a descriptive error message (§§3.1, 5.2).
 - `estimator.interval` controls the fast `/proc/stat` sampler cadence (§5.2) while the worker `pool` exposes quantum sizing that stays within the 1–5 ms duty-cycle budget. `pool.pauseThreshold`/`pool.resumeThreshold` mirror the estimator hysteresis so the worker pool pauses entirely when host utilisation crosses the configured limit and only resumes once the load cools.
 - `http.bind` retains the Prometheus listener address and now backs the `/metrics` exporter described in §9.5, while `oci.compartmentId` supplies the tenancy scope required by the Monitoring client and `oci.region` pins the Monitoring endpoint region when IMDS access is unavailable (for example, CI smoke tests).
@@ -100,11 +107,11 @@ The CLI honours the following environment variables, matching the naming in §5.
 | -------- | ----------- | ------- |
 | `SHAPER_TARGET_START` | Initial duty-cycle target when OCI data is unavailable. | `0.25` |
 | `SHAPER_TARGET_MIN` / `SHAPER_TARGET_MAX` | Bounds applied to adaptive adjustments. | `0.22` / `0.40` |
-| `SHAPER_STEP_UP` / `SHAPER_STEP_DOWN` | Target deltas when OCI P95 is below or above the goal band. | `+0.02` / `-0.01` |
+| `SHAPER_STEP_UP` / `SHAPER_STEP_DOWN` | Target deltas when OCI P95 is below or above the goal band. | `0.02` / `0.01` |
 | `SHAPER_FALLBACK_TARGET` | Fixed target while OCI metrics are unavailable. | `0.25` |
 | `SHAPER_SLOW_INTERVAL` / `SHAPER_SLOW_INTERVAL_RELAXED` | Baseline and relaxed controller cadences. | `1h` / `6h` |
 | `SHAPER_FAST_INTERVAL` | Host CPU sampling cadence for the estimator. | `1s` |
-| `SHAPER_SUPPRESS_THRESHOLD` / `SHAPER_SUPPRESS_RESUME` | Fast-loop suppression thresholds that gate the zero-target mode. | `0.85` / `0.70` |
+| `SHAPER_SUPPRESS_THRESHOLD` / `SHAPER_SUPPRESS_RESUME` | Fast-loop suppression thresholds that gate the zero-target mode. Assign `SHAPER_SUPPRESS_THRESHOLD=0` (or any non-positive value) to disable suppression; the resume override is ignored when suppression is off. | `0.85` / `0.70` |
 | `SHAPER_WORKER_COUNT` | Number of duty-cycle workers (`>=1`). | `runtime.NumCPU()` |
 | `SHAPER_POOL_PAUSE_THRESHOLD` / `SHAPER_POOL_RESUME_THRESHOLD` | Host CPU hysteresis that pauses/resumes the worker pool when the estimator detects contention. | `0.85` / `0.70` |
 | `HTTP_ADDR` | Prometheus listener bind address. | `:9108` |
@@ -113,7 +120,15 @@ The CLI honours the following environment variables, matching the naming in §5.
 | `OCI_INSTANCE_ID` | Overrides the instance OCID used for Monitoring queries and IMDS metadata logs, skipping live metadata calls. | *(empty)* |
 | `OCI_OFFLINE` | Enables the static metrics client and metadata fallback described above so smoke tests can bootstrap without IMDS or Monitoring access. | `false` |
 
-Unset or malformed overrides fall back to the defaults shown above.
+Unset or malformed overrides fall back to the defaults shown above. The
+controller subtracts `SHAPER_STEP_DOWN` internally, so the configuration value
+remains a positive delta even though it reduces the target when OCI P95 exceeds
+the goal band.
+
+Setting `HTTP_ADDR` to an empty string (for example, exporting `HTTP_ADDR=`)
+disables the `/metrics` listener even when the YAML manifest enables it. This
+helps CI smoke tests and containerised diagnostics avoid exposing the endpoint
+while still recording metrics internally.
 
 ### Layering overrides
 

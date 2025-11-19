@@ -90,11 +90,38 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - `/metrics` exporter and Prometheus integration surfaced through the CLI, including emitted series, sample scrape output, and Compose/HTTP_ADDR wiring documented across §§4–9.
 
 ### Changed
-_Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._ 
+_Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._
+- The CI golangci-lint job now fails when `.golangci.yml`'s auto-fixable
+  formatters (gci, gofmt, gofumpt, goimports, golines, swaggo) mutate files
+  during `make lint`; the workflow prints the diff and reminds contributors to
+  commit the fixes instead of allowing silent changes to slip through (§§8, 11,
+  14).
+- Controller configuration now accepts `controller.suppressThreshold=0` (or
+  `SHAPER_SUPPRESS_THRESHOLD=0`) to disable host-load suppression entirely. The
+  resume threshold is ignored when disabled, normalization preserves the zero
+  values, and validation skips the previous `target*` comparisons so operators
+  can opt out of estimator-driven shutdowns without tripping the CLI safety
+  rails (§§3.1, 5.2, 9, 11).
+- `HTTP_ADDR` environment overrides now accept an empty string to disable the
+  `/metrics` listener even when the YAML manifest specifies a bind address.
+  Setting `HTTP_ADDR=` helps smoke tests and container diagnostics avoid
+  exposing the endpoint while still recording metrics internally (§§6, 9).
+- `pkg/oci` constructors now accept a `ClientFactory` via the new `WithFactory(...)` option so tests and the CLI swap Monitoring
+  mocks without mutating package-level globals. `cmd/shaper` wires the factory into the production constructor and §5 documents
+  the seam, keeping the existing ≥95% coverage floor intact by exercising the new paths in the unit suites.
+- CLI environment variable defaults now document the positive
+  `SHAPER_STEP_UP`/`SHAPER_STEP_DOWN` values enforced in code and explain that
+  `StepDown` stays positive because the controller subtracts it internally
+  (§§3.1, 5.2, 9).
 - Runtime configuration loader now validates target/goal bounds, positive controller/estimator intervals, worker counts, and step
   sizes after layering YAML files with environment overrides, returning `adapt.ErrInvalidConfig` when misconfigured values are
   detected. Fresh CLI unit tests cover invalid manifests and environment overrides so the ≥95% coverage target remains intact
   (§§3.1, 5.2, 9, 11).
+- Runtime configuration structs, defaults, YAML/env overlays, validation, and the
+  controller translation helper moved from `cmd/shaper` into the shared
+  `pkg/runtimeconfig` package. The CLI now imports this package instead of owning
+  the helpers, `docs/09-cli.md` explains the shared flow, and tests migrated with
+  the code so future binaries can consume the same API (§§3.1, 5.2, 9, 11).
 - Distroless image builds now reference the repository-root `Dockerfile` and ship the
   offline smoke-test config from `configs/offline-smoke.yaml`, consolidating Komodo,
   CI, and release workflows on a single path (§6).

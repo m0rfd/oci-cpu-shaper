@@ -1,11 +1,59 @@
 # OCI CPU Shaper
 
+[![Go 1.24.x](https://img.shields.io/badge/Go-1.24.x-00ADD8?logo=go)](go.mod)
+[![OCI VM Ready](https://img.shields.io/badge/OCI%20VM-ready-fa6400?logo=oracle)](docs/10-quick-start.md)
+[![Cosign Releases](https://img.shields.io/badge/Releases-Cosign%20signed-0f9d58?logo=cosign)](#release-verification)
+
+- **Supported runtimes:** Docker/Podman Compose Mode A (rootless) and Mode B (rootful) Quadlet manifests that deploy the published distroless containers onto Oracle Cloud VMs via [`deploy/`](deploy/).
+- **OCI tenancy requirements:** Instance Monitoring plugin enabled, a Dynamic Group plus tenancy policy that permits Monitoring access, and the seven-day `CpuUtilization` alarm sequence outlined in [§10 Quick Start](docs/10-quick-start.md).
+
 OCI CPU Shaper is an adaptive controller for shaping CPU utilization of workloads running on Oracle Cloud Infrastructure. The fully implemented controller now ships in the CLI and Compose/Quadlet bundles, so operators can run dry-run or enforce modes with live OCI metrics today instead of waiting for future milestones. New operators should begin with the [Quick Start](docs/10-quick-start.md) to complete the mandatory console setup before exploring the reference material.
+
+## Architecture
+
+The shaper stitches together IMDSv2 metadata, tenancy-wide Monitoring queries, the adaptive controller, worker pools, and the Prometheus HTTP surfaces described throughout the docs set. Review the [architecture diagram](docs/00-overview.md#architecture-diagram) for the canonical layout before diving into the deeper sections on policies, controller flows, and exported metrics.
+
+## Getting Started
+
+Run the container release that matches your OCI VM architecture and follow the linked docs before wiring IAM policies:
+
+```bash
+TAG="v1.2.3"             # pin to the release you trust
+VARIANT="nonroot"        # or rootful for Mode B
+IMAGE="ghcr.io/<owner>/oci-cpu-shaper:${TAG}-${VARIANT}"
+
+docker pull "$IMAGE"
+docker image inspect "$IMAGE" | jq '.[0].Config.Labels'
+```
+
+```bash
+# Render the provided Compose bundle locally
+cp deploy/compose/mode-a.rootless.yaml ./docker-compose.yaml
+TAG="v1.2.3" VARIANT="nonroot" envsubst < docker-compose.yaml > docker-compose.rendered.yaml
+docker compose -f docker-compose.rendered.yaml up -d
+```
+
+- Start with the baked-in [`configs/mode-a.yaml`](configs/mode-a.yaml) or [`configs/mode-b.yaml`](configs/mode-b.yaml) manifests and override values in place or by bind-mounting host files as shown in [`deploy/compose/`](deploy/compose/).
+- Follow the five onboarding moves in [§10 Quick Start Onboarding](docs/10-quick-start.md) to enable Monitoring metrics, IAM policies, and alarms before applying enforce mode.
+- Review [`docs/09-cli.md`](docs/09-cli.md) for container environment overrides, health endpoints, and `/metrics` expectations before exposing the service to Prometheus.
+
+## Feature Highlights
+
+| Area | Highlights |
+| --- | --- |
+| Mode A (rootless) | Ships as the default Compose stack with `cpu.weight` 128, non-root distroless images, and loopback metrics publishing so Oracle Cloud VM operators can stay within managed-host guardrails. |
+| Mode B (rootful) | Adds `SYS_NICE` for optional `SCHED_IDLE`, host networking, and Quadlet units so privileged tuning can be evaluated without rewriting manifests when deeper host control is required. |
+| Metrics endpoint | The container exposes Prometheus metrics on `:9108` by default, covering controller state, OCI P95 samples, and cgroup discoveries for parity checks with the VM’s own telemetry. |
+| Release verification | Distroless container images and SBOM attestations are signed with Cosign; detached signatures + certificates accompany every GitHub release for offline validation prior to pulling onto an OCI VM. |
 
 ## Repository Structure
 
-- `cmd/shaper/` – Entry point for the CLI binary that applies CPU shaping logic.
-- `pkg/` – Shared packages divided into domains for metadata (`imds`), OCI integrations (`oci`), estimation (`est`), shaping algorithms (`shape`), adaptation (`adapt`), and HTTP helpers (`http`).
+- `cmd/shaper/` – CLI entry point split across `app.go`/`app_run.go` for signal-safe wiring, `controller_helpers.go` for booting the adaptive controller, flag parsing in `options.go`, and layered configuration helpers in `config_defaults.go`, `config_loader.go`, `config_merge.go`, `config_env.go`, and `config_validate.go`.
+- `pkg/adapt/` – Adaptive controller and mode handling kept in `controller.go`, `state.go`, `suppression.go`, `config.go`, and the dry-run adapter in `noop_controller.go`.
+- `pkg/shape/` – Worker pool, pause thresholds, and busy-wait helpers implemented in `pool.go`, `worker.go`, `pause.go`, and `busywait.go` (plus the rootful-only stubs/tests).
+- `pkg/oci/` – OCI Monitoring client wiring (`client.go`), metric queries (`query.go`), SDK adapter (`sdk_client.go`), and offline fixtures (`static.go`).
+- `pkg/imds/` – Instance Metadata Service client split into constructor wiring (`client_config.go`), typed operations (`operations.go`), and HTTP/retry helpers (`transport.go`).
+- `pkg/est/`, `pkg/http/`, and `pkg/cgroup/` – Supporting packages for load estimation, Prometheus exporters, and cgroup discovery.
 - `internal/buildinfo/` – Build metadata embedded into binaries.
 - `configs/` – Example configuration files and templates, including `mode-a.yaml`
   and `mode-b.yaml` which ship the documented defaults referenced in
@@ -20,7 +68,9 @@ OCI CPU Shaper is an adaptive controller for shaping CPU utilization of workload
 
 ## Contribution Guidelines
 
-Contributions are welcome! Please:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the complete tooling workflow,
+documentation expectations, and scoped `AGENTS.md` policy. Contributions are
+welcome! Please:
 
 1. Open an issue to discuss significant features or changes.
 2. Follow Go best practices and the formatting rules defined in `.editorconfig`.
