@@ -775,10 +775,17 @@ func appendOnlineMetadata(
 	canonicalRegion, canonicalRegionErr := resolveMetadataValue(
 		ctx,
 		logger,
-		overrideRegion,
+		"",
 		client.CanonicalRegion,
 		"failed to query canonical region",
 	)
+
+	if canonicalRegionErr != nil || strings.TrimSpace(canonicalRegion) == "" {
+		if trimmedOverride := strings.TrimSpace(overrideRegion); trimmedOverride != "" {
+			canonicalRegion = trimmedOverride
+			canonicalRegionErr = nil
+		}
+	}
 
 	instanceID, instanceErr := resolveMetadataValue(
 		ctx,

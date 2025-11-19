@@ -144,7 +144,7 @@ func TestLogIMDSMetadataUsesOverrideInstanceID(t *testing.T) {
 	client := newLoggingStubIMDS(
 		overrideRegion,
 		nil,
-		overrideRegion,
+		stubCanonicalRegion,
 		nil,
 		"",
 		nil,
@@ -174,7 +174,7 @@ func TestLogIMDSMetadataUsesOverrideInstanceID(t *testing.T) {
 	entry := requireSingleEntry(t, observed, zapcore.InfoLevel)
 	requireLogFieldString(t, entry, "controllerState", adapt.StateNormal.String())
 	requireLogFieldString(t, entry, "instanceID", "ocid1.instance.oc1..override")
-	requireLogFieldString(t, entry, "canonicalRegion", overrideRegion)
+	requireLogFieldString(t, entry, "canonicalRegion", stubCanonicalRegion)
 	requireLogFieldString(t, entry, "compartmentID", stubCompartmentID)
 
 	warns := observed.FilterLevelExact(zapcore.WarnLevel).All()
@@ -429,6 +429,13 @@ func assertNoIMDSCalls(t *testing.T, client *stubIMDSClient) {
 func requireOverrideIMDSLookups(t *testing.T, client *stubIMDSClient) {
 	t.Helper()
 
+	if client.regionCalls != 0 {
+		t.Fatalf(
+			"expected override to skip IMDS region lookup, got %d calls",
+			client.regionCalls,
+		)
+	}
+
 	if client.instanceCalls != 0 {
 		t.Fatalf(
 			"expected override to skip IMDS instance lookup, got %d calls",
@@ -436,15 +443,15 @@ func requireOverrideIMDSLookups(t *testing.T, client *stubIMDSClient) {
 		)
 	}
 
-	if client.canonicalRegionCalls != 0 {
-		t.Fatalf(
-			"expected override to skip canonical region lookup, got %d",
-			client.canonicalRegionCalls,
-		)
-	}
-
 	if client.compartmentCalls != 0 {
 		t.Fatalf("expected override to skip compartment lookup, got %d", client.compartmentCalls)
+	}
+
+	if client.canonicalRegionCalls != 1 {
+		t.Fatalf(
+			"expected canonical region lookup despite overrides, got %d",
+			client.canonicalRegionCalls,
+		)
 	}
 }
 
