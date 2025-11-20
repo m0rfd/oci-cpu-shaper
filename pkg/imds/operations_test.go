@@ -89,3 +89,69 @@ func TestShapeConfigDecodeError(t *testing.T) {
 		t.Fatalf("ShapeConfig() error = %v, want decode failure", err)
 	}
 }
+
+func TestHTTPClientRejectsEmptyRegion(t *testing.T) {
+	t.Parallel()
+
+	client := newIMDSTestClient(t, map[string]string{regionResourcePath: "   "})
+
+	_, err := client.Region(context.Background())
+	if err == nil {
+		t.Fatal("expected region to return error")
+	}
+
+	if !strings.Contains(err.Error(), "region") {
+		t.Fatalf("region error = %v, want message containing %q", err, "region")
+	}
+}
+
+func TestHTTPClientRejectsEmptyInstanceID(t *testing.T) {
+	t.Parallel()
+
+	client := newIMDSTestClient(t, map[string]string{instanceIDResourcePath: "\n\t"})
+
+	_, err := client.InstanceID(context.Background())
+	if err == nil {
+		t.Fatal("expected instance id to return error")
+	}
+
+	if !strings.Contains(err.Error(), "id") {
+		t.Fatalf("instance id error = %v, want message containing %q", err, "id")
+	}
+}
+
+func TestHTTPClientRejectsEmptyCompartmentID(t *testing.T) {
+	t.Parallel()
+
+	client := newIMDSTestClient(t, map[string]string{compartmentIDResourcePath: " "})
+
+	_, err := client.CompartmentID(context.Background())
+	if err == nil {
+		t.Fatal("expected compartment id to return error")
+	}
+
+	if !strings.Contains(err.Error(), "compartmentId") {
+		t.Fatalf("compartment id error = %v, want message containing %q", err, "compartmentId")
+	}
+}
+
+func TestHTTPClientRejectsEmptyCanonicalRegion(t *testing.T) {
+	t.Parallel()
+
+	client := newIMDSTestClient(t, map[string]string{
+		canonicalRegionResourcePath: `{"regionInfo":{"canonicalRegionName":"  "}}`,
+	})
+
+	_, err := client.CanonicalRegion(context.Background())
+	if err == nil {
+		t.Fatal("expected canonical region to return error")
+	}
+
+	if !strings.Contains(err.Error(), "canonicalRegionName") {
+		t.Fatalf(
+			"canonical region error = %v, want message containing %q",
+			err,
+			"canonicalRegionName",
+		)
+	}
+}
