@@ -336,6 +336,7 @@ jobs:
               echo "::warning::/proc/$pid/cgroup missing for $name; container state and ps output:" >&2
               "$engine_bin" inspect "$name" >&2 || true
               "$engine_bin" ps -a >&2 || true
+              # shellcheck disable=SC2016
               rel_path=$("$engine_bin" exec "$name" awk -F: '$1=="0" {print $3}' /proc/self/cgroup 2>/dev/null || true)
             fi
             if [ -z "$rel_path" ]; then
