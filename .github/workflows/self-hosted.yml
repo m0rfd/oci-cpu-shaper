@@ -19,7 +19,7 @@ jobs:
       OCI_CLI_AUTH: instance_principal
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5.0.1
+        uses: actions/checkout@v6.0.0
 
       - name: Detect container engine (Docker or Podman)
         id: engine
