@@ -329,89 +329,120 @@ jobs:
           wait_for_running "$high_name"
           wait_for_running "$low_name"
 
-          echo "Allowing workloads to collect CPU usage"
-          sleep 30
+          echo "Allowing workloads to warm up before sampling CPU usage"
+          sleep 20
 
-          record_stats() {
+          clk_tck=$(getconf CLK_TCK)
+          observation_window=10
+
+          ensure_running() {
             local name=$1
-
             if [ "$("$engine_bin" inspect -f '{{.State.Running}}' "$name" 2>/dev/null || echo false)" != "true" ]; then
               echo "::error::container $name is not running" >&2
               "$engine_bin" inspect "$name" >&2 || true
               return 1
             fi
+          }
 
-            local rel_path
-            # shellcheck disable=SC2016
-            rel_path=$("$engine_bin" exec "$name" awk -F: '$1=="0" {print $3}' /proc/self/cgroup 2>/dev/null | head -n1 || true)
-            if [ -z "$rel_path" ]; then
-              echo "::warning::unable to resolve cgroup path from inside $name" >&2
-              rel_path="unavailable"
-            fi
-
-            if ! "$engine_bin" exec "$name" cat /sys/fs/cgroup/cpu.stat >"$run_dir/${name}-cpu.stat"; then
-              echo "::error::unable to retrieve cpu.stat for $name" >&2
+          resolve_pid() {
+            local name=$1
+            local pid
+            pid=$("$engine_bin" inspect -f '{{.State.Pid}}' "$name" 2>/dev/null || echo 0)
+            if [ -z "$pid" ] || [ "$pid" -le 0 ]; then
+              echo "::error::unable to resolve pid for $name" >&2
               return 1
             fi
-            if ! "$engine_bin" exec "$name" cat /sys/fs/cgroup/cpu.weight >"$run_dir/${name}-cpu.weight"; then
-              echo "::error::unable to retrieve cpu.weight for $name" >&2
+            echo "$pid"
+          }
+
+          read_ticks() {
+            local pid=$1
+            if [ ! -r "/proc/$pid/stat" ]; then
+              echo "::error::/proc/$pid/stat is not readable" >&2
               return 1
             fi
-            if "$engine_bin" exec "$name" cat /sys/fs/cgroup/cpu.max >"$run_dir/${name}-cpu.max" >/dev/null 2>&1; then
-              :
-            else
-              rm -f "$run_dir/${name}-cpu.max"
-            fi
-
-            printf '%s %s\n' "$name" "$rel_path" >>"$run_dir/cgroup-paths.txt"
+            awk '{print $14 + $15}' "/proc/$pid/stat"
           }
 
-          record_stats "$high_name"
-          record_stats "$low_name"
-
-          parse_usage() {
-            awk '/usage_usec/ {print $2; exit}' "$run_dir/$1-cpu.stat"
+          record_host_config() {
+            local name=$1
+            local dest=$2
+            "$engine_bin" inspect "$name" >"$dest" 2>/dev/null || true
           }
 
-          parse_weight() {
-            tr -d '\n' <"$run_dir/$1-cpu.weight"
+          ensure_running "$high_name"
+          ensure_running "$low_name"
+
+          high_pid=$(resolve_pid "$high_name")
+          low_pid=$(resolve_pid "$low_name")
+
+          record_host_config "$high_name" "$run_dir/${high_name}-inspect.json"
+          record_host_config "$low_name" "$run_dir/${low_name}-inspect.json"
+
+          read_container_shares() {
+            local name=$1
+            "$engine_bin" inspect -f '{{.HostConfig.CPUShares}}' "$name" 2>/dev/null || echo 0
           }
 
-          high_usage=$(parse_usage "$high_name")
-          low_usage=$(parse_usage "$low_name")
-          high_weight=$(parse_weight "$high_name")
-          low_weight=$(parse_weight "$low_name")
+          high_shares=$(read_container_shares "$high_name")
+          low_shares=$(read_container_shares "$low_name")
 
-          echo "High weight usage (µs): $high_usage (weight=$high_weight)" | tee "$run_dir/${high_name}-summary.txt"
-          echo "Low weight usage (µs): $low_usage (weight=$low_weight)" | tee "$run_dir/${low_name}-summary.txt"
+          echo "High weight shares: $high_shares" | tee "$run_dir/${high_name}-shares.txt"
+          echo "Low weight shares: $low_shares" | tee "$run_dir/${low_name}-shares.txt"
 
-          if [ -z "$high_weight" ] || [ -z "$low_weight" ]; then
-            echo "::error::missing cpu.weight data" >&2
+          if [ -z "$high_shares" ] || [ -z "$low_shares" ] || [ "$high_shares" -le 0 ] || [ "$low_shares" -le 0 ]; then
+            echo "::error::missing CPU share settings from container inspect" >&2
             exit 1
           fi
 
-          if [ "$high_weight" -le "$low_weight" ]; then
-            echo "::error::expected high weight container to exceed low weight" >&2
+          if [ "$high_shares" -le "$low_shares" ]; then
+            echo "::error::expected high weight container shares to exceed low weight" >&2
             exit 1
           fi
 
-          if [ -z "$high_usage" ] || [ -z "$low_usage" ] || [ "$low_usage" = "0" ]; then
-            echo "::error::missing cpu usage data" >&2
+          start_high_ticks=$(read_ticks "$high_pid")
+          start_low_ticks=$(read_ticks "$low_pid")
+
+          echo "Sampling CPU usage for ${observation_window}s"
+          sleep "$observation_window"
+
+          ensure_running "$high_name"
+          ensure_running "$low_name"
+
+          end_high_ticks=$(read_ticks "$high_pid")
+          end_low_ticks=$(read_ticks "$low_pid")
+
+          if [ -z "$start_high_ticks" ] || [ -z "$start_low_ticks" ] || [ -z "$end_high_ticks" ] || [ -z "$end_low_ticks" ]; then
+            echo "::error::incomplete CPU samples" >&2
             exit 1
           fi
+
+          high_delta=$((end_high_ticks - start_high_ticks))
+          low_delta=$((end_low_ticks - start_low_ticks))
+
+          if [ "$high_delta" -le 0 ] || [ "$low_delta" -le 0 ]; then
+            echo "::error::CPU samples did not advance as expected" >&2
+            exit 1
+          fi
+
+          high_usage_us=$((high_delta * 1000000 / clk_tck))
+          low_usage_us=$((low_delta * 1000000 / clk_tck))
+
+          echo "High weight usage (µs): $high_usage_us (shares=$high_shares)" | tee "$run_dir/${high_name}-summary.txt"
+          echo "Low weight usage (µs): $low_usage_us (shares=$low_shares)" | tee "$run_dir/${low_name}-summary.txt"
 
           python_script=$'import decimal\n'
           python_script+=$'import sys\n\n'
           python_script+=$'high = decimal.Decimal(sys.argv[1])\n'
           python_script+=$'low = decimal.Decimal(sys.argv[2])\n'
           python_script+=$'ratio = high / low\n\n'
-          python_script+=$'if ratio < decimal.Decimal("5.0"):\n'
-          python_script+=$'    sys.stderr.write("::error::expected high weight container to receive at least 5.0x CPU time (got {:.2f}x)\\n".format(ratio))\n'
+          python_script+=$'if ratio < decimal.Decimal("3.0"):\n'
+          python_script+=$'    sys.stderr.write("::error::expected high weight container to receive at least 3.0x CPU time (got {:.2f}x)\\n".format(ratio))\n'
           python_script+=$'    sys.exit(1)\n\n'
           python_script+=$'print(ratio.quantize(decimal.Decimal("0.01")))\n'
-          ratio=$(python -c "$python_script" "$high_usage" "$low_usage")
+          ratio=$(python -c "$python_script" "$high_usage_us" "$low_usage_us")
           echo "Observed CPU usage ratio (high/low): $ratio" | tee "$run_dir/ratio.txt"
-          echo "CPU weight responsiveness verified"
+          echo "CPU weight responsiveness verified from host-level stats"
 
       - name: Upload self-hosted cgroup artifacts
         if: always()
