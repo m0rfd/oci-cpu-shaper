@@ -322,41 +322,34 @@ jobs:
 
           record_stats() {
             local name=$1
-            local pid
-            pid=$("$engine_bin" inspect -f '{{.State.Pid}}' "$name")
-            if [ -z "$pid" ] || [ "$pid" = "0" ]; then
-              echo "::error::container $name reported invalid pid: $pid" >&2
+            if ! "$engine_bin" inspect "$name" >"$run_dir/${name}-inspect.json"; then
+              echo "::error::failed to inspect $name" >&2
               return 1
             fi
 
-            local rel_path
-            rel_path=$(awk -F: '$1=="0" {print $3}' "/proc/$pid/cgroup")
+            local rel_path cgroup_listing
+            cgroup_listing=$("$engine_bin" exec "$name" cat /proc/self/cgroup 2>/dev/null || true)
+            rel_path=$(echo "$cgroup_listing" | awk -F: '$1=="0" {print $3}')
             if [ -z "$rel_path" ]; then
-              echo "::error::unable to resolve cgroup path for $name (pid $pid)" >&2
-              return 1
+              echo "::warning::unable to resolve cgroup path for $name from /proc/self/cgroup" >&2
+            else
+              printf '%s %s\n' "$name" "$rel_path" >>"$run_dir/cgroup-paths.txt"
             fi
+            printf '%s\n' "$cgroup_listing" >"$run_dir/${name}-proc-self-cgroup.txt"
 
-            local cg_path="/sys/fs/cgroup${rel_path}"
-            if [ ! -d "$cg_path" ]; then
-              echo "::error::cgroup path $cg_path missing for $name" >&2
-              return 1
-            fi
-
-            if ! cp "$cg_path/cpu.stat" "$run_dir/${name}-cpu.stat"; then
+            if ! "$engine_bin" exec "$name" cat /sys/fs/cgroup/cpu.stat >"$run_dir/${name}-cpu.stat"; then
               echo "::error::unable to retrieve cpu.stat for $name" >&2
               return 1
             fi
-            if ! cp "$cg_path/cpu.weight" "$run_dir/${name}-cpu.weight"; then
+            if ! "$engine_bin" exec "$name" cat /sys/fs/cgroup/cpu.weight >"$run_dir/${name}-cpu.weight"; then
               echo "::error::unable to retrieve cpu.weight for $name" >&2
               return 1
             fi
-            if cp "$cg_path/cpu.max" "$run_dir/${name}-cpu.max" >/dev/null 2>&1; then
+            if "$engine_bin" exec "$name" cat /sys/fs/cgroup/cpu.max >"$run_dir/${name}-cpu.max" 2>/dev/null; then
               :
             else
               rm -f "$run_dir/${name}-cpu.max"
             fi
-
-            printf '%s %s\n' "$name" "$cg_path" >>"$run_dir/cgroup-paths.txt"
           }
 
           record_stats "$high_name"
