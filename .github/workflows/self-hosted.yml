@@ -75,11 +75,6 @@ jobs:
 
           instance_json=$(curl -sS -H "$header" "$base_url/instance/")
           region_json=$(echo "$instance_json" | jq -c '.regionInfo // {}')
-          vnic_json=$(curl -sS -H "$header" "$base_url/vnics/0/")
-
-          echo "instance=$instance_json"
-          echo "region=$region_json"
-          echo "vnic=$vnic_json"
 
           instance_id=$(echo "$instance_json" | jq -r '.id')
           compartment_id=$(echo "$instance_json" | jq -r '.compartmentId')
@@ -223,6 +218,7 @@ jobs:
 
           "$engine_bin" build \
             --target rootful \
+            --load \
             -t oci-cpu-shaper:integration-rootful \
             -f Dockerfile \
             .
@@ -234,12 +230,20 @@ jobs:
         run: |
           set -euo pipefail
 
+          host_arch=$(uname -m)
+          echo "Runner architecture: $host_arch"
+
+          if docker image inspect oci-cpu-shaper:integration-rootful >/dev/null 2>&1; then
+            docker image inspect --format 'arch={{.Architecture}} os={{.Os}}' oci-cpu-shaper:integration-rootful || true
+          else
+            echo "Rootful integration image missing; it should be built in the previous step."
+          fi
+
           mkdir -p "$LOG_ROOT"
           run_dir="$LOG_ROOT/run-$(date --utc +%Y%m%dT%H%M%SZ)"
           mkdir -p "$run_dir"
 
-          tmpdir=$(mktemp -d)
-          hog_binary="$tmpdir/cpu-hog"
+          hog_binary="$run_dir/cpu-hog"
           high_name=""
           low_name=""
 
@@ -254,14 +258,18 @@ jobs:
                 "$engine_bin" rm -f "$name" >/dev/null 2>&1 || true
               fi
             done
-            rm -rf "$tmpdir"
+            rm "$hog_binary"
             exit $status
           }
           trap cleanup EXIT
 
           echo "Building cpu-hog helper"
-          GOARCH=$(go env GOARCH)
-          CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" go build -o "$hog_binary" ./tests/integration/cmd/cpu-hog
+          case "$host_arch" in
+            x86_64) go_arch=amd64 ;;
+            arm64|aarch64) go_arch=arm64 ;;
+            *) go_arch="$host_arch" ;;
+          esac
+          CGO_ENABLED=0 GOOS=linux GOARCH="$go_arch" go build -o "$hog_binary" ./tests/integration/cmd/cpu-hog
 
           high_name="cpu-weight-high-$(date +%s%N)"
           low_name="cpu-weight-low-$(date +%s%N)"
@@ -322,24 +330,34 @@ jobs:
             fi
 
             local rel_path
-            rel_path=$(awk -F: '$1=="0" {print $3}' "/proc/$pid/cgroup")
+            if [ -r "/proc/$pid/cgroup" ]; then
+              rel_path=$(awk -F: '$1=="0" {print $3}' "/proc/$pid/cgroup")
+            else
+              echo "::warning::/proc/$pid/cgroup missing for $name; container state and ps output:" >&2
+              "$engine_bin" inspect "$name" >&2 || true
+              "$engine_bin" ps -a >&2 || true
+              rel_path=$("$engine_bin" exec "$name" awk -F: '$1=="0" {print $3}' /proc/self/cgroup 2>/dev/null || true)
+            fi
             if [ -z "$rel_path" ]; then
               echo "::error::unable to resolve cgroup path for $name (pid $pid)" >&2
               return 1
             fi
 
-            local cg_path="/sys/fs/cgroup${rel_path}"
-            if [ ! -d "$cg_path" ]; then
-              echo "::error::cgroup path $cg_path missing for $name" >&2
+            if ! "$engine_bin" exec "$name" cat /sys/fs/cgroup/cpu.stat >"$run_dir/${name}-cpu.stat"; then
+              echo "::error::unable to retrieve cpu.stat for $name" >&2
               return 1
             fi
-
-            cat "$cg_path/cpu.stat" >"$run_dir/${name}-cpu.stat"
-            cat "$cg_path/cpu.weight" >"$run_dir/${name}-cpu.weight"
-            if [ -f "$cg_path/cpu.max" ]; then
-              cat "$cg_path/cpu.max" >"$run_dir/${name}-cpu.max"
+            if ! "$engine_bin" exec "$name" cat /sys/fs/cgroup/cpu.weight >"$run_dir/${name}-cpu.weight"; then
+              echo "::error::unable to retrieve cpu.weight for $name" >&2
+              return 1
             fi
-            printf '%s %s\n' "$name" "$cg_path" >>"$run_dir/cgroup-paths.txt"
+            if "$engine_bin" exec "$name" cat /sys/fs/cgroup/cpu.max >"$run_dir/${name}-cpu.max" >/dev/null 2>&1; then
+              :
+            else
+              rm -f "$run_dir/${name}-cpu.max"
+            fi
+
+            printf '%s %s\n' "$name" "$rel_path" >>"$run_dir/cgroup-paths.txt"
           }
 
           record_stats "$high_name"
