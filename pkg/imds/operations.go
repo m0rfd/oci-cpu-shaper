@@ -3,8 +3,14 @@ package imds
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+)
+
+var (
+	errEmptyResponse        = errors.New("imds: empty response")
+	errEmptyCanonicalRegion = errors.New("imds: empty canonicalRegionName response")
 )
 
 // Region returns the canonical region for the running instance.
@@ -26,7 +32,12 @@ func (c *HTTPClient) CanonicalRegion(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	return strings.TrimSpace(metadata.RegionInfo.CanonicalRegionName), nil
+	canonical := strings.TrimSpace(metadata.RegionInfo.CanonicalRegionName)
+	if canonical == "" {
+		return "", errEmptyCanonicalRegion
+	}
+
+	return canonical, nil
 }
 
 // InstanceID returns the OCID for the running instance.
@@ -67,7 +78,12 @@ func (c *HTTPClient) getText(ctx context.Context, resource string) (string, erro
 		return "", err
 	}
 
-	return strings.TrimSpace(string(payload)), nil
+	trimmed := strings.TrimSpace(string(payload))
+	if trimmed == "" {
+		return "", fmt.Errorf("%s: %w", resource, errEmptyResponse)
+	}
+
+	return trimmed, nil
 }
 
 func (c *HTTPClient) getJSON(ctx context.Context, resource string, out any) error {
