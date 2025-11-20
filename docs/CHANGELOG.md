@@ -190,5 +190,6 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% 
 - `golangci-lint` now runs with depguard allow-listing for module imports and `issues.fix: true`, letting formatters auto-apply fixes while docs instruct contributors to stage the generated edits (§14).
 - Overview, README, and Monitoring documentation now link to the IAM, reclaim, cgroup, alarm, and Quick Start guides so operators can navigate the consolidated Always Free playbook (§§0, 5, 10).
 - Updated third-party Go modules (flock, gobreaker, testify, golang.org/x/{crypto,net,sys}) to their latest releases so the controller wiring, samplers, and tests stay aligned with upstream fixes (§§11, 14).
+- OCI Go SDK bumped to v65.105.0 and `go.uber.org/zap` to v1.27.1 so the logging stack and Monitoring client stay current with upstream bugfixes and SDK updates (§§11, 14).
 - Reconfirmed all Go module requirements and GitHub Actions pins are on the latest stable releases, updating workflow actions to their freshest tags to keep CI and release automation current (§§11, 14).
 - Added a `make bench` helper that wraps `hack/check_benchmarks.sh` and wired the same duty-cycle benchmark enforcement into the CI workflow so every pull request runs the CPU/fairness regression gate alongside linting and tests (§§11, 14).
