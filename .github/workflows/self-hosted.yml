@@ -17,7 +17,8 @@ jobs:
     timeout-minutes: 30
     env:
       OCI_CLI_AUTH: instance_principal
-      GOCACHE: .cache/go
+      GOCACHE: ${{ github.workspace }}/.cache/go
+      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -114,13 +115,15 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Cache Go build artifacts
+      - name: Cache Go build and module downloads
         uses: actions/cache@v4
         with:
-          path: .cache/go
-          key: ${{ runner.os }}-self-hosted-go-cache-${{ hashFiles('**/go.sum') }}
+          path: |
+            .cache/go
+            .cache/gomod
+          key: ${{ runner.os }}-self-hosted-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-self-hosted-go-cache-
+            ${{ runner.os }}-self-hosted-go-
 
       - name: Verify Always Free guardrail alarm
         env:
@@ -345,6 +348,7 @@ jobs:
               echo "::warning::/proc/$pid/cgroup missing for $name; container state and ps output:" >&2
               "$engine_bin" inspect "$name" >&2 || true
               "$engine_bin" ps -a >&2 || true
+              # shellcheck disable=SC2016
               rel_path=$("$engine_bin" exec "$name" awk -F: '$1=="0" {print $3}' /proc/self/cgroup 2>/dev/null || true)
             fi
             if [ -z "$rel_path" ]; then
