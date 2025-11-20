@@ -16,10 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.0
+        uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6.1.0
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -34,6 +34,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-cache-
 
+      - name: Cache Python tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-pyflakes-3.2.0
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Verify AGENTS scopes
         run: make agents
 
@@ -42,10 +50,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.0
+        uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6.1.0
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -71,10 +79,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.0
+        uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6.1.0
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -122,10 +130,10 @@ jobs:
           - go-dependency-submission.yml
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.0
+        uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6.1.0
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -159,10 +167,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.0
+        uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6.1.0
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -190,10 +198,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.0
+        uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6.1.0
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -218,10 +226,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.0
+        uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6.1.0
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -281,10 +289,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.0
+        uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6.1.0
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -314,7 +322,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.0
+        uses: actions/checkout@v6
 
       - name: Prepare build metadata
         id: build-meta
@@ -322,7 +330,7 @@ jobs:
           echo "build-date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.11.1
+        uses: docker/setup-buildx-action@v3
 
       - name: Build container image
         env:
@@ -379,7 +387,7 @@ jobs:
           rm smoke.log
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0.20.10
+        uses: anchore/sbom-action@v0
         with:
           image: oci-cpu-shaper:test
           output-file: sbom.spdx.json
@@ -391,7 +399,7 @@ jobs:
           path: sbom.spdx.json
 
       - name: Scan image for vulnerabilities
-        uses: anchore/scan-action@v7.2.0
+        uses: anchore/scan-action@v7
         with:
           image: oci-cpu-shaper:test
           fail-build: true
@@ -402,10 +410,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.0
+        uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6.1.0
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
