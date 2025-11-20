@@ -17,9 +17,11 @@ jobs:
     timeout-minutes: 30
     env:
       OCI_CLI_AUTH: instance_principal
+      GOCACHE: ${{ github.workspace }}/.cache/go
+      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.0
+        uses: actions/checkout@v6
 
       - name: Detect container engine (Docker or Podman)
         id: engine
@@ -108,10 +110,20 @@ jobs:
           } >>"$GITHUB_OUTPUT"
 
       - name: Set up Go
-        uses: actions/setup-go@v6.1.0
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Cache Go build and module downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/go
+            .cache/gomod
+          key: ${{ runner.os }}-self-hosted-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-self-hosted-go-
 
       - name: Verify Always Free guardrail alarm
         env:
