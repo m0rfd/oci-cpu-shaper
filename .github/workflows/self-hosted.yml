@@ -322,23 +322,51 @@ jobs:
 
           record_stats() {
             local name=$1
-            local pid
-            pid=$("$engine_bin" inspect -f '{{.State.Pid}}' "$name")
-            if [ -z "$pid" ] || [ "$pid" = "0" ]; then
-              echo "::error::container $name reported invalid pid: $pid" >&2
-              return 1
+            local pid=""
+            local rel_path=""
+            local cg_path=""
+
+            # Prefer the runtime-provided cgroup path to avoid depending on host PIDs,
+            # which may not be visible from nested containers on rootless Podman.
+            local inspect_path
+            inspect_path=$("$engine_bin" inspect -f '{{.State.CgroupPath}}' "$name" 2>/dev/null | head -n 1 || true)
+            if [ -n "$inspect_path" ] && [ "$inspect_path" != "<no value>" ]; then
+              case "$inspect_path" in
+                /sys/fs/cgroup/*)
+                  cg_path="$inspect_path"
+                  ;;
+                /*)
+                  cg_path="/sys/fs/cgroup${inspect_path}"
+                  ;;
+                *)
+                  cg_path="/sys/fs/cgroup/${inspect_path#/}"
+                  ;;
+              esac
             fi
 
-            local rel_path
-            rel_path=$(awk -F: '$1=="0" {print $3}' "/proc/$pid/cgroup")
-            if [ -z "$rel_path" ]; then
-              echo "::error::unable to resolve cgroup path for $name (pid $pid)" >&2
-              return 1
+            if [ -z "$cg_path" ] || [ ! -d "$cg_path" ]; then
+              pid=$("$engine_bin" inspect -f '{{.State.Pid}}' "$name")
+              if [ -z "$pid" ] || [ "$pid" = "0" ]; then
+                echo "::error::container $name reported invalid pid: $pid (cgroupPath=$inspect_path)" >&2
+                return 1
+              fi
+
+              if [ ! -r "/proc/$pid/cgroup" ]; then
+                echo "::error::unable to read /proc/$pid/cgroup for $name (cgroupPath=$inspect_path)" >&2
+                return 1
+              fi
+
+              rel_path=$(awk -F: '$1=="0" {print $3}' "/proc/$pid/cgroup")
+              if [ -z "$rel_path" ]; then
+                echo "::error::unable to resolve cgroup path for $name (pid $pid, cgroupPath=$inspect_path)" >&2
+                return 1
+              fi
+
+              cg_path="/sys/fs/cgroup${rel_path}"
             fi
 
-            local cg_path="/sys/fs/cgroup${rel_path}"
             if [ ! -d "$cg_path" ]; then
-              echo "::error::cgroup path $cg_path missing for $name" >&2
+              echo "::error::cgroup path $cg_path missing for $name (pid=$pid, cgroupPath=$inspect_path, rel=$rel_path)" >&2
               return 1
             fi
 
