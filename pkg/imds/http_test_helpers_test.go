@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -79,6 +80,18 @@ func requireEqual[T comparable](t *testing.T, field string, got, want T) {
 
 	if got != want {
 		t.Fatalf("%s = %v, want %v", field, got, want)
+	}
+}
+
+func requireErrorContains(t *testing.T, field string, err error, substring string) {
+	t.Helper()
+
+	if err == nil {
+		t.Fatalf("%s expected error containing %q, got nil", field, substring)
+	}
+
+	if !strings.Contains(err.Error(), substring) {
+		t.Fatalf("%s error = %v, want substring %q", field, err, substring)
 	}
 }
 

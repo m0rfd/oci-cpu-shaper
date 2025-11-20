@@ -89,3 +89,30 @@ func TestShapeConfigDecodeError(t *testing.T) {
 		t.Fatalf("ShapeConfig() error = %v, want decode failure", err)
 	}
 }
+
+func TestHTTPClientEmptyResponses(t *testing.T) {
+	t.Parallel()
+
+	responses := map[string]string{
+		regionResourcePath:          "  \t\n",
+		canonicalRegionResourcePath: `{"regionInfo":{"canonicalRegionName":"   "}}`,
+		instanceIDResourcePath:      "",
+		compartmentIDResourcePath:   " ",
+	}
+
+	client := newIMDSTestClient(t, responses)
+
+	ctx := context.Background()
+
+	_, err := client.Region(ctx)
+	requireErrorContains(t, "Region()", err, "empty response")
+
+	_, err = client.CanonicalRegion(ctx)
+	requireErrorContains(t, "CanonicalRegion()", err, "canonicalRegionName")
+
+	_, err = client.InstanceID(ctx)
+	requireErrorContains(t, "InstanceID()", err, "empty response")
+
+	_, err = client.CompartmentID(ctx)
+	requireErrorContains(t, "CompartmentID()", err, "empty response")
+}
