@@ -17,6 +17,8 @@ jobs:
   go-action-detection:
     name: Go Dependency Submission
     runs-on: ubuntu-latest
+    env:
+      GOCACHE: .cache/go
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6

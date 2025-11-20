@@ -34,6 +34,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-cache-
 
+      - name: Cache Python tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-pyflakes-3.2.0
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Verify AGENTS scopes
         run: make agents
 
@@ -218,10 +226,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.0
+        uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6.1.0
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -314,7 +322,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.0
+        uses: actions/checkout@v6
 
       - name: Prepare build metadata
         id: build-meta
