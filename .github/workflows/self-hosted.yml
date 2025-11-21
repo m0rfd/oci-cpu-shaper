@@ -110,6 +110,7 @@ jobs:
           } >>"$GITHUB_OUTPUT"
 
       - name: Set up Go
+        id: setup-go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -121,9 +122,9 @@ jobs:
           path: |
             .cache/go
             .cache/gomod
-          key: ${{ runner.os }}-self-hosted-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-self-hosted-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-self-hosted-go-
+            ${{ runner.os }}-self-hosted-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Verify Always Free guardrail alarm
         env:

@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: load-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   load-test:
     name: worker pool load
@@ -44,7 +48,9 @@ jobs:
 
       - name: Upload load test log
         uses: actions/upload-artifact@v5
+        if: always()
         with:
           name: load-test-log
           path: artifacts/load/pool-24h.log
+          retention-days: 7
           if-no-files-found: error

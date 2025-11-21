@@ -17,6 +17,9 @@ jobs:
   go-action-detection:
     name: Go Dependency Submission
     runs-on: ubuntu-latest
+    concurrency:
+      group: go-deps-${{ github.ref }}
+      cancel-in-progress: true
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
