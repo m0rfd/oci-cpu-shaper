@@ -8,6 +8,7 @@ COVERAGE_SUMMARY ?= coverage.txt
 INTEGRATION_COVERAGE_PROFILE ?=
 REUSE_INTEGRATION_COVERAGE ?= 0
 RUN_E2E_TESTS ?= 0
+PYTHON ?= python3
 
 MODULE := $(shell $(GO) list -m 2>/dev/null)
 PKGS := $(shell $(GO) list ./... 2>/dev/null)
@@ -25,6 +26,7 @@ COVERAGE_TAG_ARGS := $(if $(strip $(COVERAGE_TAGS)),-tags "$(strip $(COVERAGE_TA
 GOLANGCI_LINT_VERSION ?= v2.6.1
 GOVULNCHECK_VERSION ?= v1.1.4
 ACTIONLINT_VERSION ?= v1.7.9
+MBAKE_VERSION ?= 1.4.3
 
 GO_BIN_PATH := $(shell command -v $(GO) >/dev/null 2>&1 && $(GO) env GOBIN)
 ifeq ($(GO_BIN_PATH),)
@@ -42,13 +44,16 @@ ACTIONLINT_BIN ?= $(GO_BIN_PATH)/actionlint
 ACTIONLINT ?= $(ACTIONLINT_BIN)
 ACTIONLINT_FLAGS ?=
 ACTIONLINT_PATHS ?=
+MBAKE_BIN ?= $(HOME)/.local/bin/mbake
+MBAKE ?= $(MBAKE_BIN)
+MBAKE_FORMAT_PATHS ?= Makefile
 
-.PHONY: lint test build check tools ensure-golangci-lint ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks verify-go-version
+.PHONY: lint test build check tools ensure-golangci-lint ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks verify-go-version ensure-mbake mbake
 
 GO_MACHINE_ARCH := $(shell uname -m)
 GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
 
-tools: ensure-golangci-lint ensure-actionlint
+tools: ensure-golangci-lint ensure-actionlint ensure-mbake
 
 ensure-golangci-lint:
 	@set -euo pipefail; \
@@ -63,7 +68,7 @@ ensure-golangci-lint:
 		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(GO_BIN_PATH) $(GOLANGCI_LINT_VERSION); \
 	fi
 
-lint: verify-go-version ensure-golangci-lint
+lint: verify-go-version ensure-golangci-lint mbake
 	@mkdir -p "$(GOLANGCI_LINT_CACHE_DIR)"
 	@GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE_DIR)" $(GOLANGCI_LINT) run
 
@@ -79,6 +84,21 @@ ensure-actionlint:
 		echo "Installing actionlint $(ACTIONLINT_VERSION)"; \
 		$(GO) install github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION); \
 	fi
+
+ensure-mbake:
+	@set -euo pipefail; \
+	BIN="$(MBAKE_BIN)"; \
+	CURRENT_VERSION=""; \
+	if [ -x "$$BIN" ]; then \
+		CURRENT_VERSION="$$($$BIN --version 2>/dev/null | awk '{print $$NF}')"; \
+	fi; \
+	if [ "$$CURRENT_VERSION" != "$(MBAKE_VERSION)" ]; then \
+		echo "Installing mbake $(MBAKE_VERSION)"; \
+		$(PYTHON) -m pip install --user --upgrade "mbake==$(MBAKE_VERSION)"; \
+	fi
+
+mbake: ensure-mbake
+	@$(MBAKE) format $(MBAKE_FORMAT_PATHS)
 
 test: verify-go-version
 	@if [ -z "$(strip $(PKGS))" ]; then \
