@@ -84,9 +84,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache/golangci
-          key: ${{ runner.os }}-golangci-go${{ steps.go.outputs.go-version }}-${{ hashFiles('**/.golangci.yml', '**/go.sum') }}
+          key: ${{ runner.os }}-golangci-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/.golangci.yml', '**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-golangci-go${{ steps.go.outputs.go-version }}-
+            ${{ runner.os }}-golangci-go${{ steps.setup-go.outputs.go-version }}-
 
       - name: Run golangci-lint
         run: make lint
@@ -189,9 +189,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache/govulncheck
-          key: ${{ runner.os }}-govulncheck-go${{ steps.go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-govulncheck-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-govulncheck-go${{ steps.go.outputs.go-version }}-
+            ${{ runner.os }}-govulncheck-go${{ steps.setup-go.outputs.go-version }}-
 
       - name: Run govulncheck
         run: make govulncheck
