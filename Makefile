@@ -7,6 +7,7 @@ COVERAGE_PROFILE ?= coverage.out
 COVERAGE_SUMMARY ?= coverage.txt
 INTEGRATION_COVERAGE_PROFILE ?=
 REUSE_INTEGRATION_COVERAGE ?= 0
+RUN_E2E_TESTS ?= 0
 
 MODULE := $(shell $(GO) list -m 2>/dev/null)
 PKGS := $(shell $(GO) list ./... 2>/dev/null)
@@ -17,17 +18,17 @@ COVERAGE_PKGS := $(filter-out $(COVERAGE_EXCLUDES),$(PROD_PKGS))
 INTEGRATION_PKGS_RAW := $(shell $(GO) list ./tests/integration/... 2>/dev/null)
 INTEGRATION_PKGS := $(filter-out $(COVERAGE_EXCLUDES),$(INTEGRATION_PKGS_RAW))
 E2E_PKGS_RAW := $(shell $(GO) list ./tests/e2e/... 2>/dev/null)
+COVERAGE_TAGS ?=
 E2E_PKGS := $(filter-out $(COVERAGE_EXCLUDES),$(E2E_PKGS_RAW))
-COVERAGE_TAGS ?= integration e2e
 COVERAGE_TAG_ARGS := $(if $(strip $(COVERAGE_TAGS)),-tags "$(strip $(COVERAGE_TAGS))",)
 
 GOLANGCI_LINT_VERSION ?= v2.6.1
 GOVULNCHECK_VERSION ?= v1.1.4
 ACTIONLINT_VERSION ?= v1.7.9
 
-GO_BIN_PATH := $(shell $(GO) env GOBIN)
+GO_BIN_PATH := $(shell command -v $(GO) >/dev/null 2>&1 && $(GO) env GOBIN)
 ifeq ($(GO_BIN_PATH),)
-GO_BIN_PATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))/bin
+GO_BIN_PATH := $(HOME)/go/bin
 endif
 
 ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
@@ -42,7 +43,7 @@ ACTIONLINT ?= $(ACTIONLINT_BIN)
 ACTIONLINT_FLAGS ?=
 ACTIONLINT_PATHS ?=
 
-.PHONY: fmt lint test build check tools ensure-golangci-lint ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks
+.PHONY: fmt lint test build check tools ensure-golangci-lint ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks verify-go-version
 
 GO_MACHINE_ARCH := $(shell uname -m)
 GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
@@ -51,6 +52,7 @@ tools: ensure-golangci-lint ensure-actionlint
 
 ensure-golangci-lint:
 	@set -euo pipefail; \
+	mkdir -p "$(GO_BIN_PATH)"; \
 	BIN="$(GOLANGCI_LINT_BIN)"; \
 	CURRENT_VERSION=""; \
 	if [ -x "$$BIN" ]; then \
@@ -61,35 +63,38 @@ ensure-golangci-lint:
 		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(GO_BIN_PATH) $(GOLANGCI_LINT_VERSION); \
 	fi
 
-lint: ensure-golangci-lint
+lint: verify-go-version ensure-golangci-lint
 	@mkdir -p "$(GOLANGCI_LINT_CACHE_DIR)"
 	@GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE_DIR)" $(GOLANGCI_LINT) run
 
 ensure-actionlint:
 	@set -euo pipefail; \
+	mkdir -p "$(GO_BIN_PATH)"; \
 	BIN="$(ACTIONLINT_BIN)"; \
 	CURRENT_VERSION=""; \
 	if [ -x "$$BIN" ]; then \
-		CURRENT_VERSION="$$($$BIN -version 2>/dev/null | head -n1)"; \
+		CURRENT_VERSION="$$($$BIN -version 2>/dev/null | awk 'NR==1 {print "v"$$2}')"; \
 	fi; \
 	if [ "$$CURRENT_VERSION" != "$(ACTIONLINT_VERSION)" ]; then \
 		echo "Installing actionlint $(ACTIONLINT_VERSION)"; \
 		$(GO) install github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION); \
 	fi
 
-test:
+test: verify-go-version
 	@if [ -z "$(strip $(PKGS))" ]; then \
 		echo "No Go packages found; skipping tests."; \
 	else \
 		mkdir -p "$(GOCACHE_DIR)"; \
 		GOCACHE="$(GOCACHE_DIR)" $(GO) test -race $(PKGS); \
 	fi
-	@if [ -d "$(ROOT_DIR)/tests/e2e" ]; then \
+	@if [ "$(strip $(RUN_E2E_TESTS))" = "1" ] && [ -d "$(ROOT_DIR)/tests/e2e" ]; then \
 		mkdir -p "$(GOCACHE_DIR)"; \
 		GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=e2e ./tests/e2e/...; \
+	elif [ -d "$(ROOT_DIR)/tests/e2e" ]; then \
+		echo "Skipping e2e tests; set RUN_E2E_TESTS=1 to enable."; \
 	fi
 
-coverage:
+coverage: verify-go-version
 	@set -euo pipefail; \
 	if [ -z "$(strip $(PKGS))" ]; then \
 		echo "No Go packages found; skipping coverage."; \
@@ -101,46 +106,46 @@ coverage:
 		if [ -n "$$excluded" ]; then \
 			echo "Excluding packages from coverage: $$excluded"; \
 		fi; \
-			coverage_pkgs="$(strip $(COVERAGE_PKGS))"; \
-			coverage_csv=$$(printf '%s' "$$coverage_pkgs" | tr ' \n' ',' | sed 's/,,*/,/g; s/^,//; s/,$$//'); \
-			rm -f $(COVERAGE_PROFILE) $(COVERAGE_SUMMARY); \
-			unit_profile="coverage-unit.out"; \
-			$(GO) test -race -covermode=atomic -coverpkg="$$coverage_csv" -coverprofile="$$unit_profile" $(COVERAGE_PKGS); \
-			cat "$$unit_profile" > $(COVERAGE_PROFILE); \
-			rm -f "$$unit_profile"; \
-			if [ -n "$(strip $(INTEGRATION_PKGS))" ]; then \
-				integration_profile="$(strip $(INTEGRATION_COVERAGE_PROFILE))"; \
-				if [ -z "$$integration_profile" ]; then \
-					integration_profile="coverage-integration.out"; \
-				fi; \
-				reuse_integration="$(strip $(REUSE_INTEGRATION_COVERAGE))"; \
-				if [ "$$reuse_integration" = "1" ]; then \
-					if [ ! -f "$$integration_profile" ]; then \
-						echo "Integration coverage profile '$$integration_profile' not found."; \
-						exit 1; \
-					fi; \
-				else \
-					$(GO) test -race -covermode=atomic -tags=integration -coverpkg="$$coverage_csv" -coverprofile="$$integration_profile" $(INTEGRATION_PKGS); \
-				fi; \
-				tail -n +2 "$$integration_profile" >> $(COVERAGE_PROFILE); \
-				if [ "$$reuse_integration" != "1" ]; then \
-					rm -f "$$integration_profile"; \
-				fi; \
+		coverage_pkgs="$(strip $(COVERAGE_PKGS))"; \
+		coverage_csv=$$(printf '%s' "$$coverage_pkgs" | tr ' \n' ',' | sed 's/,,*/,/g; s/^,//; s/,$$//'); \
+		rm -f $(COVERAGE_PROFILE) $(COVERAGE_SUMMARY); \
+		unit_profile="coverage-unit.out"; \
+		$(GO) test -race -covermode=atomic $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$unit_profile" $(COVERAGE_PKGS); \
+		cat "$$unit_profile" > $(COVERAGE_PROFILE); \
+		rm -f "$$unit_profile"; \
+		if [ -n "$(strip $(INTEGRATION_PKGS))" ]; then \
+			integration_profile="$(strip $(INTEGRATION_COVERAGE_PROFILE))"; \
+			if [ -z "$$integration_profile" ]; then \
+				integration_profile="coverage-integration.out"; \
 			fi; \
+			reuse_integration="$(strip $(REUSE_INTEGRATION_COVERAGE))"; \
+			if [ "$$reuse_integration" = "1" ]; then \
+				if [ ! -f "$$integration_profile" ]; then \
+					echo "Integration coverage profile '$$integration_profile' not found."; \
+					exit 1; \
+				fi; \
+			else \
+				$(GO) test -race -covermode=atomic -tags=integration $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$integration_profile" $(INTEGRATION_PKGS); \
+			fi; \
+			tail -n +2 "$$integration_profile" >> $(COVERAGE_PROFILE); \
+			if [ "$$reuse_integration" != "1" ]; then \
+				rm -f "$$integration_profile"; \
+			fi; \
+		fi; \
 		if [ -n "$(strip $(E2E_PKGS))" ]; then \
 			e2e_profile="coverage-e2e.out"; \
-			if $(GO) test -race -covermode=atomic -tags=e2e -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $(E2E_PKGS); then \
+			if $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $(E2E_PKGS); then \
 				tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
 			else \
 				echo "Skipping e2e coverage due to test failures"; \
 			fi; \
 			rm -f "$$e2e_profile"; \
-                fi; \
+		fi; \
 		$(GO) tool cover -func=$(COVERAGE_PROFILE) | tee $(COVERAGE_SUMMARY); \
-                TOTAL=$$(awk '/^total:/ {total=$$NF} END {print total}' $(COVERAGE_SUMMARY)); \
-                if [ -n "$$TOTAL" ]; then \
-                        echo "Total coverage: $$TOTAL"; \
-                        COVERAGE_VALUE=$$(printf '%s' "$$TOTAL" | tr -d '%'); \
+		TOTAL=$$(awk '/^total:/ {total=$$NF} END {print total}' $(COVERAGE_SUMMARY)); \
+		if [ -n "$$TOTAL" ]; then \
+			echo "Total coverage: $$TOTAL"; \
+			COVERAGE_VALUE=$$(printf '%s' "$$TOTAL" | tr -d '%'); \
 			if ! awk -v cov="$$COVERAGE_VALUE" -v min="$(MIN_COVERAGE)" 'BEGIN {if (cov+0 >= min+0) exit 0; exit 1}' ; then \
 				echo "Coverage $${COVERAGE_VALUE}% is below required $(MIN_COVERAGE)%"; \
 				exit 1; \
@@ -149,10 +154,31 @@ coverage:
 			echo "Coverage summary unavailable"; \
 		fi; \
 	fi
+
 agents:
 	@set -euo pipefail; \
 	mkdir -p "$(GOCACHE_DIR)"; \
 	GOCACHE="$(GOCACHE_DIR)" $(GO) run ./cmd/agentscheck
+
+fmt: verify-go-version
+	@set -euo pipefail; \
+	if [ -z "$(strip $(PKGS))" ]; then \
+		echo "No Go packages found; nothing to format."; \
+	else \
+		gofmt -w $(shell find . -path './vendor' -prune -o -name '*.go' -print); \
+	fi
+
+verify-go-version:
+	@set -euo pipefail; \
+	if ! command -v $(GO) >/dev/null 2>&1; then \
+		echo "Go not found in PATH; expected version $(GO_REQUIRED_VERSION)."; \
+		exit 1; \
+	fi; \
+	CURRENT_VERSION="$$( $(GO) version | awk '{print $$3}' | sed 's/^go//' )"; \
+	if [ "$$CURRENT_VERSION" != "$(GO_REQUIRED_VERSION)" ]; then \
+		echo "Go version $$CURRENT_VERSION detected, but $(GO_REQUIRED_VERSION) is required."; \
+		exit 1; \
+	fi
 
 govulncheck:
 	@set -euo pipefail; \
