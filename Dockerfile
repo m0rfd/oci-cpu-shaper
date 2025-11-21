@@ -5,15 +5,15 @@ ARG VERSION="dev"
 ARG GIT_COMMIT="unknown"
 ARG BUILD_DATE="unknown"
 
-FROM golang:${GO_VERSION}-bookworm AS builder
+ARG BUILDPLATFORM
+FROM --platform=${BUILDPLATFORM} golang:${GO_VERSION}-bookworm AS builder
 
 WORKDIR /src
 
-COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod \
+RUN --mount=type=bind,source=go.mod,target=/src/go.mod,readonly \
+    --mount=type=bind,source=go.sum,target=/src/go.sum,readonly \
+    --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     go mod download
-
-COPY . .
 
 ARG TARGETOS=linux
 ARG TARGETARCH
@@ -24,7 +24,9 @@ ARG BUILD_DATE
 
 ENV CGO_ENABLED=0
 
-RUN --mount=type=cache,target=/root/.cache/go-build \
+RUN --mount=type=bind,source=.,target=/src,readonly \
+    --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     GOOS=${TARGETOS} GOARCH=${TARGETARCH:-amd64} GOARM=${TARGETVARIANT#v} \
     go build \
       -trimpath \
