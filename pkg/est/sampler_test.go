@@ -452,3 +452,93 @@ func TestFileSourceSnapshotOpenFailure(t *testing.T) {
 		t.Fatalf("expected open error, got %v", err)
 	}
 }
+
+func TestNewSamplerDefaultsInterval(t *testing.T) {
+	t.Parallel()
+
+	sampler := NewSampler(
+		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, index: 0},
+		0,
+	)
+	if sampler.interval != DefaultInterval {
+		t.Fatalf("expected default interval %s, got %s", DefaultInterval, sampler.interval)
+	}
+
+	negative := NewSampler(
+		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, index: 0},
+		-time.Second,
+	)
+	if negative.interval != DefaultInterval {
+		t.Fatalf(
+			"expected negative interval to coerce to %s, got %s",
+			DefaultInterval,
+			negative.interval,
+		)
+	}
+}
+
+func TestFileSourceSnapshotParseError(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "stat")
+
+	err := os.WriteFile(path, []byte("cpu0 bad data\n"), 0o600)
+	if err != nil {
+		t.Fatalf("write temp stat file: %v", err)
+	}
+
+	_, snapshotErr := (FileSource{Path: path}).Snapshot(context.Background())
+	if snapshotErr == nil || !strings.Contains(snapshotErr.Error(), "parse") {
+		t.Fatalf("expected parse error, got %v", snapshotErr)
+	}
+}
+
+func TestFileSourceSnapshotDefaultPath(t *testing.T) {
+	t.Parallel()
+
+	snap, err := (FileSource{Path: ""}).Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("expected default /proc/stat to be readable, got %v", err)
+	}
+
+	if snap.Total == 0 {
+		t.Fatalf("expected non-zero total jiffies from default path")
+	}
+}
+
+func TestSampleLoopStopsOnContextCancel(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	sampler := NewSampler(
+		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, index: 0},
+		time.Millisecond,
+	)
+	sampler.now = func() time.Time { return time.Unix(0, 0) }
+
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+
+	observations := make(chan Observation, 1)
+
+	sampler.sampleLoop(ctx, sampler.source, Snapshot{Idle: 1, Total: 2}, ticker, observations)
+
+	select {
+	case observation := <-observations:
+		t.Fatalf("expected no observations after cancellation, got %+v", observation)
+	default:
+	}
+}
+
+func TestBuildObservationZeroDelta(t *testing.T) {
+	t.Parallel()
+
+	previous := Snapshot{Idle: 10, Total: 50}
+	current := Snapshot{Idle: 5, Total: 40} // simulate counter wrap
+
+	observation := buildObservation(time.Unix(0, 0), previous, current)
+
+	assertObservation(t, observation, 0, 0, 0)
+}
