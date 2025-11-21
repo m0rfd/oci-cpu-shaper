@@ -1,6 +1,10 @@
 # syntax=docker/dockerfile:1.6
 
 ARG GO_VERSION=1.25.4
+ARG VERSION="dev"
+ARG GIT_COMMIT="unknown"
+ARG BUILD_DATE="unknown"
+
 FROM golang:${GO_VERSION}-bookworm AS builder
 
 WORKDIR /src
@@ -14,9 +18,9 @@ COPY . .
 ARG TARGETOS=linux
 ARG TARGETARCH
 ARG TARGETVARIANT
-ARG VERSION="dev"
-ARG GIT_COMMIT="unknown"
-ARG BUILD_DATE="unknown"
+ARG VERSION
+ARG GIT_COMMIT
+ARG BUILD_DATE
 
 ENV CGO_ENABLED=0
 
@@ -30,9 +34,17 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 
 FROM gcr.io/distroless/static:nonroot AS rootless
 
+ARG VERSION
+ARG GIT_COMMIT
+ARG BUILD_DATE
+ARG IMAGE_SOURCE="https://github.com/oci-cpu-shaper/oci-cpu-shaper"
+
 LABEL org.opencontainers.image.title="oci-cpu-shaper" \
       org.opencontainers.image.description="OCI CPU shaper (distroless rootless)" \
-      org.opencontainers.image.source="https://github.com/oci-cpu-shaper/oci-cpu-shaper"
+      org.opencontainers.image.source="${IMAGE_SOURCE}" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
 
 COPY --from=builder /out/oci-cpu-shaper /usr/local/bin/oci-cpu-shaper
 COPY configs/offline-smoke.yaml /etc/oci-cpu-shaper/config.yaml
@@ -46,9 +58,17 @@ ENTRYPOINT ["/usr/local/bin/oci-cpu-shaper"]
 
 FROM gcr.io/distroless/static:latest AS rootful
 
+ARG VERSION
+ARG GIT_COMMIT
+ARG BUILD_DATE
+ARG IMAGE_SOURCE="https://github.com/oci-cpu-shaper/oci-cpu-shaper"
+
 LABEL org.opencontainers.image.title="oci-cpu-shaper" \
       org.opencontainers.image.description="OCI CPU shaper (distroless rootful)" \
-      org.opencontainers.image.source="https://github.com/oci-cpu-shaper/oci-cpu-shaper"
+      org.opencontainers.image.source="${IMAGE_SOURCE}" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
 
 COPY --from=builder /out/oci-cpu-shaper /usr/local/bin/oci-cpu-shaper
 COPY configs/offline-smoke.yaml /etc/oci-cpu-shaper/config.yaml

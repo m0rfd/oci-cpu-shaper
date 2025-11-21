@@ -32,6 +32,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Compute build metadata
+        id: build_meta
+        run: |
+          echo "version=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
       - name: Set up QEMU (optional, for consistency)
         uses: docker/setup-qemu-action@v3
 
@@ -48,12 +54,29 @@ jobs:
           platforms: linux/amd64
           push: false
           load: true
+          build-args: |
+            VERSION=${{ steps.build_meta.outputs.version }}
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ steps.build_meta.outputs.build_date }}
+            IMAGE_SOURCE=https://github.com/${{ github.repository }}
           tags: pr-local/${{ github.repository }}:${{ github.sha }}
 
       # basic container smoke test
       - name: Smoke test container
         run: |
-          docker run --rm pr-local/${{ github.repository }}:${{ github.sha }} --version
+          output=$(docker run --rm pr-local/${{ github.repository }}:${{ github.sha }} --version)
+
+          expected=$(printf '{Version:%s GitCommit:%s BuildDate:%s}' \
+            "${{ steps.build_meta.outputs.version }}" \
+            "${{ github.sha }}" \
+            "${{ steps.build_meta.outputs.build_date }}")
+
+          if [[ "${output}" != "${expected}" ]]; then
+            echo "version output mismatch"
+            echo "  got:      ${output}"
+            echo "  expected: ${expected}"
+            exit 1
+          fi
 
       # Trivy scan on PR (local image) + SARIF upload
       - name: Scan PR image with Trivy (SARIF)
@@ -108,6 +131,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # For convenience, strip 'v' from tag if you ever need bare version
+      - name: Extract version
+        id: vars
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare build metadata
+        id: build_meta
+        run: echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
       # ------ Metadata (tags + labels) with docker/metadata-action ------
       # Rootless is the primary image (gets :latest + semver tags)
       - name: Docker meta (rootless)
@@ -132,7 +166,7 @@ jobs:
             org.opencontainers.image.title=${{ github.repository }}
             org.opencontainers.image.source=${{ github.repositoryUrl }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.version=${{ steps.vars.outputs.version }}
 
       # Rootful variant – tags prefixed with rootful-
       - name: Docker meta (rootful)
@@ -142,23 +176,19 @@ jobs:
           images: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=tag,suffix=-rootful               # v1.2.3-rootful
-            type=semver,pattern={{version}},suffix=-rootful  # 1.2.3-rootful
-            type=semver,pattern={{major}},suffix=-rootful    # 1-rootful
-            type=semver,pattern=v{{major}},suffix=-rootful   # v1-rootful
-            type=raw,value=rootful                           # rootful
+            type=ref,event=tag               # v1.2.3-rootful
+            type=semver,pattern={{version}}  # 1.2.3-rootful
+            type=semver,pattern={{major}}    # 1-rootful
+            type=semver,pattern=v{{major}}   # v1-rootful
+            type=raw,value=rootful,suffix=   # rootful
+          flavor: |
+            latest=false                     # auto by default; latest is for rootless only
+            suffix=-rootful,onlatest=true    # add -rootful to each tag
           labels: |
             org.opencontainers.image.title=${{ github.repository }} (rootful)
             org.opencontainers.image.source=${{ github.repositoryUrl }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ github.ref_name }}
-
-      # For convenience, strip 'v' from tag if you ever need bare version
-      - name: Extract version
-        id: vars
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            org.opencontainers.image.version=${{ steps.vars.outputs.version }}
 
       # ------ Build & push rootless (multi-arch, with cache, SBOM, provenance) ------
 
@@ -173,6 +203,11 @@ jobs:
           push: true
           tags: ${{ steps.meta_rootless.outputs.tags }}
           labels: ${{ steps.meta_rootless.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.vars.outputs.version }}
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ steps.build_meta.outputs.build_date }}
+            IMAGE_SOURCE=${{ github.repositoryUrl }}
           provenance: true
           sbom: true
           cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-rootless
@@ -191,6 +226,11 @@ jobs:
           push: true
           tags: ${{ steps.meta_rootful.outputs.tags }}
           labels: ${{ steps.meta_rootful.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.vars.outputs.version }}
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ steps.build_meta.outputs.build_date }}
+            IMAGE_SOURCE=${{ github.repositoryUrl }}
           provenance: true
           sbom: true
           cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-rootful
