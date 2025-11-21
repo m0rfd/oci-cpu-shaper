@@ -13,7 +13,7 @@ issue or pull request.
    with `make tools` or `mise install` as described in
    §14 of `docs/08-development.md`.
 4. Configure Git hooks via `git config core.hooksPath .githooks` if you want the
-   optional pre-push checks that run `make fmt` and `make lint` for you.
+   optional pre-push checks that run `make lint` for you.
 
 ## Tooling Workflow
 

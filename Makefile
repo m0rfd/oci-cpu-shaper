@@ -42,7 +42,7 @@ ACTIONLINT ?= $(ACTIONLINT_BIN)
 ACTIONLINT_FLAGS ?=
 ACTIONLINT_PATHS ?=
 
-.PHONY: fmt lint test build check tools ensure-golangci-lint ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks
+.PHONY: lint test build check tools ensure-golangci-lint ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks
 
 GO_MACHINE_ARCH := $(shell uname -m)
 GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))

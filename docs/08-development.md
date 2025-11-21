@@ -156,7 +156,7 @@ To run formatting and linting automatically before pushing, opt in to the provid
 git config core.hooksPath .githooks
 ```
 
-The `.githooks/pre-push` script executes `make fmt` and `make lint`, aborting the push if formatting changes are required or linting fails. Remove or customize the hook as needed for your workflow.
+The `.githooks/pre-push` script executes `make lint`, aborting the push if formatting changes are required or linting fails. Remove or customize the hook as needed for your workflow.
 
 ## §15 Self-Hosted Runner Maintenance
 
