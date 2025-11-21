@@ -9,6 +9,7 @@ import (
 
 	"oci-cpu-shaper/pkg/adapt"
 	"oci-cpu-shaper/pkg/imds"
+	"oci-cpu-shaper/pkg/oci"
 	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
@@ -217,6 +218,41 @@ func stubShapeConfig(ocpus, memory float64) imds.ShapeConfig {
 		OCPUs:       ocpus,
 		MemoryInGBs: memory,
 	}
+}
+
+func contextWithStubMetrics(t *testing.T, metrics oci.MetricsClient) context.Context {
+	t.Helper()
+
+	return withMetricsClientFactory(
+		context.Background(),
+		func(string, string) (oci.MetricsClient, error) {
+			return metrics, nil
+		},
+	)
+}
+
+func contextWithAssertingMetricsFactory(
+	t *testing.T,
+	metrics oci.MetricsClient,
+	wantCompartmentID string,
+	wantRegion string,
+) context.Context {
+	t.Helper()
+
+	return withMetricsClientFactory(
+		context.Background(),
+		func(compartmentID, region string) (oci.MetricsClient, error) {
+			if compartmentID != wantCompartmentID {
+				t.Fatalf("unexpected compartment id: %s", compartmentID)
+			}
+
+			if region != wantRegion {
+				t.Fatalf("unexpected region: %s", region)
+			}
+
+			return metrics, nil
+		},
+	)
 }
 
 func loadConfigStub() func(string) (runtimeconfig.Config, error) {
