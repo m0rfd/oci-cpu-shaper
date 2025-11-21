@@ -62,7 +62,7 @@ ensure-golangci-lint:
 
 fmt: ensure-gofumpt
 	@set -euo pipefail; \
-	FILES="$$(find . -type f -name '*.go' -not -path './vendor/*' -not -path './.git/*' 2>/dev/null)"; \
+	FILES="$$(find . -type f -name '*.go' -not -path './vendor/*' -not -path './.git/*' -not -path './.cache/*' 2>/dev/null)"; \
 	if [ -z "$$FILES" ]; then \
 		echo "No Go files found; skipping format."; \
 	else \
