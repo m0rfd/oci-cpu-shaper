@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-	"oci-cpu-shaper/pkg/oci"
-	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
 const (
@@ -19,59 +17,48 @@ const (
 	metricsShutdownTimeout   = 5 * time.Second
 )
 
-type metricsClientFactory func(compartmentID, region string) (oci.MetricsClient, error)
+type metricsShutdownFunc func(context.Context)
 
-type metricsClientFactoryKey struct{}
-
-func withMetricsClientFactory(ctx context.Context, factory metricsClientFactory) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	if factory == nil {
-		return ctx
-	}
-
-	return context.WithValue(ctx, metricsClientFactoryKey{}, factory)
-}
-
-func metricsClientFactoryFromContext(ctx context.Context) metricsClientFactory {
-	if ctx != nil {
-		if factory, ok := ctx.Value(metricsClientFactoryKey{}).(metricsClientFactory); ok &&
-			factory != nil {
-			return factory
-		}
-	}
-
-	return buildInstancePrincipalMetricsClient
-}
-
-var (
-	errMetricsDelegateNil     = errors.New("metrics client: nil delegate")
-	errMetricsContextRequired = errors.New("metrics server: context is required")
-	errMetricsServerDisabled  = errors.New("metrics server: disabled")
-)
-
-//nolint:ireturn // helper returns MetricsClient interface for dependency substitution.
-func createMetricsClient(
+func startMetricsEndpoint(
 	ctx context.Context,
-	cfg runtimeconfig.Config,
-	offline bool,
-	compartmentID string,
-	region string,
-) (oci.MetricsClient, error) {
-	if offline {
-		return oci.NewStaticMetricsClient(cfg.Controller.TargetStart), nil
+	deps runDeps,
+	logger *zap.Logger,
+	bindAddr string,
+	handler http.Handler,
+) (metricsShutdownFunc, context.CancelFunc, error) {
+	if handler == nil {
+		return nil, nil, nil
 	}
 
-	factory := metricsClientFactoryFromContext(ctx)
+	if deps.startMetricsServer == nil {
+		logger.Warn("metrics server disabled", zap.String("reason", "start function missing"))
 
-	metricsClient, err := factory(compartmentID, region)
+		return nil, nil, nil
+	}
+
+	trimmed := strings.TrimSpace(bindAddr)
+	if trimmed == "" {
+		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
+
+		return nil, nil, nil
+	}
+
+	if ctx == nil {
+		return nil, nil, errMetricsContextRequired
+	}
+
+	logger.Info("starting metrics server", zap.String("bind", trimmed))
+
+	metricsCtx, cancel := context.WithCancel(ctx)
+
+	shutdown, err := deps.startMetricsServer(metricsCtx, logger, trimmed, handler)
 	if err != nil {
-		return nil, fmt.Errorf("build monitoring client: %w", err)
+		cancel()
+
+		return nil, nil, err
 	}
 
-	return metricsClient, nil
+	return shutdown, cancel, nil
 }
 
 func startMetricsServer( //nolint:cyclop,funlen // listener lifecycle requires several guard branches
@@ -167,28 +154,4 @@ func startMetricsServer( //nolint:cyclop,funlen // listener lifecycle requires s
 
 		<-serveDone
 	}, nil
-}
-
-type p95CPUQuerier interface {
-	QueryP95CPU(ctx context.Context, resourceID string, last7d bool) (float32, error)
-}
-
-type instancePrincipalMetricsClient struct {
-	client p95CPUQuerier
-}
-
-func (m *instancePrincipalMetricsClient) QueryP95CPU(
-	ctx context.Context,
-	resourceID string,
-) (float64, error) {
-	if m == nil || m.client == nil {
-		return 0, errMetricsDelegateNil
-	}
-
-	value, err := m.client.QueryP95CPU(ctx, resourceID, true)
-	if err != nil {
-		return 0, fmt.Errorf("query p95 cpu: %w", err)
-	}
-
-	return float64(value), nil
 }

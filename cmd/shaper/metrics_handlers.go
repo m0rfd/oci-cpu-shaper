@@ -1,9 +1,7 @@
 package main
 
 import (
-	"context"
 	"net/http"
-	"strings"
 
 	"go.uber.org/zap"
 	"oci-cpu-shaper/pkg/adapt"
@@ -11,8 +9,6 @@ import (
 	metricshttp "oci-cpu-shaper/pkg/http/metrics"
 	statushttp "oci-cpu-shaper/pkg/http/status"
 )
-
-type metricsShutdownFunc func(context.Context)
 
 func buildMetricsExporter(deps runDeps) *metricshttp.Exporter {
 	if deps.newMetricsExporter != nil {
@@ -66,46 +62,4 @@ func configureMetrics(
 	}
 
 	return mux
-}
-
-func startMetricsEndpoint(
-	ctx context.Context,
-	deps runDeps,
-	logger *zap.Logger,
-	bindAddr string,
-	handler http.Handler,
-) (metricsShutdownFunc, context.CancelFunc, error) {
-	if handler == nil {
-		return nil, nil, nil
-	}
-
-	if deps.startMetricsServer == nil {
-		logger.Warn("metrics server disabled", zap.String("reason", "start function missing"))
-
-		return nil, nil, nil
-	}
-
-	trimmed := strings.TrimSpace(bindAddr)
-	if trimmed == "" {
-		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
-
-		return nil, nil, nil
-	}
-
-	if ctx == nil {
-		return nil, nil, errMetricsContextRequired
-	}
-
-	logger.Info("starting metrics server", zap.String("bind", trimmed))
-
-	metricsCtx, cancel := context.WithCancel(ctx)
-
-	shutdown, err := deps.startMetricsServer(metricsCtx, logger, trimmed, handler)
-	if err != nil {
-		cancel()
-
-		return nil, nil, err
-	}
-
-	return shutdown, cancel, nil
 }
