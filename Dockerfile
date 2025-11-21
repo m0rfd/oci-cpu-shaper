@@ -5,7 +5,6 @@ ARG VERSION="dev"
 ARG GIT_COMMIT="unknown"
 ARG BUILD_DATE="unknown"
 
-ARG BUILDPLATFORM
 FROM --platform=${BUILDPLATFORM} golang:${GO_VERSION}-bookworm AS builder
 
 WORKDIR /src
