@@ -64,7 +64,19 @@ jobs:
       # basic container smoke test
       - name: Smoke test container
         run: |
-          docker run --rm pr-local/${{ github.repository }}:${{ github.sha }} --version
+          output=$(docker run --rm pr-local/${{ github.repository }}:${{ github.sha }} --version)
+
+          expected=$(printf '{Version:%s GitCommit:%s BuildDate:%s}' \
+            "${{ steps.build_meta.outputs.version }}" \
+            "${{ github.sha }}" \
+            "${{ steps.build_meta.outputs.build_date }}")
+
+          if [[ "${output}" != "${expected}" ]]; then
+            echo "version output mismatch"
+            echo "  got:      ${output}"
+            echo "  expected: ${expected}"
+            exit 1
+          fi
 
       # Trivy scan on PR (local image) + SARIF upload
       - name: Scan PR image with Trivy (SARIF)
