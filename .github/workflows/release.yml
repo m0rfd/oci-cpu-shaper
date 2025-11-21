@@ -176,11 +176,14 @@ jobs:
           images: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=tag,suffix=-rootful               # v1.2.3-rootful
-            type=semver,pattern={{version}},suffix=-rootful  # 1.2.3-rootful
-            type=semver,pattern={{major}},suffix=-rootful    # 1-rootful
-            type=semver,pattern=v{{major}},suffix=-rootful   # v1-rootful
-            type=raw,value=rootful                           # rootful
+            type=ref,event=tag               # v1.2.3-rootful
+            type=semver,pattern={{version}}  # 1.2.3-rootful
+            type=semver,pattern={{major}}    # 1-rootful
+            type=semver,pattern=v{{major}}   # v1-rootful
+            type=raw,value=rootful,suffix=   # rootful
+          flavor: |
+            latest=false                     # auto by default; latest is for rootless only
+            suffix=-rootful,onlatest=true    # add -rootful to each tag
           labels: |
             org.opencontainers.image.title=${{ github.repository }} (rootful)
             org.opencontainers.image.source=${{ github.repositoryUrl }}
