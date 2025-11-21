@@ -9,7 +9,7 @@ issue or pull request.
 
 1. Discuss substantial changes in an issue before opening a pull request so the
    architecture remains aligned with `docs/initial-implementation-plan.md`.
-2. Install the pinned toolchain (Go 1.24.10, `golangci-lint` 2.6.1,
+2. Install the pinned toolchain (Go 1.25.4, `golangci-lint` 2.6.1,
    `gofumpt` 0.9.2) with `make tools` or `mise install` as described in
    §14 of `docs/08-development.md`.
 3. Configure Git hooks via `git config core.hooksPath .githooks` if you want the

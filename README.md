@@ -1,6 +1,6 @@
 # OCI CPU Shaper
 
-[![Go 1.24.x](https://img.shields.io/badge/Go-1.24.x-00ADD8?logo=go)](go.mod)
+[![Go 1.25.x](https://img.shields.io/badge/Go-1.25.x-00ADD8?logo=go)](go.mod)
 [![OCI VM Ready](https://img.shields.io/badge/OCI%20VM-ready-fa6400?logo=oracle)](docs/10-quick-start.md)
 [![Cosign Releases](https://img.shields.io/badge/Releases-Cosign%20signed-0f9d58?logo=cosign)](#release-verification)
 

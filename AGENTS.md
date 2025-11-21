@@ -2,7 +2,7 @@
 
 ## Repository scope
 - Architecture: follow `docs/initial-implementation-plan.md` (check §§5 & 15 before adding modules) and keep packages lean.
-- Toolchain: Go 1.24.x, static linux/amd64+arm64 binaries (§4).
+- Toolchain: Go 1.25.x, static linux/amd64+arm64 binaries (§4).
 - QA: add/refresh tests with every logic change, then run `make test` and `make lint` until clean (§§11, 14); these helpers already seed `GOCACHE`/`GOLANGCI_LINT_CACHE` under `.cache` so avoid calling `go test` or `golangci-lint run` directly in constrained sandboxes.
 - Workflows: prefer `make lint` instead of running `golangci-lint` manually so the helper sets `GOLANGCI_LINT_CACHE` in `.cache/golangci`; `make test` already sets `GOCACHE` to `.cache/go` so avoid invoking `go test`/`golangci-lint` directly from restricted sandboxes (the caches are ignored via `.gitignore`).
 - Linting: rely on `make lint`, which honors the `.golangci.yml` `issues.fix: true` setting so fixable findings are auto-applied before results are reported; rerun after edits to verify no residual warnings remain.
