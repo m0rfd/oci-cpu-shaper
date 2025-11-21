@@ -84,48 +84,57 @@ func resolveCompartmentAndRegion(
 	compartmentOverride := strings.TrimSpace(cfg.OCI.CompartmentID)
 	regionOverride := strings.TrimSpace(cfg.OCI.Region)
 
+	metadata := ociMetadata{
+		CompartmentID: compartmentOverride,
+		Region:        regionOverride,
+	}
+
 	if cfg.OCI.Offline {
-		return ociMetadata{
-			CompartmentID: compartmentOverride,
-			Region:        regionOverride,
-		}, nil
+		return metadata, nil
 	}
 
 	if imdsClient == nil {
 		return ociMetadata{}, errControllerIMDSRequired
 	}
 
-	compartmentID, compartmentErr := imdsClient.CompartmentID(ctx)
-	canonicalRegion, canonicalRegionErr := imdsClient.CanonicalRegion(ctx)
-	region, regionErr := imdsClient.Region(ctx)
-
-	var metadata ociMetadata
-
-	value, err := preferMetadataValue(
-		compartmentID,
-		compartmentErr,
-		compartmentOverride,
-		errControllerCompartmentRequired,
-		"lookup compartment ocid",
-	)
-	if err != nil {
-		return ociMetadata{}, err
+	if metadata.CompartmentID != "" && metadata.Region != "" {
+		return metadata, nil
 	}
 
-	metadata.CompartmentID = value
+	if metadata.CompartmentID == "" {
+		compartmentID, compartmentErr := imdsClient.CompartmentID(ctx)
 
-	value, err = preferCanonicalRegionValue(
-		canonicalRegion,
-		canonicalRegionErr,
-		region,
-		regionErr,
-		regionOverride,
-	)
-	if err != nil {
-		return ociMetadata{}, err
+		value, err := preferMetadataValue(
+			compartmentID,
+			compartmentErr,
+			compartmentOverride,
+			errControllerCompartmentRequired,
+			"lookup compartment ocid",
+		)
+		if err != nil {
+			return ociMetadata{}, err
+		}
+
+		metadata.CompartmentID = value
 	}
 
-	metadata.Region = value
+	if metadata.Region == "" {
+		canonicalRegion, canonicalRegionErr := imdsClient.CanonicalRegion(ctx)
+		region, regionErr := imdsClient.Region(ctx)
+
+		value, err := preferCanonicalRegionValue(
+			canonicalRegion,
+			canonicalRegionErr,
+			region,
+			regionErr,
+			regionOverride,
+		)
+		if err != nil {
+			return ociMetadata{}, err
+		}
+
+		metadata.Region = value
+	}
 
 	return metadata, nil
 }
@@ -137,13 +146,14 @@ func preferMetadataValue(
 	missingErr error,
 	errPrefix string,
 ) (string, error) {
+	trimmedOverride := strings.TrimSpace(override)
+	if trimmedOverride != "" {
+		return trimmedOverride, nil
+	}
+
 	trimmedFetched := strings.TrimSpace(fetched)
 	if trimmedFetched != "" {
 		return trimmedFetched, nil
-	}
-
-	if override != "" {
-		return override, nil
 	}
 
 	if fetchErr != nil {
@@ -160,6 +170,11 @@ func preferCanonicalRegionValue(
 	legacyErr error,
 	override string,
 ) (string, error) {
+	trimmedOverride := strings.TrimSpace(override)
+	if trimmedOverride != "" {
+		return trimmedOverride, nil
+	}
+
 	trimmedCanonical := strings.TrimSpace(canonical)
 	if trimmedCanonical != "" && canonicalErr == nil {
 		return trimmedCanonical, nil
@@ -168,11 +183,6 @@ func preferCanonicalRegionValue(
 	trimmedLegacy := strings.TrimSpace(legacy)
 	if trimmedLegacy != "" && legacyErr == nil {
 		return trimmedLegacy, nil
-	}
-
-	trimmedOverride := strings.TrimSpace(override)
-	if trimmedOverride != "" {
-		return trimmedOverride, nil
 	}
 
 	if trimmedLegacy != "" {
