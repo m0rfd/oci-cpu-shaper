@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-GO ?= go
+GO ?= ${GOROOT}/bin/go
 GO_REQUIRED_VERSION ?= 1.25.4
 MIN_COVERAGE ?= 95.0
 COVERAGE_PROFILE ?= coverage.out
@@ -23,7 +23,7 @@ COVERAGE_TAG_ARGS := $(if $(strip $(COVERAGE_TAGS)),-tags "$(strip $(COVERAGE_TA
 
 GOLANGCI_LINT_VERSION ?= v2.6.1
 GOVULNCHECK_VERSION ?= v1.1.4
-ACTIONLINT_VERSION ?= v1.7.8
+ACTIONLINT_VERSION ?= v1.7.9
 
 GO_BIN_PATH := $(shell $(GO) env GOBIN)
 ifeq ($(GO_BIN_PATH),)
@@ -256,7 +256,7 @@ e2e:
 	mkdir -p "$(GOCACHE_DIR)"; \
 	GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=e2e -v ./tests/e2e/...
 
-setup: ensure-dev-deps ensure-go maintenance install-git-hooks
+setup: ensure-dev-deps ensure-go maintenance
 	@set -euo pipefail; \
 	if ! command -v go >/dev/null 2>&1; then \
 	echo "Go installation failed; check logs above"; \
@@ -278,8 +278,8 @@ ensure-dev-deps:
 		exit 1; \
 	fi; \
 	. /etc/os-release; \
-	if [ "$$ID" != "ubuntu" ] || ! printf '%s' "$$VERSION_ID" | grep -Eq '^24(\\.|$$)'; then \
-		echo "System package install only supported on Ubuntu 24.x (detected $$ID $$VERSION_ID)"; \
+	if [ "$$ID" != "ubuntu" ]; then \
+		echo "System package install only supported on Ubuntu (detected $$ID)"; \
 		exit 1; \
 	fi; \
 	APT_GET_CMD="apt-get"; \
@@ -305,8 +305,8 @@ ensure-go:
 		exit 1; \
 	fi; \
 	. /etc/os-release; \
-	if [ "$$ID" != "ubuntu" ] || ! printf '%s' "$$VERSION_ID" | grep -Eq '^24(\\.|$$)'; then \
-		echo "Go not found and platform ($$ID $$VERSION_ID) is not Ubuntu 24.x; aborting install"; \
+	if [ "$$ID" != "ubuntu" ]; then \
+		echo "Go not found and platform ($$ID) is not Ubuntu; aborting install"; \
 		exit 1; \
 	fi; \
 	TARBALL="go$(GO_REQUIRED_VERSION).linux-$(GO_DL_ARCH).tar.gz"; \
