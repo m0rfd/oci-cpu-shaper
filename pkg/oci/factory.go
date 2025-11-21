@@ -44,6 +44,10 @@ func resolveFactory(options []ClientOption) ClientFactory {
 	var opts clientOptions
 
 	for _, opt := range options {
+		if opt == nil {
+			continue
+		}
+
 		opt(&opts)
 	}
 
