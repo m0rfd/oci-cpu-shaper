@@ -1,4 +1,6 @@
 SHELL := /bin/bash
+.DEFAULT_GOAL := help
+MAKEFLAGS += --warn-undefined-variables --no-builtin-rules
 
 GO ?= go
 GO_REQUIRED_VERSION ?= 1.25.4
@@ -63,7 +65,7 @@ GO_MACHINE_ARCH := $(shell uname -m)
 GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
 HELP_TARGETS := lint test coverage build check govulncheck integration e2e agents actionlint help clean
 
-tools: ensure-golangci-lint ensure-actionlint ensure-mbake
+tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-mbake
 
 ensure-golangci-lint:
 	@set -euo pipefail; \
@@ -113,7 +115,7 @@ ensure-actionlint:
 	fi; \
 	if [ "$$CURRENT_VERSION" != "$(ACTIONLINT_VERSION)" ]; then \
 		echo "Installing actionlint $(ACTIONLINT_VERSION)"; \
-		$(GO) install github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION); \
+		GOBIN="$(GO_BIN_PATH)" $(GO) install github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION); \
 	fi
 
 ensure-mbake:
@@ -207,7 +209,7 @@ else \
 		fi; \
 	fi
 
-agents:
+agents: verify-go-version
 	@set -euo pipefail; \
 	mkdir -p "$(GOCACHE_DIR)"; \
 	GOCACHE="$(GOCACHE_DIR)" $(GO) run ./cmd/agentscheck
@@ -368,8 +370,13 @@ ensure-dev-deps:
 ensure-go:
 	@set -euo pipefail; \
 	if command -v $(GO) >/dev/null 2>&1; then \
-	echo "Go already available: $$($(GO) version)"; \
-	exit 0; \
+	CURRENT_VERSION="$$( $(GO) version | awk '{print $$3}' | sed 's/^go//' )"; \
+	if [ "$$CURRENT_VERSION" = "$(GO_REQUIRED_VERSION)" ]; then \
+		echo "Go already available: $$($(GO) version)"; \
+		exit 0; \
+	else \
+		echo "Go $$CURRENT_VERSION detected, reinstalling $(GO_REQUIRED_VERSION)"; \
+	fi; \
 	fi; \
 	if [ ! -r /etc/os-release ]; then \
 		echo "/etc/os-release not readable; cannot install Go"; \
@@ -390,7 +397,7 @@ ensure-go:
 	rm -f "$$TMP_TARBALL"; \
 	echo "Go $(GO_REQUIRED_VERSION) installed at /usr/local/go";
 
-go-mod-download:
+go-mod-download: verify-go-version
 	@set -euo pipefail; \
 	if [ ! -f go.mod ]; then \
 		echo "go.mod not found; skipping module download."; \
