@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+cd "${ROOT_DIR}"
+
+printf '\n[pre-commit] Installing/updating Go tools (golangci-lint --fix)\n'
+make tools
+
+printf '\n[pre-commit] Running golangci-lint with autofix\n'
+make lint

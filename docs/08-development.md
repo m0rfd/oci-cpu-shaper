@@ -10,6 +10,12 @@ This guide covers the tooling expectations and command shortcuts for contributin
 
 Run `make tools` to install or upgrade the pinned `golangci-lint` release with `go install`, and to ensure the repository-standard `gofumpt` binary is available. The helper target keeps local tooling aligned with CI, which currently runs `golangci-lint` v2.6.1 and `gofumpt` v0.9.2. Ensure `$GOBIN` (or `$(go env GOPATH)/bin` when `GOBIN` is unset) is on your `PATH` so the installed binaries are discoverable. Developers using `mise`/`asdf` can achieve the same alignment by running `mise install`, because `.tool-versions` now pins Go 1.25.4 alongside the same `golangci-lint` and `gofumpt` versions referenced in §14.
 
+### Codex environment bootstrap
+
+- Run `hack/setup-codex-env.sh` after cloning in a fresh container to install Go 1.25.4, the pinned `golangci-lint`/`gofumpt`/`actionlint` versions, and a repo-scoped Go cache (`.cache/go`, `.cache/gomod`, `.cache/golangci`) so the Make targets keep working in locked-down sandboxes (§§8, 11, 14).
+- The setup script writes `${HOME}/.config/oci-cpu-shaper/env.sh` with `GOPATH`, `GOBIN`, `PATH`, `GOCACHE`, `GOMODCACHE`, and `GOLANGCI_LINT_CACHE` exports. It appends a sourcing stanza to `~/.bashrc` so the repo-local caches and PATH updates load automatically in future shells.
+- For resumed Codex containers, `hack/maintain-codex-env.sh` revalidates the Go toolchain, refreshes module/tool caches, and re-enables the linting git hooks so cached workspaces stay aligned with CI (§§8, 14).
+
 ## Command Reference
 
 The repository includes a `Makefile` that wraps the most common development tasks:

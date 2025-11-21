@@ -31,6 +31,10 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
   state, and last OCI error every loop. Tests cover the Prometheus output and the
   fallback integration path, while §5.4 now recommends Grafana panels for the cadence
   and error strings (§§5, 9, 11).
+- Codex-friendly bootstrap (`hack/setup-codex-env.sh`) and maintenance
+  (`hack/maintain-codex-env.sh`) scripts that install Go 1.25.4, the pinned linting
+  toolchain, repo-local caches, and linting git hooks so fresh and cached containers
+  stay aligned with the CI workflow (§§8, 11, 14).
 - `/healthz` status handler on the metrics listener that surfaces controller
   state plus the last OCI Monitoring and estimator errors as JSON; unit tests
   cover `pkg/http/status` and the offline CLI E2E now exercises the endpoint to
