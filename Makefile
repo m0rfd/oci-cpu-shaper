@@ -43,7 +43,7 @@ ACTIONLINT ?= $(ACTIONLINT_BIN)
 ACTIONLINT_FLAGS ?=
 ACTIONLINT_PATHS ?=
 
-.PHONY: fmt lint test build check tools ensure-golangci-lint ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks verify-go-version
+.PHONY: lint test build check tools ensure-golangci-lint ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks verify-go-version
 
 GO_MACHINE_ARCH := $(shell uname -m)
 GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
@@ -159,14 +159,6 @@ agents:
 	@set -euo pipefail; \
 	mkdir -p "$(GOCACHE_DIR)"; \
 	GOCACHE="$(GOCACHE_DIR)" $(GO) run ./cmd/agentscheck
-
-fmt: verify-go-version
-	@set -euo pipefail; \
-	if [ -z "$(strip $(PKGS))" ]; then \
-		echo "No Go packages found; nothing to format."; \
-	else \
-		gofmt -w $(shell find . -path './vendor' -prune -o -name '*.go' -print); \
-	fi
 
 verify-go-version:
 	@set -euo pipefail; \
