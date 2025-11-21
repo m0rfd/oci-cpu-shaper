@@ -74,11 +74,11 @@ welcome! Please:
 
 1. Open an issue to discuss significant features or changes.
 2. Follow Go best practices and the formatting rules defined in `.editorconfig`.
-3. Use the provided tooling shortcuts before submitting changes and keep the ≥95% statement coverage guarantee in place:
+3. Use the provided tooling shortcuts before submitting changes and keep the ≥99% statement coverage guarantee in place:
    - `make fmt` to format code with `go fmt`.
    - `make lint` to run `golangci-lint` with the cached configuration described in the docs.
    - `make test` to execute the suite with the Go race detector enabled.
-   - `make coverage MIN_COVERAGE=95` to confirm the repository-wide coverage threshold documented in §11 of the implementation plan.
+   - `make coverage MIN_COVERAGE=99` to confirm the repository-wide coverage threshold documented in §11 of the implementation plan.
   - `make integration` to verify Docker connectivity, ensure the cgroup v2 CPU controller is present, build the distroless rootful and nonroot images, and run the CPU weight responsiveness tests with logs mirrored to `artifacts/integration.log`.
    - `make build` to ensure binaries compile successfully.
 4. Include tests and documentation updates when adding new functionality.

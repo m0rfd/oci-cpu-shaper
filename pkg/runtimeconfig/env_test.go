@@ -75,6 +75,13 @@ func TestEnvIntRejectsNonPositive(t *testing.T) {
 	if got := envInt(keyValid, 1); got != 5 {
 		t.Fatalf("expected trimmed int 5, got %d", got)
 	}
+
+	keyInvalid := "OCI_CPU_SHAPER_TEST_INT_INVALID"
+	t.Setenv(keyInvalid, "not-a-number")
+
+	if got := envInt(keyInvalid, 9); got != 9 {
+		t.Fatalf("expected invalid int to fall back to 9, got %d", got)
+	}
 }
 
 func TestEnvStringTrimsAndFallback(t *testing.T) {

@@ -104,3 +104,24 @@ func TestRecordingDutyCyclerObserveHostLoadNoop(t *testing.T) {
 	recorder := &recordingDutyCycler{mu: sync.Mutex{}, target: 0}
 	recorder.ObserveHostLoad(0.9)
 }
+
+func TestNewModeAwareDutyCyclerHandlesNilShaper(t *testing.T) {
+	t.Parallel()
+
+	if got := newModeAwareDutyCycler(dryRunModeLabel, nil); got != nil {
+		t.Fatalf("expected nil shaper to return nil wrapper, got %T", got)
+	}
+}
+
+func TestRecordingDutyCyclerNilReceiver(t *testing.T) {
+	t.Parallel()
+
+	var recorder *recordingDutyCycler
+
+	recorder.SetTarget(0.55)
+	recorder.ObserveHostLoad(0.75)
+
+	if target := recorder.Target(); target != 0 {
+		t.Fatalf("expected nil recorder target to remain zero, got %.2f", target)
+	}
+}

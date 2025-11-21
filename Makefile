@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
 GO ?= go
-MIN_COVERAGE ?= 95.0
+MIN_COVERAGE ?= 99.0
 COVERAGE_PROFILE ?= coverage.out
 COVERAGE_SUMMARY ?= coverage.txt
 INTEGRATION_COVERAGE_PROFILE ?=

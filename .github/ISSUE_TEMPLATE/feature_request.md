@@ -37,7 +37,7 @@ Share the commands, configuration files, or runbooks you expect to use to valida
 
 - [ ] `make lint`
 - [ ] `make test`
-- [ ] `make coverage MIN_COVERAGE=95`
+- [ ] `make coverage MIN_COVERAGE=99`
 
 If you have not exercised a checkbox yet, state the planned validation so maintainers can triage per §8.7.
 
