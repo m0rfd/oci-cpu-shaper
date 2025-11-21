@@ -322,6 +322,46 @@ func TestLogRuntimeConfig(t *testing.T) {
 	requireLogFieldString(t, entry, "httpBind", "127.0.0.1:9000")
 }
 
+func TestLogRuntimeConfigMarksHTTPOff(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	cfg := runtimeconfig.Default()
+	cfg.HTTP.Bind = " \t"
+
+	logRuntimeConfig(logger, cfg)
+
+	entry := requireSingleEntry(t, observed, zap.InfoLevel)
+	if httpEnabled, ok := fieldBool(entry.Context, "httpEnabled"); !ok || httpEnabled {
+		t.Fatalf("expected httpEnabled false, got %v (present=%v)", httpEnabled, ok)
+	}
+
+	if hasField(entry.Context, "httpBind") {
+		t.Fatalf("expected httpBind to be omitted when bind is empty, got %+v", entry.Context)
+	}
+}
+
+func TestLogRuntimeConfigMarksHTTPOn(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	cfg := runtimeconfig.Default()
+	cfg.HTTP.Bind = " 0.0.0.0:8080 "
+
+	logRuntimeConfig(logger, cfg)
+
+	entry := requireSingleEntry(t, observed, zap.InfoLevel)
+	if httpEnabled, ok := fieldBool(entry.Context, "httpEnabled"); !ok || !httpEnabled {
+		t.Fatalf("expected httpEnabled true, got %v (present=%v)", httpEnabled, ok)
+	}
+
+	requireLogFieldString(t, entry, "httpBind", "0.0.0.0:8080")
+}
+
 func TestLogMetadataResolutionOnline(t *testing.T) {
 	t.Parallel()
 

@@ -13,7 +13,7 @@ issue or pull request.
    with `make tools` or `mise install` as described in
    §14 of `docs/08-development.md`.
 4. Configure Git hooks via `git config core.hooksPath .githooks` if you want the
-   optional pre-push checks that run `make fmt` and `make lint` for you.
+   optional pre-push checks that run `make lint` for you.
 
 ## Tooling Workflow
 
@@ -22,8 +22,8 @@ Run the following helpers from the repository root before every pull request:
 - `make lint` to execute `golangci-lint` with auto-fix enabled. The target pins
   `GOLANGCI_LINT_CACHE` to `.cache/golangci` and mirrors the CI configuration.
 - `make test` to run `go test -race ./...` so race conditions surface early.
-- `make coverage MIN_COVERAGE=95` to regenerate `coverage.out`/`coverage.txt` and
-  prove repository-wide statement coverage stays at or above the required 95 %.
+- `make coverage MIN_COVERAGE=96` to regenerate `coverage.out`/`coverage.txt` and
+  prove repository-wide statement coverage stays at or above the required 96 %.
 
 Use `make check` when you want linting and race-enabled tests in one step. Run
 `make integration`, `make e2e`, or `make bench` whenever you touch the packages
@@ -65,7 +65,7 @@ and verification signals required by §8.7.
    `Feature request`, or `Docs feedback`) under `.github/ISSUE_TEMPLATE/`. Each
    template captures OCI tenancy context, environment details, reproduction
    commands, and checkboxes for the `make lint`, `make test`, and
-   `make coverage MIN_COVERAGE=95` expectations from `docs/08-development.md`
+   `make coverage MIN_COVERAGE=96` expectations from `docs/08-development.md`
    §§11 & 14. Providing this data keeps triage focused on the failing surfaces
    instead of chasing missing configuration details.
 2. **Link supporting material.** Include log excerpts, OCI compartment/tenancy
@@ -82,7 +82,7 @@ and verification signals required by §8.7.
   keep the description clear: outline the behaviour change, verification, and
   any follow-ups required.
 - **Follow the development workflow.** Run `make lint`, `make test`, and
-  `make coverage MIN_COVERAGE=95` (or `make check` plus the coverage target)
+  `make coverage MIN_COVERAGE=96` (or `make check` plus the coverage target)
   locally before submitting changes. These commands already configure the caches
   referenced in `docs/08-development.md`, keeping results consistent across
   environments.

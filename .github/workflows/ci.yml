@@ -276,7 +276,7 @@ jobs:
 
       - name: Run coverage suite
         env:
-          MIN_COVERAGE: "95"
+          MIN_COVERAGE: "96"
           COVERAGE_PROFILE: coverage.out
           COVERAGE_SUMMARY: coverage.txt
           REUSE_INTEGRATION_COVERAGE: "1"

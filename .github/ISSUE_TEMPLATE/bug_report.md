@@ -35,7 +35,7 @@ Attach console logs, stack traces, or metrics that demonstrate the failure.
 
 - [ ] `make lint`
 - [ ] `make test`
-- [ ] `make coverage MIN_COVERAGE=95`
+- [ ] `make coverage MIN_COVERAGE=96`
 
 If a checkbox does not apply, explain why so maintainers can align the issue with the §8.7 triage workflow.
 

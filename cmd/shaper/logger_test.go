@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"testing"
 
 	"go.uber.org/zap"
@@ -12,6 +13,15 @@ func TestNewLoggerRejectsInvalidLevel(t *testing.T) {
 	_, err := newLogger("not-a-level")
 	if err == nil {
 		t.Fatal("expected error when creating logger with invalid level")
+	}
+}
+
+func TestNewLoggerWrapsInvalidLevelError(t *testing.T) {
+	t.Parallel()
+
+	_, err := newLogger("boom")
+	if !errors.Is(err, errInvalidLogLevel) {
+		t.Fatalf("expected invalid log level error, got %v", err)
 	}
 }
 

@@ -191,3 +191,46 @@ func requireCgroupPointers(t *testing.T, snapshot *status.CgroupSnapshot) {
 		t.Fatalf("expected cgroup snapshot, got %+v", snapshot)
 	}
 }
+
+func TestHandlerNilReceiver(t *testing.T) {
+	t.Parallel()
+
+	var handler *status.Handler
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 Service Unavailable, got %d", recorder.Code)
+	}
+}
+
+func TestHandlerOmitsCgroupWhenUnavailable(t *testing.T) {
+	t.Parallel()
+
+	controller := &stubController{
+		mode:   "dry-run",
+		state:  adapt.StateNormal,
+		ociErr: nil,
+		estErr: nil,
+	}
+	handler := status.NewHandler(controller, nil)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+
+	handler.ServeHTTP(recorder, request)
+
+	var snapshot status.Snapshot
+
+	err := json.Unmarshal(recorder.Body.Bytes(), &snapshot)
+	if err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if snapshot.Cgroup != nil {
+		t.Fatalf("expected cgroup snapshot to be omitted, got %+v", snapshot.Cgroup)
+	}
+}

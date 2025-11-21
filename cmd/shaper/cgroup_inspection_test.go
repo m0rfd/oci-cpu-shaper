@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -154,6 +155,57 @@ func TestDetectAndReportCgroupHandlesErrors(t *testing.T) {
 	}
 }
 
+func TestDetectAndReportCgroupUsesDefaultReaderFallback(t *testing.T) {
+	t.Parallel()
+
+	cgroupReaderMu.Lock()
+
+	previousReader := newCgroupReader
+
+	cgroupReaderMu.Unlock()
+
+	t.Cleanup(func() {
+		cgroupReaderMu.Lock()
+
+		newCgroupReader = previousReader
+
+		cgroupReaderMu.Unlock()
+	})
+
+	tmp := t.TempDir()
+	missingProc := filepath.Join(tmp, "missing.proc")
+
+	cgroupReaderMu.Lock()
+
+	newCgroupReader = func() cgroup.Reader {
+		return cgroup.Reader{ProcPath: missingProc, RootPath: tmp}
+	}
+
+	cgroupReaderMu.Unlock()
+
+	exporter := metricshttp.NewExporter()
+	core, observed := observer.New(zap.WarnLevel)
+	logger := zap.New(core)
+
+	info := detectAndReportCgroup(
+		runDeps{}, //nolint:exhaustruct // fallback path uses default reader
+		logger,
+		exporter,
+	)
+	if info != nil {
+		t.Fatalf("expected nil cgroup info on detection error, got %+v", info)
+	}
+
+	body := renderExporter(t, exporter)
+	assertMetricContains(t, body, "cgroup_cpu_weight 0")
+	assertMetricContains(t, body, "cgroup_cpu_max_quota 0")
+
+	entries := observed.FilterMessage("failed to inspect cgroup cpu settings").All()
+	if len(entries) == 0 {
+		t.Fatalf("expected warning about cgroup detection failure, logs: %#v", observed.All())
+	}
+}
+
 func TestDetectCgroupInfoUsesInjectedDetector(t *testing.T) {
 	t.Parallel()
 
@@ -217,6 +269,40 @@ func TestDetectCgroupInfoPropagatesErrors(t *testing.T) {
 	_, err := detectCgroupInfo(deps)
 	if !errors.Is(err, errCgroupDetect) {
 		t.Fatalf("expected %v, got %v", errCgroupDetect, err)
+	}
+}
+
+func TestDetectCgroupInfoUsesDefaultReaderOnError(t *testing.T) {
+	t.Parallel()
+
+	cgroupReaderMu.Lock()
+
+	previousReader := newCgroupReader
+
+	cgroupReaderMu.Unlock()
+
+	t.Cleanup(func() {
+		cgroupReaderMu.Lock()
+
+		newCgroupReader = previousReader
+
+		cgroupReaderMu.Unlock()
+	})
+
+	tmp := t.TempDir()
+	missingProc := filepath.Join(tmp, "missing.proc")
+
+	cgroupReaderMu.Lock()
+
+	newCgroupReader = func() cgroup.Reader {
+		return cgroup.Reader{ProcPath: missingProc, RootPath: tmp}
+	}
+
+	cgroupReaderMu.Unlock()
+
+	_, err := detectCgroupInfo(runDeps{}) //nolint:exhaustruct // fallback path uses default reader
+	if err == nil || !strings.Contains(err.Error(), "detect cgroup") {
+		t.Fatalf("expected detect cgroup error, got %v", err)
 	}
 }
 
