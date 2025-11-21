@@ -158,18 +158,18 @@ func TestResolveCompartmentAndRegionFallsBackToOverrides(t *testing.T) {
 	t.Parallel()
 
 	cfg := runtimeconfig.Default()
-	cfg.OCI.CompartmentID = "  ocid1.compartment.oc1..override  "
+	cfg.OCI.CompartmentID = "  " + testCompartmentOverride + "  "
 	cfg.OCI.Region = "  " + overrideRegion + "  "
 
 	client := newLoggingStubIMDS(
-		"",
-		errRegionDown,
-		"",
-		errRegionDown,
-		"",
+		"ignored",
 		nil,
-		"",
-		errInstanceDown,
+		"ignored",
+		nil,
+		"ignored",
+		nil,
+		"ignored",
+		nil,
 		stubShapeConfig(0, 0),
 		nil,
 	)
@@ -179,7 +179,7 @@ func TestResolveCompartmentAndRegionFallsBackToOverrides(t *testing.T) {
 		t.Fatalf("resolveCompartmentAndRegion returned error: %v", err)
 	}
 
-	if metadata.CompartmentID != "ocid1.compartment.oc1..override" {
+	if metadata.CompartmentID != testCompartmentOverride {
 		t.Fatalf("unexpected compartment id %q", metadata.CompartmentID)
 	}
 
@@ -187,19 +187,16 @@ func TestResolveCompartmentAndRegionFallsBackToOverrides(t *testing.T) {
 		t.Fatalf("unexpected region %q", metadata.Region)
 	}
 
-	if client.compartmentCalls != 1 {
-		t.Fatalf("expected compartment lookup despite overrides, got %d", client.compartmentCalls)
+	if client.compartmentCalls != 0 {
+		t.Fatalf("expected overrides to skip compartment lookup, got %d", client.compartmentCalls)
 	}
 
-	if client.regionCalls != 1 {
-		t.Fatalf("expected region lookup despite overrides, got %d", client.regionCalls)
+	if client.regionCalls != 0 {
+		t.Fatalf("expected overrides to skip region lookup, got %d", client.regionCalls)
 	}
 
-	if client.canonicalRegionCalls != 1 {
-		t.Fatalf(
-			"expected canonical region lookup despite overrides, got %d",
-			client.canonicalRegionCalls,
-		)
+	if client.canonicalRegionCalls != 0 {
+		t.Fatalf("expected overrides to skip canonical lookup, got %d", client.canonicalRegionCalls)
 	}
 }
 
@@ -325,12 +322,58 @@ func TestResolveCompartmentAndRegionFallsBackToLegacyRegion(t *testing.T) {
 	}
 }
 
-func TestResolveCompartmentAndRegionPrefersIMDSValues(t *testing.T) {
+func TestResolveCompartmentAndRegionPrefersOverridesWhenProvided(t *testing.T) {
 	t.Parallel()
 
 	cfg := runtimeconfig.Default()
-	cfg.OCI.CompartmentID = "ocid1.compartment.oc1..override"
+	cfg.OCI.CompartmentID = testCompartmentOverride
 	cfg.OCI.Region = overrideRegion
+
+	client := newLoggingStubIMDS(
+		"ignored",
+		nil,
+		"ignored",
+		nil,
+		"ignored",
+		nil,
+		"ignored",
+		nil,
+		stubShapeConfig(0, 0),
+		nil,
+	)
+
+	metadata, err := resolveCompartmentAndRegion(t.Context(), cfg, client)
+	if err != nil {
+		t.Fatalf("resolveCompartmentAndRegion returned error: %v", err)
+	}
+
+	if metadata.CompartmentID != cfg.OCI.CompartmentID {
+		t.Fatalf("expected compartment %q, got %q", cfg.OCI.CompartmentID, metadata.CompartmentID)
+	}
+
+	if metadata.Region != overrideRegion {
+		t.Fatalf("expected region %s, got %q", overrideRegion, metadata.Region)
+	}
+
+	if client.compartmentCalls != 0 {
+		t.Fatalf("expected overrides to skip compartment lookup, got %d", client.compartmentCalls)
+	}
+
+	if client.regionCalls != 0 {
+		t.Fatalf("expected overrides to skip region lookup, got %d", client.regionCalls)
+	}
+
+	if client.canonicalRegionCalls != 0 {
+		t.Fatalf("expected overrides to skip canonical lookup, got %d", client.canonicalRegionCalls)
+	}
+}
+
+func TestResolveCompartmentAndRegionUsesOverridesAndIMDSWhenPartial(t *testing.T) {
+	t.Parallel()
+
+	cfg := runtimeconfig.Default()
+	cfg.OCI.CompartmentID = testCompartmentOverride
+	cfg.OCI.Region = ""
 
 	client := newLoggingStubIMDS(
 		stubRegion,
@@ -350,12 +393,24 @@ func TestResolveCompartmentAndRegionPrefersIMDSValues(t *testing.T) {
 		t.Fatalf("resolveCompartmentAndRegion returned error: %v", err)
 	}
 
-	if metadata.CompartmentID != stubCompartmentID {
-		t.Fatalf("expected compartment %q, got %q", stubCompartmentID, metadata.CompartmentID)
+	if metadata.CompartmentID != cfg.OCI.CompartmentID {
+		t.Fatalf(
+			"expected compartment override %q, got %q",
+			cfg.OCI.CompartmentID,
+			metadata.CompartmentID,
+		)
 	}
 
 	if metadata.Region != stubRegion {
 		t.Fatalf("expected region %s, got %q", stubRegion, metadata.Region)
+	}
+
+	if client.compartmentCalls != 0 {
+		t.Fatalf("expected compartment override to skip lookup, got %d", client.compartmentCalls)
+	}
+
+	if client.regionCalls != 1 {
+		t.Fatalf("expected region lookup, got %d", client.regionCalls)
 	}
 
 	if client.canonicalRegionCalls != 1 {
