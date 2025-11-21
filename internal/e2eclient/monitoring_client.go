@@ -33,19 +33,24 @@ type monitoringPayload struct {
 	Value float64 `json:"value"`
 }
 
+type MonitoringClient struct {
+	endpoint string
+	http     *http.Client
+}
+
 // NewMonitoringClient constructs an oci.MetricsClient backed by HTTP endpoints exposed
 // by the e2e monitoring server helpers.
 //
 
 func NewMonitoringClient(
 	endpoint string,
-) (oci.MetricsClient, error) {
+) (*MonitoringClient, error) {
 	trimmed := strings.TrimSpace(endpoint)
 	if trimmed == "" {
 		return nil, errMonitoringEndpointRequired
 	}
 
-	return &monitoringClient{
+	return &MonitoringClient{
 		endpoint: trimmed,
 		http: &http.Client{ //nolint:exhaustruct // only timeout customised for tests
 			Timeout: defaultHTTPTimeout,
@@ -53,12 +58,7 @@ func NewMonitoringClient(
 	}, nil
 }
 
-type monitoringClient struct {
-	endpoint string
-	http     *http.Client
-}
-
-func (c *monitoringClient) QueryP95CPU(ctx context.Context, resourceID string) (float64, error) {
+func (c *MonitoringClient) QueryP95CPU(ctx context.Context, resourceID string) (float64, error) {
 	if c == nil || c.http == nil {
 		return 0, errMonitoringHTTPNotInitialised
 	}
