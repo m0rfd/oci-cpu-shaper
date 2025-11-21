@@ -89,6 +89,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-
 
+      - name: Cache Python tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-mbake-1.4.3
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Run golangci-lint
         run: make lint
 
