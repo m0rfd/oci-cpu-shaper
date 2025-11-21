@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
+	"oci-cpu-shaper/internal/buildinfo"
 )
 
 const maxUint32 = ^uint32(0)
@@ -134,4 +135,63 @@ func requireSingleEntry(
 	}
 
 	return entries[0]
+}
+
+func assertInfoLogEntry(
+	t *testing.T,
+	entries []observer.LoggedEntry,
+	version, commit, date string,
+) {
+	t.Helper()
+
+	var infoEntry *observer.LoggedEntry
+
+	for i := range entries {
+		if entries[i].Message == "starting oci-cpu-shaper" {
+			infoEntry = &entries[i]
+
+			break
+		}
+	}
+
+	if infoEntry == nil {
+		t.Fatalf("expected info log entry, got %+v", entries)
+	}
+
+	if got := fieldString(infoEntry.Context, "version"); got != version {
+		t.Fatalf("expected version field %q, got %q", version, got)
+	}
+
+	if got := fieldString(infoEntry.Context, "commit"); got != commit {
+		t.Fatalf("expected commit field %q, got %q", commit, got)
+	}
+
+	if got := fieldString(infoEntry.Context, "buildDate"); got != date {
+		t.Fatalf("expected buildDate field %q, got %q", date, got)
+	}
+}
+
+func requireShutdownDuration(
+	t *testing.T,
+	entries []observer.LoggedEntry,
+	expected time.Duration,
+) {
+	t.Helper()
+
+	if len(entries) == 0 {
+		t.Fatalf("expected startup log entry, got %+v", entries)
+	}
+
+	duration, ok := fieldDuration(entries[0].Context, "shutdownAfter")
+	if !ok || duration != expected {
+		t.Fatalf("expected shutdownAfter duration %v, got %v (present=%v)", expected, duration, ok)
+	}
+}
+
+func stubBuildInfo(version, commit, date string) buildinfo.Info {
+	return buildinfo.Info{
+		Version:   version,
+		GitCommit: commit,
+		BuildDate: date,
+	}
 }

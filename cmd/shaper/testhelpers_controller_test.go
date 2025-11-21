@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"testing"
 	"time"
 
 	"oci-cpu-shaper/pkg/adapt"
 	"oci-cpu-shaper/pkg/imds"
+	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
 const (
@@ -214,5 +216,40 @@ func stubShapeConfig(ocpus, memory float64) imds.ShapeConfig {
 	return imds.ShapeConfig{ //nolint:exhaustruct
 		OCPUs:       ocpus,
 		MemoryInGBs: memory,
+	}
+}
+
+func loadConfigStub() func(string) (runtimeconfig.Config, error) {
+	return func(string) (runtimeconfig.Config, error) {
+		cfg := runtimeconfig.Default()
+		cfg.OCI.CompartmentID = stubCompartmentID
+		cfg.OCI.Region = "us-phoenix-1"
+		cfg.OCI.Offline = true
+
+		return cfg, nil
+	}
+}
+
+func requireRunInvoked(t *testing.T, ctrl *stubController) {
+	t.Helper()
+
+	if ctrl == nil || !ctrl.runCalled {
+		t.Fatalf("expected controller Run to be invoked")
+	}
+}
+
+func requireDeadlineCaptured(t *testing.T, ctrl *stubController) {
+	t.Helper()
+
+	if ctrl == nil {
+		t.Fatalf("controller stub is nil")
+	}
+
+	if !ctrl.deadlineSet {
+		t.Fatalf("expected controller Run to capture deadline")
+	}
+
+	if ctrl.deadline.IsZero() {
+		t.Fatalf("expected controller Run deadline to be set")
 	}
 }
