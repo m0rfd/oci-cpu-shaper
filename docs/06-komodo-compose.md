@@ -2,18 +2,18 @@
 
 ## §6.1 Distroless images
 The multi-stage [`Dockerfile`](../Dockerfile) publishes two distroless targets:
-`nonroot` wraps `gcr.io/distroless/static:nonroot` while `rootful` uses the root-enabled
+`rootless` wraps `gcr.io/distroless/static:nonroot` while `rootful` uses the root-enabled
 `gcr.io/distroless/static:latest` image. Build metadata is injected with the `VERSION`,
 `GIT_COMMIT`, and `BUILD_DATE` build arguments, ensuring `internal/buildinfo` reports accurate
 values inside the container.
 
 ```bash
 docker buildx build \
-  --target nonroot \
+  --target rootless \
   --build-arg VERSION="$(git describe --tags --always)" \
   --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
   --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  -t oci-cpu-shaper:nonroot \
+  -t oci-cpu-shaper:rootless \
   -f Dockerfile .
 
 docker buildx build \
@@ -30,7 +30,7 @@ Compose deployments for Mode A live in `deploy/compose/`. The rootless manifest
 `mode-a.rootless.yaml` and consumes environment overrides from `${SHAPER_ENV_FILE}` (defaulting to
 `deploy/compose/mode-a.env.example`). Key knobs include:
 
-- `SHAPER_IMAGE` – image tag (`oci-cpu-shaper:nonroot` by default).
+- `SHAPER_IMAGE` – image tag (`oci-cpu-shaper:rootless` by default).
 - `SHAPER_CONFIG_PATH` – container path passed to `--config`. Defaults to
   `/etc/oci-cpu-shaper/configs/mode-a.yaml`, which is baked into the image.
   Bind-mount a host manifest to that path when overriding the defaults.
@@ -132,14 +132,14 @@ Both scripts respect `SHAPER_IMAGE`, `SHAPER_MODE`, `SHAPER_LOG_LEVEL`, and `SHA
 consistent execution outside Compose.
 
 ## §6.6 Image selection
-Use the `oci-cpu-shaper:nonroot` tag for Kubernetes or Docker rootless runtimes. Switch to
+Use the `oci-cpu-shaper:rootless` tag for Kubernetes or Docker rootless runtimes. Switch to
 `oci-cpu-shaper:rootful` when privileged host integration or cgroup tuning requires UID 0 inside the
 container.
 
 ## §6.7 Responsiveness verification
 Before promoting a new image or Compose bundle, run the CPU weight integration suite described in
 [`docs/08-development.md`](08-development.md#-112-cpu-weight-integration-suite). The harness builds
-both the rootful and nonroot images, launches a low-weight instance beside a competing CPU-bound
+both the rootful and rootless images, launches a low-weight instance beside a competing CPU-bound
 container, and asserts that cgroup v2 honours the expected `cpu.weight` ratios for each UID profile.
 Capturing the logs (as CI does via artifacts) provides an audit trail for the responsiveness guarantees
 promised in §§5 and 9.

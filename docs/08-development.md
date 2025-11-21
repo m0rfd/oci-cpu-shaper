@@ -22,7 +22,7 @@ The repository includes a `Makefile` that wraps the most common development task
 | `make check` | Run linting and race-enabled tests in one step. |
 | `make coverage` | Generate a race-enabled coverage profile for production packages, save `coverage.out`/`coverage.txt`, and print the total percentage (CI enforces ≥95%). |
 | `make bench` | Run `hack/check_benchmarks.sh`, which executes `go test -bench BenchmarkPoolDutyCycle ./pkg/shape`, captures the output under `artifacts/benchmarks/`, and fails when CPU duty-cycle drift, per-tick fairness, or scheduler variance exceed the §10 limits described below. |
-| `make integration` | Ensure Docker is reachable, validate the cgroup v2 CPU controller, build the distroless rootful/nonroot images, and run the CPU weight responsiveness suite while teeing logs to `artifacts/integration.log` for post-run inspection (§§6, 11). |
+| `make integration` | Ensure Docker is reachable, validate the cgroup v2 CPU controller, build the distroless rootful/rootless images, and run the CPU weight responsiveness suite while teeing logs to `artifacts/integration.log` for post-run inspection (§§6, 11). |
 | `make e2e` | Build the CLI with the `e2e` tag and exercise the IMDS/Monitoring emulation suite described in §11.3 so offline/online flows and metrics wiring stay covered. |
 | `make govulncheck` | Scan the module and all packages with `golang.org/x/vuln/cmd/govulncheck@v1.1.4`, failing on known Go vulnerabilities before changes ship (§14). |
 | `make build` | Compile all packages to validate build readiness. |
@@ -75,7 +75,7 @@ Rootful experiments using `deploy/compose/mode-b.rootful.yaml` or the matching Q
 
 ## §14 Release Signing and Verification
 
-The release workflow now installs Cosign with OIDC `id-token` permissions, signs every pushed image digest (both `nonroot` and `rootful`), and produces SPDX attestations that embed the Syft-generated SBOM. Each run emits five release assets per variant so operators can perform offline verification:
+The release workflow now installs Cosign with OIDC `id-token` permissions, signs every pushed image digest (both `rootless` and `rootful`), and produces SPDX attestations that embed the Syft-generated SBOM. Each run emits five release assets per variant so operators can perform offline verification:
 
 - `cosign-<tag>-<variant>.sig` and `cosign-<tag>-<variant>.pem` (image signature + certificate).
 - `sbom-attestation-<tag>-<variant>.jsonl`, `.sig`, and `.pem` (SPDX attestation payload + metadata).
@@ -84,7 +84,7 @@ Pull the assets that match the tag and variant you plan to deploy, then verify e
 
 ```bash
 IMAGE_TAG="v1.2.3"
-VARIANT="nonroot" # or rootful
+VARIANT="rootless" # or rootful
 IMAGE="ghcr.io/${OWNER}/oci-cpu-shaper:${VARIANT}"
 
 cosign verify \
@@ -108,7 +108,7 @@ Cosign ensures the OIDC issuer is GitHub Actions and that the certificate identi
 
 ## §11.2 CPU Weight Integration Suite
 
-End-to-end responsiveness tests live under `tests/integration/` and run with the `integration` build tag. They build both the rootful and nonroot container images, compile a static CPU hog helper, and launch each image alongside an `alpine` competitor constrained to the same CPU. The harness measures each container's `cpu.weight` and `cpu.stat` usage to assert the heavier workload receives at least five times the CPU time, ensuring both UID profiles honour the responsiveness guarantees described in §§5, 9, and 11.
+End-to-end responsiveness tests live under `tests/integration/` and run with the `integration` build tag. They build both the rootful and rootless container images, compile a static CPU hog helper, and launch each image alongside an `alpine` competitor constrained to the same CPU. The harness measures each container's `cpu.weight` and `cpu.stat` usage to assert the heavier workload receives at least five times the CPU time, ensuring both UID profiles honour the responsiveness guarantees described in §§5, 9, and 11.
 
 Run the suite on a Linux host with Docker or Podman configured for cgroup v2 (verify with `docker info --format '{{.CgroupVersion}}'` and ensure `/sys/fs/cgroup/cgroup.controllers` lists the `cpu` entry). Because the harness builds and runs containers locally, execute it from the repository root with elevated privileges when necessary. The `make integration` helper mirrors the CI workflow: it refuses to run unless Docker is reachable, enforces cgroup v2 plus the cpu controller, builds both image targets, and tees verbose output to `artifacts/integration.log`, removing the log directory on success while preserving it after failures for debugging (§§6, 11). Developers who need finer control can still invoke `go test -tags=integration -v ./tests/integration/...`, but the Makefile target should be preferred so local runs collect the same diagnostics as CI. When iterating locally, rerun the suite after modifying container entrypoints, CPU-tuning flags, or workload scripts to preserve the CI-required ≥95% coverage baseline while keeping responsiveness guardrails intact.
 
