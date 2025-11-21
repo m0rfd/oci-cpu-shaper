@@ -28,10 +28,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
       -o /out/oci-cpu-shaper \
       ./cmd/shaper
 
-FROM gcr.io/distroless/static:nonroot AS nonroot
+FROM gcr.io/distroless/static:nonroot AS rootless
 
 LABEL org.opencontainers.image.title="oci-cpu-shaper" \
-      org.opencontainers.image.description="OCI CPU shaper (distroless nonroot)" \
+      org.opencontainers.image.description="OCI CPU shaper (distroless rootless)" \
       org.opencontainers.image.source="https://github.com/oci-cpu-shaper/oci-cpu-shaper"
 
 COPY --from=builder /out/oci-cpu-shaper /usr/local/bin/oci-cpu-shaper

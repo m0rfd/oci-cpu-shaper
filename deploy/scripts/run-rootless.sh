@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${SHAPER_IMAGE:=oci-cpu-shaper:nonroot}"
+: "${SHAPER_IMAGE:=oci-cpu-shaper:rootless}"
 : "${SHAPER_CONTAINER_NAME:=oci-cpu-shaper}"
 : "${SHAPER_CONFIG_PATH:=/etc/oci-cpu-shaper/configs/mode-a.yaml}"
 : "${SHAPER_CONFIG_HOST_PATH:=}"

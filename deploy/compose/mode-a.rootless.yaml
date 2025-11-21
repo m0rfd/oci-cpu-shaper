@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   shaper:
-    image: ${SHAPER_IMAGE:-oci-cpu-shaper:nonroot}
+    image: ${SHAPER_IMAGE:-oci-cpu-shaper:rootless}
     container_name: ${SHAPER_CONTAINER_NAME:-oci-cpu-shaper}
     user: ${SHAPER_USER:-65532:65532}
     command:

@@ -117,10 +117,17 @@ jobs:
           images: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=tag              # e.g. v1.2.3
-            type=semver,pattern={{version}} # 1.2.3 (optional)
+            type=ref,event=tag                               # v1.2.3
+            type=ref,event=tag,suffix=-rootless              # v1.2.3-rootless
+            type=semver,pattern={{version}}                  # 1.2.3
+            type=semver,pattern={{version}},suffix=-rootless # 1.2.3-rootless
+            type=semver,pattern={{major}}                    # 1
+            type=semver,pattern={{major}},suffix=-rootless   # 1-rootless
+            type=semver,pattern=v{{major}}                   # v1
+            type=semver,pattern=v{{major}},suffix=-rootless  # v1-rootless
+            type=raw,value=rootless                          # rootless
           flavor: |
-            latest=true                     # also tag :latest
+            latest=true                                      # also tag :latest
           labels: |
             org.opencontainers.image.title=${{ github.repository }}
             org.opencontainers.image.source=${{ github.repositoryUrl }}
@@ -135,7 +142,11 @@ jobs:
           images: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=tag,prefix=rootful-
+            type=ref,event=tag,suffix=-rootful               # v1.2.3-rootful
+            type=semver,pattern={{version}},suffix=-rootful  # 1.2.3-rootful
+            type=semver,pattern={{major}},suffix=-rootful    # 1-rootful
+            type=semver,pattern=v{{major}},suffix=-rootful   # v1-rootful
+            type=raw,value=rootful                           # rootful
           labels: |
             org.opencontainers.image.title=${{ github.repository }} (rootful)
             org.opencontainers.image.source=${{ github.repositoryUrl }}
