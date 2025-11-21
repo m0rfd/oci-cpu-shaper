@@ -9,20 +9,23 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
-	"oci-cpu-shaper/pkg/adapt"
 )
 
 func TestNewLoggingRecorderDelegatesWhenMissingInputs(t *testing.T) {
 	t.Parallel()
 
-	var recorder adapt.MetricsRecorder
-
 	if got := NewLoggingRecorder(nil, nil); got != nil {
 		t.Fatalf("expected nil recorder, got %v", got)
 	}
 
-	if got := NewLoggingRecorder(zap.NewNop(), recorder); got != recorder {
-		t.Fatalf("expected delegate to be returned unchanged")
+	delegate := newRecordingDelegate()
+
+	if got := NewLoggingRecorder(zap.NewNop(), delegate); got == nil {
+		t.Fatalf("expected recorder to be initialised")
+	}
+
+	if got := NewLoggingRecorder(nil, delegate); got != nil {
+		t.Fatalf("expected nil recorder when logger missing")
 	}
 }
 

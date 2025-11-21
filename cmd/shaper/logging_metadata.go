@@ -1,112 +1,19 @@
-// Package main wires the shaper CLI entrypoint.
 package main
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"net"
-	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"go.uber.org/zap"
 	"oci-cpu-shaper/internal/buildinfo"
 	"oci-cpu-shaper/pkg/adapt"
-	"oci-cpu-shaper/pkg/cgroup"
 	metricshttp "oci-cpu-shaper/pkg/http/metrics"
 	"oci-cpu-shaper/pkg/imds"
-	"oci-cpu-shaper/pkg/oci"
 	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
-
-const (
-	defaultConfigPath = "/etc/oci-cpu-shaper/config.yaml"
-	defaultLogLevel   = "info"
-	modeDryRun        = "dry-run"
-	modeEnforce       = "enforce"
-	modeNoop          = "noop"
-
-	imdsEndpointEnv = "OCI_CPU_SHAPER_IMDS_ENDPOINT"
-
-	offlineInstanceFallback = "offline-instance"
-
-	exitCodeSuccess      = 0
-	exitCodeRuntimeError = 1
-	exitCodeParseError   = 2
-
-	metricsReadHeaderTimeout = 5 * time.Second
-	metricsShutdownTimeout   = 5 * time.Second
-	cgroupLowWeightBaseline  = 128
-)
-
-func main() {
-	code := newApp(defaultRunDeps()).Run(context.Background(), os.Args[1:], os.Stderr)
-	if code != 0 {
-		exitProcess(code)
-	}
-}
-
-var exitProcess = os.Exit //nolint:gochecknoglobals // replaceable for tests
-
-type runDeps struct {
-	newLogger     func(level string) (*zap.Logger, error)
-	newIMDS       func() imds.Client
-	newController func(
-		ctx context.Context,
-		mode string,
-		cfg runtimeconfig.Config,
-		imdsClient imds.Client,
-		recorder adapt.MetricsRecorder,
-	) (adapt.Controller, poolStarter, error)
-	currentBuildInfo   func() buildinfo.Info
-	loadConfig         func(path string) (runtimeconfig.Config, error)
-	newMetricsExporter func() *metricshttp.Exporter
-	startMetricsServer func(
-		ctx context.Context,
-		logger *zap.Logger,
-		addr string,
-		handler http.Handler,
-	) (metricsShutdownFunc, error)
-	versionWriter io.Writer
-	detectCgroup  func() (*cgroup.CPU, error)
-}
-
-type poolStarter interface {
-	Start(ctx context.Context)
-	Workers() int
-	Quantum() time.Duration
-	SetWorkerStartErrorHandler(handler func(err error))
-}
-
-type metricsClientFactory func(compartmentID, region string) (oci.MetricsClient, error)
-
-type metricsClientFactoryKey struct{}
-
-func withMetricsClientFactory(ctx context.Context, factory metricsClientFactory) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	if factory == nil {
-		return ctx
-	}
-
-	return context.WithValue(ctx, metricsClientFactoryKey{}, factory)
-}
-
-func metricsClientFactoryFromContext(ctx context.Context) metricsClientFactory {
-	if ctx != nil {
-		if factory, ok := ctx.Value(metricsClientFactoryKey{}).(metricsClientFactory); ok &&
-			factory != nil {
-			return factory
-		}
-	}
-
-	return buildInstancePrincipalMetricsClient
-}
 
 var (
 	errControllerIMDSRequired        = errors.New("controller factory: imds client is required")
@@ -114,23 +21,7 @@ var (
 		"controller factory: OCI compartment ID is required",
 	)
 	errControllerRegionRequired = errors.New("controller factory: OCI region is required")
-	errMetricsDelegateNil       = errors.New("metrics client: nil delegate")
-	errMetricsContextRequired   = errors.New("metrics server: context is required")
-	errMetricsServerDisabled    = errors.New("metrics server: disabled")
 )
-
-func writeError(dst io.Writer, err error, code int) int {
-	if err == nil {
-		return code
-	}
-
-	_, ferr := fmt.Fprintf(dst, "%v\n", err)
-	if ferr != nil {
-		return code
-	}
-
-	return code
-}
 
 func newLogger(level string) (*zap.Logger, error) {
 	if level == "" {
@@ -155,78 +46,6 @@ func newLogger(level string) (*zap.Logger, error) {
 	}
 
 	return logger, nil
-}
-
-func loadRuntimeConfigOrExit(
-	deps runDeps,
-	path string,
-	stderr io.Writer,
-) (runtimeconfig.Config, int, bool) {
-	cfg, loadErr := deps.loadConfig(path)
-	if loadErr != nil {
-		code := exitCodeForConfigError(loadErr)
-
-		exitCode := writeError(
-			stderr,
-			fmt.Errorf("failed to load configuration: %w", loadErr),
-			code,
-		)
-
-		var empty runtimeconfig.Config
-
-		return empty, exitCode, false
-	}
-
-	return cfg, exitCodeSuccess, true
-}
-
-func buildLoggerOrExit(
-	deps runDeps,
-	level string,
-	stderr io.Writer,
-) (*zap.Logger, int, bool) {
-	logger, loggerErr := deps.newLogger(level)
-	if loggerErr != nil {
-		exitCode := writeError(
-			stderr,
-			fmt.Errorf("failed to configure logger: %w", loggerErr),
-			exitCodeRuntimeError,
-		)
-
-		return nil, exitCode, false
-	}
-
-	return logger, exitCodeSuccess, true
-}
-
-//nolint:ireturn // factory intentionally returns controller interface for wiring flexibility.
-func defaultControllerFactory(
-	ctx context.Context,
-	mode string,
-	cfg runtimeconfig.Config,
-	imdsClient imds.Client,
-	recorder adapt.MetricsRecorder,
-) (adapt.Controller, poolStarter, error) {
-	trimmed := strings.TrimSpace(mode)
-	if trimmed == "" {
-		trimmed = modeDryRun
-	}
-
-	if trimmed == modeNoop {
-		if recorder != nil {
-			recorder.SetMode(trimmed)
-			recorder.SetState(adapt.StateNormal.String())
-			recorder.SetTarget(0)
-		}
-
-		return adapt.NewNoopController(trimmed), nil, nil
-	}
-
-	if imdsClient == nil {
-		return nil, nil, errControllerIMDSRequired
-	}
-
-	return buildAdaptiveController(ctx, trimmed, cfg, imdsClient, recorder)
 }
 
 func resolveInstanceID(
@@ -400,19 +219,6 @@ func prepareRunMetadata(
 	return cfg, metadata, nil
 }
 
-func applyShutdownTimer(
-	ctx context.Context,
-	timeout time.Duration,
-) (context.Context, context.CancelFunc) {
-	if timeout <= 0 {
-		return ctx, nil
-	}
-
-	newCtx, cancel := context.WithTimeout(ctx, timeout)
-
-	return newCtx, cancel
-}
-
 func logStartup(logger *zap.Logger, info buildinfo.Info, opts options) {
 	fields := []zap.Field{
 		zap.String("version", info.Version),
@@ -529,147 +335,6 @@ func logControllerInitialization(
 	}
 
 	logger.Info("controller initialized", fields...)
-}
-
-//nolint:ireturn // helper returns MetricsClient interface for dependency substitution.
-func createMetricsClient(
-	ctx context.Context,
-	cfg runtimeconfig.Config,
-	offline bool,
-	compartmentID string,
-	region string,
-) (oci.MetricsClient, error) {
-	if offline {
-		return oci.NewStaticMetricsClient(cfg.Controller.TargetStart), nil
-	}
-
-	factory := metricsClientFactoryFromContext(ctx)
-
-	metricsClient, err := factory(compartmentID, region)
-	if err != nil {
-		return nil, fmt.Errorf("build monitoring client: %w", err)
-	}
-
-	return metricsClient, nil
-}
-
-func startMetricsServer( //nolint:cyclop,funlen // listener lifecycle requires several guard branches
-	ctx context.Context,
-	logger *zap.Logger,
-	addr string,
-	handler http.Handler,
-) (metricsShutdownFunc, error) {
-	trimmed := strings.TrimSpace(addr)
-
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
-	if trimmed == "" {
-		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
-
-		return nil, errMetricsServerDisabled
-	}
-
-	if handler == nil {
-		logger.Warn("metrics server disabled", zap.String("reason", "handler missing"))
-
-		return nil, errMetricsServerDisabled
-	}
-
-	if ctx == nil {
-		return nil, errMetricsContextRequired
-	}
-
-	baseCtx := context.WithoutCancel(ctx)
-
-	var listenCfg net.ListenConfig
-
-	listener, err := listenCfg.Listen(ctx, "tcp", trimmed)
-	if err != nil {
-		logger.Error(
-			"metrics server listen failed",
-			zap.String("bind", trimmed),
-			zap.Error(err),
-		)
-
-		return nil, fmt.Errorf("listen metrics endpoint %q: %w", trimmed, err)
-	}
-
-	server := &http.Server{ //nolint:exhaustruct // only security-critical timeout configured here
-		ReadHeaderTimeout: metricsReadHeaderTimeout,
-	}
-	server.Addr = trimmed
-	server.Handler = handler
-
-	logger.Info("metrics server listening", zap.String("bind", trimmed))
-
-	serveDone := make(chan struct{})
-
-	go func() {
-		defer close(serveDone)
-
-		err := server.Serve(listener)
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("metrics server serve", zap.String("bind", trimmed), zap.Error(err))
-
-			return
-		}
-
-		logger.Info("metrics server stopped", zap.String("bind", trimmed))
-	}()
-
-	shutdown := func(shutdownCtx context.Context) {
-		if shutdownCtx == nil {
-			shutdownCtx = baseCtx
-		}
-
-		logger.Info("stopping metrics server", zap.String("bind", trimmed))
-
-		err := server.Shutdown(shutdownCtx)
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Warn("metrics server shutdown", zap.String("bind", trimmed), zap.Error(err))
-		}
-	}
-
-	go func() {
-		<-ctx.Done()
-
-		shutdownCtx, cancel := context.WithTimeout(baseCtx, metricsShutdownTimeout)
-		defer cancel()
-
-		shutdown(shutdownCtx)
-	}()
-
-	return func(shutdownCtx context.Context) {
-		shutdown(shutdownCtx)
-
-		<-serveDone
-	}, nil
-}
-
-type p95CPUQuerier interface {
-	QueryP95CPU(ctx context.Context, resourceID string, last7d bool) (float32, error)
-}
-
-type instancePrincipalMetricsClient struct {
-	client p95CPUQuerier
-}
-
-func (m *instancePrincipalMetricsClient) QueryP95CPU(
-	ctx context.Context,
-	resourceID string,
-) (float64, error) {
-	if m == nil || m.client == nil {
-		return 0, errMetricsDelegateNil
-	}
-
-	value, err := m.client.QueryP95CPU(ctx, resourceID, true)
-	if err != nil {
-		return 0, fmt.Errorf("query p95 cpu: %w", err)
-	}
-
-	return float64(value), nil
 }
 
 //nolint:ireturn // factory returns interface to support substitutable IMDS clients.
@@ -854,123 +519,4 @@ func appendOnlineMetadata(
 	fields = appendStringField(fields, "compartmentID", compartmentID, compartmentErr)
 
 	return appendShapeFields(fields, shapeCfg, shapeErr)
-}
-
-func detectAndReportCgroup(
-	deps runDeps,
-	logger *zap.Logger,
-	exporter *metricshttp.Exporter,
-) *cgroup.CPU {
-	info, err := detectCgroupInfo(deps)
-	if err != nil {
-		if logger != nil {
-			logger.Warn("failed to inspect cgroup cpu settings", zap.Error(err))
-		}
-
-		recordCgroupMetrics(exporter, nil)
-
-		return nil
-	}
-
-	recordCgroupMetrics(exporter, info)
-	logCgroupInfo(logger, info)
-
-	return info
-}
-
-func detectCgroupInfo(deps runDeps) (*cgroup.CPU, error) {
-	if deps.detectCgroup != nil {
-		return deps.detectCgroup()
-	}
-
-	var reader cgroup.Reader
-
-	info, err := reader.Detect()
-	if err != nil {
-		return nil, fmt.Errorf("detect cgroup: %w", err)
-	}
-
-	return info, nil
-}
-
-func recordCgroupMetrics(exporter *metricshttp.Exporter, info *cgroup.CPU) {
-	if exporter == nil {
-		return
-	}
-
-	weight := uint64(0)
-	if info != nil && info.Weight.Err == nil && info.Weight.Available {
-		weight = info.Weight.Value
-	}
-
-	exporter.SetCgroupCPUWeight(weight)
-
-	var (
-		quota  uint64
-		period uint64
-	)
-
-	unlimited := false
-
-	if info != nil && info.Max.Err == nil && info.Max.Available {
-		period = info.Max.Period
-
-		unlimited = info.Max.Unlimited
-		if !info.Max.Unlimited {
-			quota = info.Max.Quota
-		}
-	}
-
-	exporter.SetCgroupCPUMax(quota, period, unlimited)
-}
-
-func logCgroupInfo(logger *zap.Logger, info *cgroup.CPU) {
-	if logger == nil || info == nil {
-		return
-	}
-
-	fields := []zap.Field{zap.String("path", strings.TrimSpace(info.Path))}
-	fields = append(fields, cgroupWeightFields(logger, info.Weight)...)
-	fields = append(fields, cgroupMaxFields(info.Max)...)
-
-	logger.Info("detected cgroup cpu settings", fields...)
-}
-
-func cgroupWeightFields(logger *zap.Logger, weight cgroup.Weight) []zap.Field {
-	switch {
-	case weight.Err != nil:
-		return []zap.Field{zap.String("cpuWeightError", weight.Err.Error())}
-	case weight.Available:
-		field := zap.Uint64("cpuWeight", weight.Value)
-		if logger != nil && weight.Value > cgroupLowWeightBaseline {
-			logger.Warn(
-				"cpu.weight exceeds recommended low-weight baseline",
-				zap.Uint64("weight", weight.Value),
-				zap.Uint64("baseline", cgroupLowWeightBaseline),
-			)
-		}
-
-		return []zap.Field{field}
-	default:
-		return []zap.Field{zap.String("cpuWeightStatus", "unavailable")}
-	}
-}
-
-func cgroupMaxFields(cpuMax cgroup.Max) []zap.Field {
-	switch {
-	case cpuMax.Err != nil:
-		return []zap.Field{zap.String("cpuMaxError", cpuMax.Err.Error())}
-	case cpuMax.Available:
-		fields := []zap.Field{
-			zap.Bool("cpuMaxUnlimited", cpuMax.Unlimited),
-			zap.Uint64("cpuMaxPeriod", cpuMax.Period),
-		}
-		if !cpuMax.Unlimited {
-			fields = append(fields, zap.Uint64("cpuMaxQuota", cpuMax.Quota))
-		}
-
-		return fields
-	default:
-		return []zap.Field{zap.String("cpuMaxStatus", "unavailable")}
-	}
 }
