@@ -110,7 +110,7 @@ jobs:
           } >>"$GITHUB_OUTPUT"
 
       - name: Set up Go
-        id: go
+        id: setup-go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
