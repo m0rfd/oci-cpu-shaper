@@ -1,36 +1,98 @@
-name: Release
+name: Docker CI & Release
 
 on:
+  pull_request:
+    branches: [ main ]
+  merge_group:
   push:
     tags:
-      - 'v*'
+      - 'v*'     # release on v* tags (assumed from main)
 
 permissions:
-  contents: write
-  packages: write
-  id-token: write
+  contents: read
+  packages: write          # GHCR push (release job)
+  id-token: write          # Cosign keyless (release job)
+  security-events: write   # Trivy SARIF upload to Code scanning
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+# ---------------------------
+# Job 1: PR build & test only
+# ---------------------------
 
 jobs:
-  release:
-    name: Publish ${{ matrix.image_tag }} image
+  build-and-test:
+    name: Build & test (PR only, no publish)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - target: nonroot
-            image_tag: nonroot
-            tag_suffix: ""
-            include_latest: true
-          - target: rootful
-            image_tag: rootful
-            tag_suffix: ",suffix=-rootful"
-            include_latest: false
-    env:
-      REGISTRY: ghcr.io
-      # github.repository as <account>/<repo>
-      IMAGE_NAME: ${{ github.repository }}
+    if: github.event_name == 'pull_request'
+
     steps:
-      - name: Checkout repository
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU (optional, for consistency)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # For PRs we just build a local single-arch image and load it
+      - name: Build rootless image (local, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: rootless
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: pr-local/${{ github.repository }}:${{ github.sha }}
+
+      # basic container smoke test
+      - name: Smoke test container
+        run: |
+          docker run --rm pr-local/${{ github.repository }}:${{ github.sha }} --version
+
+      # Trivy scan on PR (local image) + SARIF upload
+      - name: Scan PR image with Trivy (SARIF)
+        id: trivy_scan_pr
+        uses: aquasecurity/trivy-action@0.33.1
+        continue-on-error: true
+        with:
+          image-ref: pr-local/${{ github.repository }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results-pr.sarif'
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'
+      
+      - name: Upload Trivy SARIF (PR)
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results-pr.sarif
+          category: trivy-pr-rootless
+      
+      - name: Fail PR if Trivy found CRITICAL/HIGH vulns
+        if: steps.trivy_scan_pr.outcome == 'failure'
+        run: |
+          echo "Trivy found CRITICAL/HIGH vulnerabilities in PR image."
+          exit 1
+
+  # --------------------------------
+  # Job 2: Release on v* tag (GHCR)
+  # --------------------------------
+
+  release:
+    name: Release multi-arch images (tagged)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout
         uses: actions/checkout@v6
 
       - name: Set up QEMU
@@ -39,119 +101,156 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@v4.0.0
-
-      - name: Log in to registry
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Capture build metadata
-        id: buildmeta
-        run: |
-          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$GITHUB_OUTPUT"
-
-      - name: Compose tag manifest
-        id: tagset
-        shell: bash
-        run: |
-          {
-            echo 'tags<<EOF'
-            echo "type=raw,value=${{ matrix.image_tag }}"
-            if [[ "${{ matrix.include_latest }}" == "true" ]]; then
-              echo "type=raw,value=latest"
-            fi
-            echo "type=ref,event=tag${{ matrix.tag_suffix }}"
-            echo 'EOF'
-          } >>"$GITHUB_OUTPUT"
-
-      - name: Extract metadata (tags, labels)
-        id: meta
+      # ------ Metadata (tags + labels) with docker/metadata-action ------
+      # Rootless is the primary image (gets :latest + semver tags)
+      - name: Docker meta (rootless)
+        id: meta_rootless
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: ${{ steps.tagset.outputs.tags }}
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag              # e.g. v1.2.3
+            type=semver,pattern={{version}} # 1.2.3 (optional)
+          flavor: |
+            latest=true                     # also tag :latest
+          labels: |
+            org.opencontainers.image.title=${{ github.repository }}
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
 
-      - name: Build and push multi-arch image (${{ matrix.image_tag }})
-        id: build
+      # Rootful variant – tags prefixed with rootful-
+      - name: Docker meta (rootful)
+        id: meta_rootful
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag,prefix=rootful-
+          labels: |
+            org.opencontainers.image.title=${{ github.repository }} (rootful)
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+
+      # For convenience, strip 'v' from tag if you ever need bare version
+      - name: Extract version
+        id: vars
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      # ------ Build & push rootless (multi-arch, with cache, SBOM, provenance) ------
+
+      - name: Build and push rootless image (multi-arch)
+        id: build_rootless
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile
-          target: ${{ matrix.target }}
+          file: ./Dockerfile
+          target: rootless
           platforms: linux/amd64,linux/arm64
           push: true
-          cache-from: type=gha,scope=release-${{ matrix.target }}
-          cache-to: type=gha,mode=max,scope=release-${{ matrix.target }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ github.ref_name }}
-            GIT_COMMIT=${{ github.sha }}
-            BUILD_DATE=${{ steps.buildmeta.outputs.date }}
+          tags: ${{ steps.meta_rootless.outputs.tags }}
+          labels: ${{ steps.meta_rootless.outputs.labels }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-rootless
+          cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-rootless,mode=max
 
-      - name: Sign container image (${{ matrix.image_tag }})
-        env:
-          COSIGN_EXPERIMENTAL: "1"
-          COSIGN_YES: "true"
-          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          image_ref="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
-          signature_file="cosign-${{ github.ref_name }}-${{ matrix.image_tag }}.sig"
-          certificate_file="cosign-${{ github.ref_name }}-${{ matrix.image_tag }}.pem"
+      # ------ Build & push rootful (multi-arch) ------
 
-          cosign sign \
-            --keyless \
-            --output-signature "$signature_file" \
-            --output-certificate "$certificate_file" \
-            "$image_ref"
-
-      - name: Generate SBOM attestation (${{ matrix.image_tag }})
-        env:
-          COSIGN_EXPERIMENTAL: "1"
-          COSIGN_YES: "true"
-          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          image_ref="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
-          predicate="sbom-${{ github.ref_name }}-${{ matrix.image_tag }}.spdx.json"
-          attestation_file="sbom-attestation-${{ github.ref_name }}-${{ matrix.image_tag }}.jsonl"
-          attestation_signature="sbom-attestation-${{ github.ref_name }}-${{ matrix.image_tag }}.sig"
-          attestation_certificate="sbom-attestation-${{ github.ref_name }}-${{ matrix.image_tag }}.pem"
-
-          cosign attest \
-            --keyless \
-            --predicate "$predicate" \
-            --type spdx \
-            --output-attestation "$attestation_file" \
-            --output-signature "$attestation_signature" \
-            --output-certificate "$attestation_certificate" \
-            "$image_ref"
-
-      - name: Generate SBOM (${{ matrix.image_tag }})
-        id: sbom
-        uses: anchore/sbom-action@v0
+      - name: Build and push rootful image (multi-arch)
+        id: build_rootful
+        uses: docker/build-push-action@v6
         with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
-          output-file: sbom-${{ github.ref_name }}-${{ matrix.image_tag }}.spdx.json
-          format: spdx-json
+          context: .
+          file: ./Dockerfile
+          target: rootful
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta_rootful.outputs.tags }}
+          labels: ${{ steps.meta_rootful.outputs.labels }}
+          provenance: true
+          sbom: true
+          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-rootful
+          cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-rootful,mode=max
 
-      - name: Upload SBOM artifact (${{ matrix.image_tag }})
+      # ------ Cosign signing (keyless) ------
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4.0.0
+        # with:
+        #   # Optionally pin a specific version; otherwise get latest
+        #   cosign-release: 'v3.0.2'
+
+      - name: Sign rootless image tags
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          # meta_rootless.outputs.tags is a comma-separated list
+          for TAG in $(echo "${{ steps.meta_rootless.outputs.tags }}" | tr ',' ' '); do
+            echo "Signing ${TAG}"
+            cosign sign --yes "${TAG}"
+          done
+
+      - name: Sign rootful image tags
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          for TAG in $(echo "${{ steps.meta_rootful.outputs.tags }}" | tr ',' ' '); do
+            echo "Signing ${TAG}"
+            cosign sign --yes "${TAG}"
+          done
+
+      # ------ Trivy image scan + SARIF upload (rootless tag) ------
+
+      - name: Scan rootless image with Trivy (SARIF)
+        id: trivy_scan_rootless
+        uses: aquasecurity/trivy-action@0.33.1
+        continue-on-error: true
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          format: 'sarif'
+          output: 'trivy-results-rootless.sarif'
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'   # non-zero when CRITICAL/HIGH found
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results-rootless.sarif
+          category: trivy-rootless
+
+      - name: Fail release if Trivy found CRITICAL/HIGH vulnerabilities
+        if: steps.trivy_scan_rootless.outcome == 'failure'
+        run: |
+          echo "Trivy found CRITICAL/HIGH vulnerabilities in the rootless image."
+          exit 1
+
+      # ------ Explicit SBOM artifact (on top of SBOM attestation) ------
+
+      - name: Generate SBOM (SPDX JSON) for rootless
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          format: 'spdx-json'
+          output: 'sbom-rootless.spdx.json'
+
+      - name: Upload SBOM artifact
         uses: actions/upload-artifact@v5
         with:
-          name: sbom-${{ github.ref_name }}-${{ matrix.image_tag }}
-          path: sbom-${{ github.ref_name }}-${{ matrix.image_tag }}.spdx.json
-          retention-days: 7
-
-      - name: Upload signing assets to release (${{ matrix.image_tag }})
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          files: |
-            cosign-${{ github.ref_name }}-${{ matrix.image_tag }}.sig
-            cosign-${{ github.ref_name }}-${{ matrix.image_tag }}.pem
-            sbom-attestation-${{ github.ref_name }}-${{ matrix.image_tag }}.jsonl
-            sbom-attestation-${{ github.ref_name }}-${{ matrix.image_tag }}.sig
-            sbom-attestation-${{ github.ref_name }}-${{ matrix.image_tag }}.pem
+          name: sbom-rootless-${{ github.ref_name }}
+          path: sbom-rootless.spdx.json
