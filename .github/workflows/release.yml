@@ -24,9 +24,9 @@ env:
 
 jobs:
   build-and-test:
-    name: Build & test (PR only, no publish)
+    name: Build & test (PR / merge_group, no publish)
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
 
     steps:
       - name: Checkout
