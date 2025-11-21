@@ -75,6 +75,8 @@ welcome! Please:
 1. Open an issue to discuss significant features or changes.
 2. Follow Go best practices and the formatting rules defined in `.editorconfig`.
 3. Use the provided tooling shortcuts before submitting changes and keep the ≥95% statement coverage guarantee in place:
+   - `make setup` (fresh Ubuntu 24.x container) to install Go, base build tools, module dependencies, linting helpers, and the `pre-commit` hook that runs `make lint` with autofix enabled. Ensure your `PATH` includes `/usr/local/go/bin` and `$HOME/go/bin` (or your `GOBIN`) so the installed tooling is discoverable.
+   - `make maintenance` (resumed container) to refresh Go modules and tooling without reinstalling the toolchain.
    - `make fmt` to format code with `go fmt`.
    - `make lint` to run `golangci-lint` with the cached configuration described in the docs.
    - `make test` to execute the suite with the Go race detector enabled.

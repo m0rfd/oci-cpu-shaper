@@ -1,6 +1,7 @@
 SHELL := /bin/bash
 
 GO ?= go
+GO_REQUIRED_VERSION ?= 1.25.4
 MIN_COVERAGE ?= 95.0
 COVERAGE_PROFILE ?= coverage.out
 COVERAGE_SUMMARY ?= coverage.txt
@@ -21,9 +22,8 @@ COVERAGE_TAGS ?= integration e2e
 COVERAGE_TAG_ARGS := $(if $(strip $(COVERAGE_TAGS)),-tags "$(strip $(COVERAGE_TAGS))",)
 
 GOLANGCI_LINT_VERSION ?= v2.6.1
-GOFUMPT_VERSION ?= 0.9.2
 GOVULNCHECK_VERSION ?= v1.1.4
-ACTIONLINT_VERSION ?= v1.7.8
+ACTIONLINT_VERSION ?= v1.7.9
 
 GO_BIN_PATH := $(shell $(GO) env GOBIN)
 ifeq ($(GO_BIN_PATH),)
@@ -37,16 +37,17 @@ GOLANGCI_LINT_CACHE_DIR := $(ROOT_DIR)/.cache/golangci
 
 GOLANGCI_LINT_BIN ?= $(GO_BIN_PATH)/golangci-lint
 GOLANGCI_LINT ?= $(GOLANGCI_LINT_BIN)
-GOFUMPT_BIN ?= $(GO_BIN_PATH)/gofumpt
-GOFUMPT ?= $(GOFUMPT_BIN)
 ACTIONLINT_BIN ?= $(GO_BIN_PATH)/actionlint
 ACTIONLINT ?= $(ACTIONLINT_BIN)
 ACTIONLINT_FLAGS ?=
 ACTIONLINT_PATHS ?=
 
-.PHONY: fmt lint test build check tools ensure-golangci-lint ensure-gofumpt ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench
+.PHONY: fmt lint test build check tools ensure-golangci-lint ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks
 
-tools: ensure-golangci-lint ensure-gofumpt ensure-actionlint
+GO_MACHINE_ARCH := $(shell uname -m)
+GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
+
+tools: ensure-golangci-lint ensure-actionlint
 
 ensure-golangci-lint:
 	@set -euo pipefail; \
@@ -60,31 +61,9 @@ ensure-golangci-lint:
 		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(GO_BIN_PATH) $(GOLANGCI_LINT_VERSION); \
 	fi
 
-fmt: ensure-gofumpt
-	@set -euo pipefail; \
-	FILES="$$(find . -type f -name '*.go' -not -path './vendor/*' -not -path './.git/*' -not -path './.cache/*' 2>/dev/null)"; \
-	if [ -z "$$FILES" ]; then \
-		echo "No Go files found; skipping format."; \
-	else \
-		gofmt -w $$FILES; \
-		$(GOFUMPT) -w $$FILES; \
-	fi
-
 lint: ensure-golangci-lint
 	@mkdir -p "$(GOLANGCI_LINT_CACHE_DIR)"
 	@GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE_DIR)" $(GOLANGCI_LINT) run
-
-ensure-gofumpt:
-	@set -euo pipefail; \
-	BIN="$(GOFUMPT_BIN)"; \
-	CURRENT_VERSION=""; \
-	if [ -x "$$BIN" ]; then \
-		CURRENT_VERSION="$$($$BIN -version 2>/dev/null | awk '{print $$2}')"; \
-	fi; \
-	if [ "$$CURRENT_VERSION" != "$(GOFUMPT_VERSION)" ]; then \
-		echo "Installing gofumpt v$(GOFUMPT_VERSION)"; \
-		$(GO) install mvdan.cc/gofumpt@v$(GOFUMPT_VERSION); \
-	fi
 
 ensure-actionlint:
 	@set -euo pipefail; \
@@ -112,15 +91,15 @@ test:
 
 coverage:
 	@set -euo pipefail; \
-        if [ -z "$(strip $(PKGS))" ]; then \
-                echo "No Go packages found; skipping coverage."; \
-        elif [ -z "$(strip $(COVERAGE_PKGS))" ]; then \
-                echo "No Go packages selected for coverage after exclusions; adjust COVERAGE_EXCLUDES."; \
-                exit 1; \
-        else \
-                excluded="$(strip $(COVERAGE_EXCLUDES))"; \
-                if [ -n "$$excluded" ]; then \
-                        echo "Excluding packages from coverage: $$excluded"; \
+	if [ -z "$(strip $(PKGS))" ]; then \
+		echo "No Go packages found; skipping coverage."; \
+	elif [ -z "$(strip $(COVERAGE_PKGS))" ]; then \
+		echo "No Go packages selected for coverage after exclusions; adjust COVERAGE_EXCLUDES."; \
+		exit 1; \
+	else \
+		excluded="$(strip $(COVERAGE_EXCLUDES))"; \
+		if [ -n "$$excluded" ]; then \
+			echo "Excluding packages from coverage: $$excluded"; \
 		fi; \
 			coverage_pkgs="$(strip $(COVERAGE_PKGS))"; \
 			coverage_csv=$$(printf '%s' "$$coverage_pkgs" | tr ' \n' ',' | sed 's/,,*/,/g; s/^,//; s/,$$//'); \
@@ -216,14 +195,14 @@ integration:
 	fi; \
 	cgroup_version="$$(docker info --format '{{.CgroupVersion}}' 2>/dev/null || true)"; \
 	if [ "$$cgroup_version" != "2" ]; then \
-	echo "integration suite requires cgroup v2 (detected $${cgroup_version:-unknown})"; \
-	exit 1; \
+		echo "integration suite requires cgroup v2 (detected $${cgroup_version:-unknown})"; \
+		exit 1; \
 	fi; \
 	echo "Docker cgroup version: $$cgroup_version"; \
 	controllers_file="/sys/fs/cgroup/cgroup.controllers"; \
 	if [ ! -r "$$controllers_file" ]; then \
-	echo "cgroup controllers file $$controllers_file is not readable"; \
-	exit 1; \
+		echo "cgroup controllers file $$controllers_file is not readable"; \
+		exit 1; \
 	fi; \
 	controllers=$$(tr '\n' ' ' < "$$controllers_file"); \
 	if ! grep -qw cpu "$$controllers_file"; then \
@@ -276,3 +255,95 @@ e2e:
 	fi; \
 	mkdir -p "$(GOCACHE_DIR)"; \
 	GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=e2e -v ./tests/e2e/...
+
+setup: ensure-dev-deps ensure-go maintenance
+	@set -euo pipefail; \
+	if ! command -v go >/dev/null 2>&1; then \
+	echo "Go installation failed; check logs above"; \
+	exit 1; \
+	fi; \
+	echo "PATH hints: export PATH=/usr/local/go/bin:\"$${PATH}\" and ensure \"$(GO_BIN_PATH)\" is in PATH for Go tools"; \
+	echo "Optional: export GOPATH=$${GOPATH:-$${HOME}/go} and GOBIN=$${GOBIN:-$${GOPATH:-$${HOME}/go}/bin} to keep binaries isolated"; \
+	echo "Setup complete; caches live in $(GOCACHE_DIR) and $(GOLANGCI_LINT_CACHE_DIR)";
+
+maintenance: ensure-go go-mod-download tools
+	@set -euo pipefail; \
+	mkdir -p "$(GOCACHE_DIR)" "$(GOLANGCI_LINT_CACHE_DIR)"; \
+	echo "Dependencies refreshed; Go cache at $(GOCACHE_DIR), golangci-lint cache at $(GOLANGCI_LINT_CACHE_DIR)";
+
+ensure-dev-deps:
+	@set -euo pipefail; \
+	if [ ! -r /etc/os-release ]; then \
+		echo "/etc/os-release not readable; cannot verify platform"; \
+		exit 1; \
+	fi; \
+	. /etc/os-release; \
+	if [ "$$ID" != "ubuntu" ]; then \
+		echo "System package install only supported on Ubuntu (detected $$ID)"; \
+		exit 1; \
+	fi; \
+	APT_GET_CMD="apt-get"; \
+	if [ "$$EUID" -ne 0 ]; then \
+		if command -v sudo >/dev/null 2>&1; then \
+			APT_GET_CMD="sudo -n apt-get"; \
+		else \
+			echo "Root privileges or passwordless sudo required to install system packages"; \
+			exit 1; \
+		fi; \
+	fi; \
+	DEBIAN_FRONTEND=noninteractive $$APT_GET_CMD update -y; \
+	DEBIAN_FRONTEND=noninteractive $$APT_GET_CMD install -y --no-install-recommends ca-certificates curl git tar gzip build-essential;
+
+ensure-go:
+	@set -euo pipefail; \
+	if command -v $(GO) >/dev/null 2>&1; then \
+	echo "Go already available: $$($(GO) version)"; \
+	exit 0; \
+	fi; \
+	if [ ! -r /etc/os-release ]; then \
+		echo "/etc/os-release not readable; cannot install Go"; \
+		exit 1; \
+	fi; \
+	. /etc/os-release; \
+	if [ "$$ID" != "ubuntu" ]; then \
+		echo "Go not found and platform ($$ID) is not Ubuntu; aborting install"; \
+		exit 1; \
+	fi; \
+	TARBALL="go$(GO_REQUIRED_VERSION).linux-$(GO_DL_ARCH).tar.gz"; \
+	URL="https://go.dev/dl/$$TARBALL"; \
+	echo "Installing Go $(GO_REQUIRED_VERSION) from $$URL"; \
+	TMP_TARBALL="$$(mktemp)"; \
+	curl -fsSL "$$URL" -o "$$TMP_TARBALL"; \
+	rm -rf /usr/local/go; \
+	tar -C /usr/local -xzf "$$TMP_TARBALL"; \
+	rm -f "$$TMP_TARBALL"; \
+	echo "Go $(GO_REQUIRED_VERSION) installed at /usr/local/go";
+
+go-mod-download:
+	@set -euo pipefail; \
+	if [ ! -f go.mod ]; then \
+		echo "go.mod not found; skipping module download."; \
+		exit 0; \
+	fi; \
+	mkdir -p "$(GOCACHE_DIR)"; \
+	GOCACHE="$(GOCACHE_DIR)" $(GO) mod download; \
+	GOCACHE="$(GOCACHE_DIR)" $(GO) mod verify
+
+install-git-hooks:
+	@set -euo pipefail; \
+	if [ ! -d .git ]; then \
+		echo "No .git directory; skipping hook installation."; \
+		exit 0; \
+	fi; \
+	hook_path=".git/hooks/pre-commit"; \
+	cat > "$$hook_path" <<-'EOF'
+	#!/bin/bash
+	set -euo pipefail
+	if command -v make >/dev/null 2>&1; then
+	  make lint
+	else
+	  echo "make not available; skipping lint hook" >&2
+	fi
+	EOF
+	chmod +x "$$hook_path"; \
+	echo "Installed pre-commit hook to run 'make lint' with autofix support"
