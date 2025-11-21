@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-GO ?= ${GOROOT}/bin/go
+GO ?= go
 GO_REQUIRED_VERSION ?= 1.25.4
 MIN_COVERAGE ?= 95.0
 COVERAGE_PROFILE ?= coverage.out
