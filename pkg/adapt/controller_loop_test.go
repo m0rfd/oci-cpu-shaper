@@ -1,4 +1,4 @@
-// Package adapt collects the controller run-loop tests to keep lifecycle and
+// Package adapt collects the controller loop tests to keep lifecycle and
 // metrics coverage alongside the production orchestration entry point.
 //
 //nolint:testpackage,godoclint // Tests need internal helpers and per-file coverage documentation.
@@ -70,6 +70,47 @@ func TestAdaptiveControllerRunLifecycle(t *testing.T) {
 
 	if estimator.consumed.Load() == 0 {
 		t.Fatalf("expected estimator observations to be consumed")
+	}
+}
+
+func TestConsumeEstimatorStopsOnClose(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	observations := make(chan est.Observation, 1)
+	done := make(chan struct{})
+
+	go func() {
+		controller.consumeEstimator(context.Background(), observations)
+		close(done)
+	}()
+
+	observations <- est.Observation{
+		Timestamp:    time.Unix(0, 0),
+		Utilisation:  0.5,
+		BusyJiffies:  0,
+		TotalJiffies: 0,
+		Err:          nil,
+	}
+
+	close(observations)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("consumeEstimator did not exit after channel close")
+	}
+
+	if len(shaper.hostLoads) == 0 {
+		t.Fatal("expected host load to be observed after consuming estimator values")
 	}
 }
 

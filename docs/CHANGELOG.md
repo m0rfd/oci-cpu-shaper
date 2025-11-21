@@ -95,6 +95,10 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 
 ### Changed
 _Record coverage reductions or mitigations so reviewers can audit the CI ≥95% threshold impact (§11)._ 
+- Refreshed `docs/05-execution-flow.txt` to document the CLI entrypoint file
+  boundaries and responsibilities, and linked `docs/AGENTS.md` plus
+  `cmd/shaper/AGENTS.md` back to the architecture section so wiring guidance
+  stays current (§§3, 8, 12).
 - Raised the Go toolchain to 1.25.4 in `go.mod`, `.tool-versions`, and the container build ARG so CI, local builds, and release
   images track the latest stable release, and refreshed badges/docs to match (§§8, 12, 14).
 - CLI documentation (§9), `runtimeconfig.Default()`, and `adapt.DefaultConfig()` now
