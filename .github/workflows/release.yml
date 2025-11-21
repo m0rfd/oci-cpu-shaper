@@ -244,24 +244,25 @@ jobs:
         #   # Optionally pin a specific version; otherwise get latest
         #   cosign-release: 'v3.0.2'
 
-      - name: Sign rootless image tags
+      - name: Sign rootless image digest
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
-          # meta_rootless.outputs.tags is a comma-separated list
-          for TAG in $(echo "${{ steps.meta_rootless.outputs.tags }}" | tr ',' ' '); do
-            echo "Signing ${TAG}"
-            cosign sign --yes "${TAG}"
-          done
+          DIGEST="${{ steps.build_rootless.outputs.digest }}"
+          IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
 
-      - name: Sign rootful image tags
+          echo "Signing ${IMAGE_REF}"
+          cosign sign --yes "${IMAGE_REF}"
+
+      - name: Sign rootful image digest
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
-          for TAG in $(echo "${{ steps.meta_rootful.outputs.tags }}" | tr ',' ' '); do
-            echo "Signing ${TAG}"
-            cosign sign --yes "${TAG}"
-          done
+          DIGEST="${{ steps.build_rootful.outputs.digest }}"
+          IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
+
+          echo "Signing ${IMAGE_REF}"
+          cosign sign --yes "${IMAGE_REF}"
 
       # ------ Trivy image scan + SARIF upload (rootless tag) ------
 
