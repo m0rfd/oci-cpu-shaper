@@ -57,4 +57,4 @@ jobs:
             # `main()` function) If not defined, this Action will collect all
             # dependencies used by all build targets for the module, which may
             # include Go dependencies used by tests and tooling.
-            go-build-target: cmd/shaper/main.go
+            go-build-target: cmd/shaper/entrypoint.go
