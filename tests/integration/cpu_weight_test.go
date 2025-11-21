@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	integrationRootfulImageTag = "oci-cpu-shaper:integration-rootful"
-	integrationNonrootImageTag = "oci-cpu-shaper:integration-nonroot"
-	hogCmdImportPath           = "./tests/integration/cmd/cpu-hog"
+	integrationRootfulImageTag  = "oci-cpu-shaper:integration-rootful"
+	integrationRootlessImageTag = "oci-cpu-shaper:integration-rootless"
+	hogCmdImportPath            = "./tests/integration/cmd/cpu-hog"
 )
 
 func TestCPUWeightResponsiveness(t *testing.T) {
@@ -37,14 +37,14 @@ func TestCPUWeightResponsiveness(t *testing.T) {
 	repoRoot := repositoryRoot(t)
 	hogBinary := buildHogBinary(t, repoRoot)
 	buildIntegrationImage(t, repoRoot, "rootful", integrationRootfulImageTag)
-	buildIntegrationImage(t, repoRoot, "nonroot", integrationNonrootImageTag)
+	buildIntegrationImage(t, repoRoot, "rootless", integrationRootlessImageTag)
 
 	variants := []struct {
 		name  string
 		image string
 	}{
 		{name: "rootful", image: integrationRootfulImageTag},
-		{name: "nonroot", image: integrationNonrootImageTag},
+		{name: "rootless", image: integrationRootlessImageTag},
 	}
 
 	for _, variant := range variants {

@@ -88,7 +88,7 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - Go vulnerability scanning via `make govulncheck` and a dedicated CI job that restores module/build caches, failing pull requests when published advisories affect the dependency graph (§14).
 - CPU weight responsiveness integration suite with CI coverage on `ubuntu-latest` (cgroup v2) that exercises the container build alongside a competing workload and publishes verbose logs (§§6, 11).
 - Local `make integration` helper replicating the CI cgroup v2 guard, Docker availability checks, and log capture so contributors can rerun the CPU weight suite with artifact parity (§§6, 11).
-- CPU weight responsiveness harness now builds and runs both the distroless rootful and nonroot images, gating execution on the cgroup v2 cpu controller so CI and local runs validate both deployment paths (§§6, 8, 11).
+- CPU weight responsiveness harness now builds and runs both the distroless rootful and rootless images, gating execution on the cgroup v2 cpu controller so CI and local runs validate both deployment paths (§§6, 8, 11).
 - Quick Start onboarding guide that condenses the five plan-mandated console steps and links to the IAM, Monitoring, Compose, and alarm references (§10).
 - Documentation refresh covering OCI IAM policy setup (§1), Always Free reclaim guardrails (§3), cgroup v2 tuning guidance (§4), and alarm workflows (§7), aligning `docs/` with the implementation plan’s required artifacts (§12).
 - `/metrics` exporter and Prometheus integration surfaced through the CLI, including emitted series, sample scrape output, and Compose/HTTP_ADDR wiring documented across §§4–9.
@@ -188,7 +188,7 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥99% 
 - CI and release automation now leverage GitHub Actions caching to speed linting, testing, and multi-architecture builds, including restoring the runner `~/.cache/go-build` directory alongside module downloads (§14).
 - Container smoke testing now runs the packaged binary with `--log-level debug --shutdown-after=4s`, verifies the offline metadata log and graceful shutdown message, and uses a tighter offline configuration so CI fails quickly when wiring regresses (§§8, 9, 11).
 - Release SBOM generation is pinned to the latest Anchore Syft GitHub Action for up-to-date SPDX output (§14).
-- Release workflow now builds and pushes both distroless `nonroot` and rootful image targets with dedicated tags plus per-variant SBOM artifacts so operators can pull the UID profile their deployment requires (§§6, 14).
+- Release workflow now builds and pushes both distroless `rootless` and rootful image targets with dedicated tags plus per-variant SBOM artifacts so operators can pull the UID profile their deployment requires (§§6, 14).
 - Refreshed §§4–9 documentation to describe the Prometheus endpoint, offline/static metrics client behaviour, and updated `QueryP95CPU` interface so operators see the current exporter wiring and Monitoring contract.
 - Local lint tooling is standardised on `golangci-lint` v2.6.1 with pinned installation in CI and the developer Makefile helper, keeping contributor environments aligned (§14).
 - `make lint`/`make test` now create repository-local caches (`.cache/golangci` and `.cache/go`) and set `GOLANGCI_LINT_CACHE`/`GOCACHE` accordingly so the tools never write to protected runner directories; prefer using the Makefile helpers instead of invoking the linters or `go test` manually to keep sandbox runs stable (§14).

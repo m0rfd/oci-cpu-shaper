@@ -19,7 +19,7 @@ Run the container release that matches your OCI VM architecture and follow the l
 
 ```bash
 TAG="v1.2.3"             # pin to the release you trust
-VARIANT="nonroot"        # or rootful for Mode B
+VARIANT="rootless"        # or rootful for Mode B
 IMAGE="ghcr.io/<owner>/oci-cpu-shaper:${TAG}-${VARIANT}"
 
 docker pull "$IMAGE"
@@ -29,7 +29,7 @@ docker image inspect "$IMAGE" | jq '.[0].Config.Labels'
 ```bash
 # Render the provided Compose bundle locally
 cp deploy/compose/mode-a.rootless.yaml ./docker-compose.yaml
-TAG="v1.2.3" VARIANT="nonroot" envsubst < docker-compose.yaml > docker-compose.rendered.yaml
+TAG="v1.2.3" VARIANT="rootless" envsubst < docker-compose.yaml > docker-compose.rendered.yaml
 docker compose -f docker-compose.rendered.yaml up -d
 ```
 
@@ -77,11 +77,10 @@ welcome! Please:
 3. Use the provided tooling shortcuts before submitting changes and keep the ≥99% statement coverage guarantee in place:
    - `make setup` (fresh Ubuntu 24.x container) to install Go, base build tools, module dependencies, linting helpers, and the `pre-commit` hook that runs `make lint` with autofix enabled. Ensure your `PATH` includes `/usr/local/go/bin` and `$HOME/go/bin` (or your `GOBIN`) so the installed tooling is discoverable.
    - `make maintenance` (resumed container) to refresh Go modules and tooling without reinstalling the toolchain.
-   - `make fmt` to format code with `go fmt`.
    - `make lint` to run `golangci-lint` with the cached configuration described in the docs.
    - `make test` to execute the suite with the Go race detector enabled.
    - `make coverage MIN_COVERAGE=99` to confirm the repository-wide coverage threshold documented in §11 of the implementation plan.
-  - `make integration` to verify Docker connectivity, ensure the cgroup v2 CPU controller is present, build the distroless rootful and nonroot images, and run the CPU weight responsiveness tests with logs mirrored to `artifacts/integration.log`.
+  - `make integration` to verify Docker connectivity, ensure the cgroup v2 CPU controller is present, build the distroless rootful and rootless images, and run the CPU weight responsiveness tests with logs mirrored to `artifacts/integration.log`.
    - `make build` to ensure binaries compile successfully.
 4. Include tests and documentation updates when adding new functionality.
 5. Use conventional commit messages where possible to ease changelog generation.
@@ -112,11 +111,11 @@ Refer to the documentation in the `docs/` directory for deeper architectural and
 
 ## Release Verification
 
-Images published to `ghcr.io/<owner>/oci-cpu-shaper` are signed with Cosign using GitHub Actions’ OIDC keyless flow, and the workflow uploads detached signatures plus SBOM attestations as release assets for both `nonroot` and `rootful` variants. Download the files that match the release tag you are deploying and verify either the image or the Syft-generated SPDX attestation:
+Images published to `ghcr.io/<owner>/oci-cpu-shaper` are signed with Cosign using GitHub Actions’ OIDC keyless flow, and the workflow uploads detached signatures plus SBOM attestations as release assets for both `rootless` and `rootful` variants. Download the files that match the release tag you are deploying and verify either the image or the Syft-generated SPDX attestation:
 
 ```bash
 TAG="v1.2.3"
-VARIANT="nonroot" # or rootful
+VARIANT="rootless" # or rootful
 IMAGE="ghcr.io/<owner>/oci-cpu-shaper:${VARIANT}"
 
 cosign verify \
