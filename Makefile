@@ -19,6 +19,7 @@ COVERAGE_PKGS := $(filter-out $(COVERAGE_EXCLUDES),$(PROD_PKGS))
 INTEGRATION_PKGS_RAW := $(shell $(GO) list ./tests/integration/... 2>/dev/null)
 INTEGRATION_PKGS := $(filter-out $(COVERAGE_EXCLUDES),$(INTEGRATION_PKGS_RAW))
 E2E_PKGS_RAW := $(shell $(GO) list ./tests/e2e/... 2>/dev/null)
+UNIT_TEST_PKGS := $(filter-out $(INTEGRATION_PKGS_RAW) $(E2E_PKGS_RAW),$(PKGS))
 COVERAGE_TAGS ?=
 E2E_PKGS := $(filter-out $(COVERAGE_EXCLUDES),$(E2E_PKGS_RAW))
 COVERAGE_TAG_ARGS := $(if $(strip $(COVERAGE_TAGS)),-tags "$(strip $(COVERAGE_TAGS))",)
@@ -28,7 +29,15 @@ GOVULNCHECK_VERSION ?= v1.1.4
 ACTIONLINT_VERSION ?= v1.7.9
 MBAKE_VERSION ?= 1.4.3
 
-GO_BIN_PATH := $(shell command -v $(GO) >/dev/null 2>&1 && $(GO) env GOBIN)
+GO_BIN_PATH := $(shell \
+        if command -v $(GO) >/dev/null 2>&1; then \
+                GOBIN_VALUE="$$($(GO) env GOBIN)"; \
+                if [ -n "$$GOBIN_VALUE" ]; then \
+                        echo "$$GOBIN_VALUE"; \
+else \
+                        echo "$$($(GO) env GOPATH)/bin"; \
+                fi; \
+        fi)
 ifeq ($(GO_BIN_PATH),)
 GO_BIN_PATH := $(HOME)/go/bin
 endif
@@ -48,10 +57,11 @@ MBAKE_BIN ?= $(HOME)/.local/bin/mbake
 MBAKE ?= $(MBAKE_BIN)
 MBAKE_FORMAT_PATHS ?= Makefile
 
-.PHONY: lint test build check tools ensure-golangci-lint ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks verify-go-version ensure-mbake mbake
+.PHONY: lint test build check tools ensure-golangci-lint ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks verify-go-version ensure-mbake mbake help clean
 
 GO_MACHINE_ARCH := $(shell uname -m)
 GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
+HELP_TARGETS := lint test coverage build check govulncheck integration e2e agents actionlint help clean
 
 tools: ensure-golangci-lint ensure-actionlint ensure-mbake
 
@@ -71,6 +81,27 @@ ensure-golangci-lint:
 lint: verify-go-version ensure-golangci-lint mbake
 	@mkdir -p "$(GOLANGCI_LINT_CACHE_DIR)"
 	@GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE_DIR)" $(GOLANGCI_LINT) run
+
+help:
+	@printf "Available targets:\n"
+	@for target in $(HELP_TARGETS); do \ \
+		case $$target in \ \
+			lint) desc="Run golangci-lint with autofix";; \ \
+			test) desc="Run unit tests (excludes integration/e2e)";; \ \
+			coverage) desc="Run coverage with minimum threshold enforcement";; \ \
+			build) desc="Compile all modules with cache isolation";; \ \
+			check) desc="Run lint, test, and agent checks";; \ \
+			govulncheck) desc="Scan dependencies with govulncheck";; \ \
+			integration) desc="Execute integration suite (requires Docker + cgroup v2)";; \ \
+			e2e) desc="Execute end-to-end suite";; \ \
+			agents) desc="Validate agent instructions";; \ \
+			actionlint) desc="Lint GitHub Actions workflows";; \ \
+			clean) desc="Remove build caches and coverage artifacts";; \ \
+			help) desc="Show this help";; \ \
+			*) desc="";; \ \
+		esac; \ \
+		printf "  %-14s %s\n" "$$target" "$$desc"; \ \
+	done
 
 ensure-actionlint:
 	@set -euo pipefail; \
@@ -101,11 +132,11 @@ mbake: ensure-mbake
 	@$(MBAKE) format $(MBAKE_FORMAT_PATHS)
 
 test: verify-go-version
-	@if [ -z "$(strip $(PKGS))" ]; then \
+	@if [ -z "$(strip $(UNIT_TEST_PKGS))" ]; then \
 		echo "No Go packages found; skipping tests."; \
 	else \
 		mkdir -p "$(GOCACHE_DIR)"; \
-		GOCACHE="$(GOCACHE_DIR)" $(GO) test -race $(PKGS); \
+		GOCACHE="$(GOCACHE_DIR)" $(GO) test -race $(UNIT_TEST_PKGS); \
 	fi
 	@if [ "$(strip $(RUN_E2E_TESTS))" = "1" ] && [ -d "$(ROOT_DIR)/tests/e2e" ]; then \
 		mkdir -p "$(GOCACHE_DIR)"; \
@@ -126,14 +157,15 @@ coverage: verify-go-version
 		if [ -n "$$excluded" ]; then \
 			echo "Excluding packages from coverage: $$excluded"; \
 		fi; \
-		coverage_pkgs="$(strip $(COVERAGE_PKGS))"; \
-		coverage_csv=$$(printf '%s' "$$coverage_pkgs" | tr ' \n' ',' | sed 's/,,*/,/g; s/^,//; s/,$$//'); \
-		rm -f $(COVERAGE_PROFILE) $(COVERAGE_SUMMARY); \
-		unit_profile="coverage-unit.out"; \
-		$(GO) test -race -covermode=atomic $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$unit_profile" $(COVERAGE_PKGS); \
-		cat "$$unit_profile" > $(COVERAGE_PROFILE); \
-		rm -f "$$unit_profile"; \
-		if [ -n "$(strip $(INTEGRATION_PKGS))" ]; then \
+                coverage_pkgs="$(strip $(COVERAGE_PKGS))"; \
+                coverage_csv=$$(printf '%s' "$$coverage_pkgs" | tr ' \n' ',' | sed 's/,,*/,/g; s/^,//; s/,$$//'); \
+                mkdir -p "$(dir $(COVERAGE_PROFILE))" "$(dir $(COVERAGE_SUMMARY))" "$(GOCACHE_DIR)"; \
+                rm -f $(COVERAGE_PROFILE) $(COVERAGE_SUMMARY); \
+                unit_profile="coverage-unit.out"; \
+                GOCACHE="$(GOCACHE_DIR)" $(GO) test -race -covermode=atomic $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$unit_profile" $(COVERAGE_PKGS); \
+                cat "$$unit_profile" > $(COVERAGE_PROFILE); \
+                rm -f "$$unit_profile"; \
+                if [ -n "$(strip $(INTEGRATION_PKGS))" ]; then \
 			integration_profile="$(strip $(INTEGRATION_COVERAGE_PROFILE))"; \
 			if [ -z "$$integration_profile" ]; then \
 				integration_profile="coverage-integration.out"; \
@@ -144,17 +176,17 @@ coverage: verify-go-version
 					echo "Integration coverage profile '$$integration_profile' not found."; \
 					exit 1; \
 				fi; \
-			else \
-				$(GO) test -race -covermode=atomic -tags=integration $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$integration_profile" $(INTEGRATION_PKGS); \
-			fi; \
-			tail -n +2 "$$integration_profile" >> $(COVERAGE_PROFILE); \
-			if [ "$$reuse_integration" != "1" ]; then \
+else \
+                                GOCACHE="$(GOCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=integration $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$integration_profile" $(INTEGRATION_PKGS); \
+                        fi; \
+                        tail -n +2 "$$integration_profile" >> $(COVERAGE_PROFILE); \
+                        if [ "$$reuse_integration" != "1" ]; then \
 				rm -f "$$integration_profile"; \
 			fi; \
 		fi; \
 		if [ -n "$(strip $(E2E_PKGS))" ]; then \
 			e2e_profile="coverage-e2e.out"; \
-			if $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $(E2E_PKGS); then \
+			if GOCACHE="$(GOCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $(E2E_PKGS); then \
 				tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
 			else \
 				echo "Skipping e2e coverage due to test failures"; \
@@ -192,11 +224,11 @@ verify-go-version:
 		exit 1; \
 	fi
 
-govulncheck:
+govulncheck: verify-go-version
 	@set -euo pipefail; \
 	mkdir -p "$(GOCACHE_DIR)" "$(GOVULNCHECK_CACHE_DIR)"; \
-	GOCACHE="$(GOCACHE_DIR)" GOVULNCHECK_CACHE="$(GOVULNCHECK_CACHE_DIR)" \
-	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+        GOCACHE="$(GOCACHE_DIR)" GOVULNCHECK_CACHE="$(GOVULNCHECK_CACHE_DIR)" \
+        $(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
 check: lint test agents
 
@@ -218,10 +250,11 @@ bench:
 	@set -euo pipefail; \
 	./hack/check_benchmarks.sh
 
-build:
-	$(GO) build ./...
+build: verify-go-version
+	@mkdir -p "$(GOCACHE_DIR)"
+	@GOCACHE="$(GOCACHE_DIR)" $(GO) build ./...
 
-integration:
+integration: verify-go-version
 	@set -euo pipefail; \
 	if ! command -v docker >/dev/null 2>&1; then \
 		echo "integration suite requires the docker CLI"; \
@@ -366,6 +399,10 @@ go-mod-download:
 	mkdir -p "$(GOCACHE_DIR)"; \
 	GOCACHE="$(GOCACHE_DIR)" $(GO) mod download; \
 	GOCACHE="$(GOCACHE_DIR)" $(GO) mod verify
+
+clean:
+	@set -euo pipefail; \
+	rm -rf "$(COVERAGE_PROFILE)" "$(COVERAGE_SUMMARY)" coverage-*.out "$(GOCACHE_DIR)" "$(GOLANGCI_LINT_CACHE_DIR)" "$(GOVULNCHECK_CACHE_DIR)" artifacts
 
 install-git-hooks:
 	@set -euo pipefail; \
