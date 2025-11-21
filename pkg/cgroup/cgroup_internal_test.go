@@ -1,6 +1,7 @@
 package cgroup
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,6 +73,28 @@ func TestReadMaxHandlesInvalidFormats(t *testing.T) {
 				t.Fatalf("expected error containing %q, got %+v", testCase.expect, cpuMax)
 			}
 		})
+	}
+}
+
+func TestReadSelfCgroupSkipsInvalidLines(t *testing.T) {
+	t.Parallel()
+
+	procPath := filepath.Join(t.TempDir(), "proc")
+
+	content := strings.Join([]string{
+		"invalid",
+		"1:name=systemd:/ignored", // controller entry should be skipped
+		"2::",                     // missing path should be skipped
+	}, "\n")
+
+	err := os.WriteFile(procPath, []byte(content+"\n"), 0o600)
+	if err != nil {
+		t.Fatalf("write cgroup file: %v", err)
+	}
+
+	_, err = readSelfCgroup(procPath)
+	if !errors.Is(err, errCgroupPathNotFound) {
+		t.Fatalf("expected errCgroupPathNotFound, got %v", err)
 	}
 }
 
