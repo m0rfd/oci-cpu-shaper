@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,9 +29,8 @@ const (
 	factoryTestInstanceID    = "ocid1.instance.oc1..test"
 )
 
+//nolint:paralleltest // validates global factory substitution without concurrent mutation.
 func TestNewInstancePrincipalClientFactorySubstitution(t *testing.T) {
-	t.Parallel()
-
 	previousFactory := newInstancePrincipalClientFactory
 
 	t.Cleanup(func() {
@@ -39,7 +39,7 @@ func TestNewInstancePrincipalClientFactorySubstitution(t *testing.T) {
 
 	//nolint:exhaustruct // zero values tracked during invocation
 	calls := trackingCalls{}
-	recorder := &recordingRoundTripper{calls: 0, lastRequest: nil}
+	recorder := &recordingRoundTripper{mu: sync.Mutex{}, calls: 0, lastRequest: nil}
 	provider := testConfigurationProvider(t)
 
 	stubFactory := buildTrackingFactory(t, &calls, recorder, provider)
@@ -95,6 +95,12 @@ type trackingCalls struct {
 	monitoring int
 }
 
+type recordingRoundTripper struct {
+	mu          sync.Mutex
+	calls       int
+	lastRequest *http.Request
+}
+
 func buildTrackingFactory(
 	t *testing.T,
 	calls *trackingCalls,
@@ -118,10 +124,8 @@ func buildTrackingFactory(
 			}
 
 			client.HTTPClient = recorder
-			client.HTTPClient = recorder
 			client.Interceptor = func(req *http.Request) error {
-				recorder.calls++
-				recorder.lastRequest = req
+				recorder.recordInterceptor(req)
 
 				return nil
 			}
@@ -181,11 +185,11 @@ func verifyTrackingCalls(t *testing.T, calls trackingCalls) {
 func assertMonitoringRequest(t *testing.T, recorder *recordingRoundTripper) {
 	t.Helper()
 
-	if recorder.calls == 0 {
+	if recorder.callCount() == 0 {
 		sendFallbackMonitoringRequest(t, recorder)
 	}
 
-	request := recorder.lastRequest
+	request := recorder.latestRequest()
 	if request == nil {
 		t.Fatal("expected monitoring request to be recorded")
 	}
@@ -256,19 +260,20 @@ func testConfigurationProvider(t *testing.T) common.ConfigurationProvider {
 	)
 }
 
-type recordingRoundTripper struct {
-	calls       int
-	lastRequest *http.Request
-}
-
 func (r *recordingRoundTripper) Do(req *http.Request) (*http.Response, error) {
 	payload, err := io.ReadAll(req.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read request body: %w", err)
 	}
 
-	r.lastRequest = req
-	r.lastRequest.Body = io.NopCloser(bytes.NewReader(payload))
+	req.Body = io.NopCloser(bytes.NewReader(payload))
+
+	r.mu.Lock()
+	{
+		r.lastRequest = req
+	}
+
+	r.mu.Unlock()
 
 	body := strings.Join([]string{
 		`[{"namespace":"oci_computeagent","name":"CpuUtilization",`,
@@ -281,6 +286,28 @@ func (r *recordingRoundTripper) Do(req *http.Request) (*http.Response, error) {
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(strings.NewReader(body)),
 	}, nil
+}
+
+func (r *recordingRoundTripper) recordInterceptor(req *http.Request) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.calls++
+	r.lastRequest = req
+}
+
+func (r *recordingRoundTripper) callCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.calls
+}
+
+func (r *recordingRoundTripper) latestRequest() *http.Request {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.lastRequest
 }
 
 func requestBody(t *testing.T, req *http.Request) []byte {
