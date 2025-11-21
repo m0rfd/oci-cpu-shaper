@@ -36,7 +36,8 @@ jobs:
         id: build_meta
         run: |
           echo "version=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+          commit_date=$(git show -s --format=%cI "${GITHUB_SHA}" || true)
+          echo "build_date=${commit_date:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU (optional, for consistency)
         uses: docker/setup-qemu-action@v3
@@ -54,6 +55,8 @@ jobs:
           platforms: linux/amd64
           push: false
           load: true
+          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-pr-build
+          cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-pr-build,mode=max
           build-args: |
             VERSION=${{ steps.build_meta.outputs.version }}
             GIT_COMMIT=${{ github.sha }}
@@ -140,7 +143,9 @@ jobs:
 
       - name: Prepare build metadata
         id: build_meta
-        run: echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+        run: |
+          commit_date=$(git show -s --format=%cI "${GITHUB_SHA}" || true)
+          echo "build_date=${commit_date:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}" >> "$GITHUB_OUTPUT"
 
       # ------ Metadata (tags + labels) with docker/metadata-action ------
       # Rootless is the primary image (gets :latest + semver tags)
@@ -210,8 +215,8 @@ jobs:
             IMAGE_SOURCE=${{ github.repositoryUrl }}
           provenance: true
           sbom: true
-          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-rootless
-          cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-rootless,mode=max
+          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-builder
+          cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-builder,mode=max
 
       # ------ Build & push rootful (multi-arch) ------
 
@@ -233,8 +238,8 @@ jobs:
             IMAGE_SOURCE=${{ github.repositoryUrl }}
           provenance: true
           sbom: true
-          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-rootful
-          cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-rootful,mode=max
+          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-builder
+          cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-builder,mode=max
 
       # ------ Cosign signing (keyless) ------
 
