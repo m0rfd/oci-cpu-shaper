@@ -62,6 +62,9 @@ func TestBuildAdaptiveControllerOfflineSkipsExternalDependencies(t *testing.T) {
 
 	cfg := runtimeconfig.Default()
 	cfg.Controller.TargetStart = 0.42
+	cfg.Controller.TargetMax = 0.7
+	cfg.Controller.SuppressThreshold = 0.9
+	cfg.Controller.SuppressResume = 0.75
 	cfg.OCI.CompartmentID = ""
 	cfg.OCI.InstanceID = ""
 	cfg.OCI.Offline = true
