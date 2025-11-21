@@ -32,7 +32,9 @@ func defaultRunDeps() runDeps {
 		) (adapt.Controller, poolStarter, error) {
 			logger := e2eLogger.Load()
 			if logger != nil && recorder != nil {
-				recorder = e2eclient.NewLoggingRecorder(logger, recorder)
+				if recorderWithLogging := e2eclient.NewLoggingRecorder(logger, recorder); recorderWithLogging != nil {
+					recorder = recorderWithLogging
+				}
 			}
 
 			return defaultControllerFactory(ctx, mode, cfg, imdsClient, recorder)

@@ -9,7 +9,7 @@ import (
 	"oci-cpu-shaper/pkg/adapt"
 )
 
-type loggingRecorder struct {
+type LoggingRecorder struct {
 	logger   *zap.Logger
 	delegate adapt.MetricsRecorder
 
@@ -20,28 +20,28 @@ type loggingRecorder struct {
 // NewLoggingRecorder decorates the provided MetricsRecorder so e2e tests can observe
 // controller state transitions via structured logs.
 //
-//nolint:ireturn // e2e helpers return interfaces to mirror production wiring seams.
+
 func NewLoggingRecorder(
 	logger *zap.Logger,
 	delegate adapt.MetricsRecorder,
-) adapt.MetricsRecorder {
+) *LoggingRecorder {
 	if logger == nil || delegate == nil {
-		return delegate
+		return nil
 	}
 
-	return &loggingRecorder{ //nolint:exhaustruct // zero-value fields are intentional
+	return &LoggingRecorder{ //nolint:exhaustruct // zero-value fields are intentional
 		logger:   logger,
 		delegate: delegate,
 	}
 }
 
-func (r *loggingRecorder) SetMode(mode string) {
+func (r *LoggingRecorder) SetMode(mode string) {
 	if r.delegate != nil {
 		r.delegate.SetMode(mode)
 	}
 }
 
-func (r *loggingRecorder) SetState(state string) {
+func (r *LoggingRecorder) SetState(state string) {
 	trimmed := strings.TrimSpace(state)
 	if r.delegate != nil {
 		r.delegate.SetState(trimmed)
@@ -62,31 +62,31 @@ func (r *loggingRecorder) SetState(state string) {
 	r.mu.Unlock()
 }
 
-func (r *loggingRecorder) SetTarget(target float64) {
+func (r *LoggingRecorder) SetTarget(target float64) {
 	if r.delegate != nil {
 		r.delegate.SetTarget(target)
 	}
 }
 
-func (r *loggingRecorder) ObserveOCIP95(value float64, fetchedAt time.Time) {
+func (r *LoggingRecorder) ObserveOCIP95(value float64, fetchedAt time.Time) {
 	if r.delegate != nil {
 		r.delegate.ObserveOCIP95(value, fetchedAt)
 	}
 }
 
-func (r *loggingRecorder) ObserveHostCPU(utilisation float64) {
+func (r *LoggingRecorder) ObserveHostCPU(utilisation float64) {
 	if r.delegate != nil {
 		r.delegate.ObserveHostCPU(utilisation)
 	}
 }
 
-func (r *loggingRecorder) SetInterval(interval time.Duration) {
+func (r *LoggingRecorder) SetInterval(interval time.Duration) {
 	if r.delegate != nil {
 		r.delegate.SetInterval(interval)
 	}
 }
 
-func (r *loggingRecorder) SetLastError(err error) {
+func (r *LoggingRecorder) SetLastError(err error) {
 	if r.delegate != nil {
 		r.delegate.SetLastError(err)
 	}

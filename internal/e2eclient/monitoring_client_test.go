@@ -77,7 +77,7 @@ func TestMonitoringClientQueryP95CPUScenarios(t *testing.T) {
 func TestMonitoringClientRejectsUninitialisedHTTPClient(t *testing.T) {
 	t.Parallel()
 
-	client := &monitoringClient{endpoint: "http://127.0.0.1", http: nil}
+	client := &MonitoringClient{endpoint: "http://127.0.0.1", http: nil}
 
 	_, err := client.QueryP95CPU(context.Background(), "resource")
 	if !errors.Is(err, errMonitoringHTTPNotInitialised) {
