@@ -30,6 +30,54 @@ func TestValidateConfig(t *testing.T) {
 	}
 }
 
+func TestValidateConfigRejectsInvalidTargets(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.TargetMin = cfg.TargetMax
+
+	err := ValidateConfig(cfg)
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig for equal target bounds, got %v", err)
+	}
+}
+
+func TestValidateConfigRejectsThresholdsOutsideBounds(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.TargetStart = cfg.TargetMax + 0.1
+
+	err := ValidateConfig(cfg)
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig for out-of-range targetStart, got %v", err)
+	}
+}
+
+func TestValidateConfigRejectsNonPositiveSteps(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.StepUp = -0.01
+
+	err := ValidateConfig(cfg)
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig for negative stepUp, got %v", err)
+	}
+}
+
+func TestValidateConfigRejectsDescendingGoals(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.GoalLow = cfg.GoalHigh + 0.01
+
+	err := ValidateConfig(cfg)
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig for descending goals, got %v", err)
+	}
+}
+
 func TestEnsureDurationUsesFallback(t *testing.T) {
 	t.Parallel()
 

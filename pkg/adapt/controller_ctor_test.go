@@ -37,6 +37,9 @@ func TestNewAdaptiveControllerSetsFallbackTarget(t *testing.T) {
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 	cfg.FallbackTarget = 0.42
+	cfg.TargetMax = 0.7
+	cfg.SuppressThreshold = 0.9
+	cfg.SuppressResume = 0.75
 	cfg.Mode = " enforce "
 
 	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
