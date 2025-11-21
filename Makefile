@@ -116,15 +116,15 @@ test:
 
 coverage:
 	@set -euo pipefail; \
-        if [ -z "$(strip $(PKGS))" ]; then \
-                echo "No Go packages found; skipping coverage."; \
-        elif [ -z "$(strip $(COVERAGE_PKGS))" ]; then \
-                echo "No Go packages selected for coverage after exclusions; adjust COVERAGE_EXCLUDES."; \
-                exit 1; \
-        else \
-                excluded="$(strip $(COVERAGE_EXCLUDES))"; \
-                if [ -n "$$excluded" ]; then \
-                        echo "Excluding packages from coverage: $$excluded"; \
+	if [ -z "$(strip $(PKGS))" ]; then \
+		echo "No Go packages found; skipping coverage."; \
+	elif [ -z "$(strip $(COVERAGE_PKGS))" ]; then \
+		echo "No Go packages selected for coverage after exclusions; adjust COVERAGE_EXCLUDES."; \
+		exit 1; \
+	else \
+		excluded="$(strip $(COVERAGE_EXCLUDES))"; \
+		if [ -n "$$excluded" ]; then \
+			echo "Excluding packages from coverage: $$excluded"; \
 		fi; \
 			coverage_pkgs="$(strip $(COVERAGE_PKGS))"; \
 			coverage_csv=$$(printf '%s' "$$coverage_pkgs" | tr ' \n' ',' | sed 's/,,*/,/g; s/^,//; s/,$$//'); \
@@ -220,14 +220,14 @@ integration:
 	fi; \
 	cgroup_version="$$(docker info --format '{{.CgroupVersion}}' 2>/dev/null || true)"; \
 	if [ "$$cgroup_version" != "2" ]; then \
-	echo "integration suite requires cgroup v2 (detected $${cgroup_version:-unknown})"; \
-	exit 1; \
+		echo "integration suite requires cgroup v2 (detected $${cgroup_version:-unknown})"; \
+		exit 1; \
 	fi; \
 	echo "Docker cgroup version: $$cgroup_version"; \
 	controllers_file="/sys/fs/cgroup/cgroup.controllers"; \
 	if [ ! -r "$$controllers_file" ]; then \
-	echo "cgroup controllers file $$controllers_file is not readable"; \
-	exit 1; \
+		echo "cgroup controllers file $$controllers_file is not readable"; \
+		exit 1; \
 	fi; \
 	controllers=$$(tr '\n' ' ' < "$$controllers_file"); \
 	if ! grep -qw cpu "$$controllers_file"; then \
@@ -275,8 +275,8 @@ integration:
 e2e:
 	@set -euo pipefail; \
 	if [ ! -d "$(ROOT_DIR)/tests/e2e" ]; then \
-	echo "e2e suite not available"; \
-	exit 0; \
+		echo "e2e suite not available"; \
+		exit 0; \
 	fi; \
 	mkdir -p "$(GOCACHE_DIR)"; \
 	GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=e2e -v ./tests/e2e/...
@@ -299,22 +299,22 @@ maintenance: ensure-go go-mod-download tools
 ensure-dev-deps:
 	@set -euo pipefail; \
 	if [ ! -r /etc/os-release ]; then \
-	echo "/etc/os-release not readable; cannot verify platform"; \
-	exit 1; \
+		echo "/etc/os-release not readable; cannot verify platform"; \
+		exit 1; \
 	fi; \
 	. /etc/os-release; \
 	if [ "$$ID" != "ubuntu" ] || ! printf '%s' "$$VERSION_ID" | grep -Eq '^24(\\.|$$)'; then \
-	echo "System package install only supported on Ubuntu 24.x (detected $$ID $$VERSION_ID)"; \
-	exit 1; \
+		echo "System package install only supported on Ubuntu 24.x (detected $$ID $$VERSION_ID)"; \
+		exit 1; \
 	fi; \
 	APT_GET_CMD="apt-get"; \
 	if [ "$$EUID" -ne 0 ]; then \
-	if command -v sudo >/dev/null 2>&1; then \
-	APT_GET_CMD="sudo -n apt-get"; \
-	else \
-	echo "Root privileges or passwordless sudo required to install system packages"; \
-	exit 1; \
-	fi; \
+		if command -v sudo >/dev/null 2>&1; then \
+			APT_GET_CMD="sudo -n apt-get"; \
+		else \
+			echo "Root privileges or passwordless sudo required to install system packages"; \
+			exit 1; \
+		fi; \
 	fi; \
 	DEBIAN_FRONTEND=noninteractive $$APT_GET_CMD update -y; \
 	DEBIAN_FRONTEND=noninteractive $$APT_GET_CMD install -y --no-install-recommends ca-certificates curl git tar gzip build-essential;
@@ -326,13 +326,13 @@ ensure-go:
 	exit 0; \
 	fi; \
 	if [ ! -r /etc/os-release ]; then \
-	echo "/etc/os-release not readable; cannot install Go"; \
-	exit 1; \
+		echo "/etc/os-release not readable; cannot install Go"; \
+		exit 1; \
 	fi; \
 	. /etc/os-release; \
 	if [ "$$ID" != "ubuntu" ] || ! printf '%s' "$$VERSION_ID" | grep -Eq '^24(\\.|$$)'; then \
-	echo "Go not found and platform ($$ID $$VERSION_ID) is not Ubuntu 24.x; aborting install"; \
-	exit 1; \
+		echo "Go not found and platform ($$ID $$VERSION_ID) is not Ubuntu 24.x; aborting install"; \
+		exit 1; \
 	fi; \
 	TARBALL="go$(GO_REQUIRED_VERSION).linux-$(GO_DL_ARCH).tar.gz"; \
 	URL="https://go.dev/dl/$$TARBALL"; \
@@ -347,8 +347,8 @@ ensure-go:
 go-mod-download:
 	@set -euo pipefail; \
 	if [ ! -f go.mod ]; then \
-	echo "go.mod not found; skipping module download."; \
-	exit 0; \
+		echo "go.mod not found; skipping module download."; \
+		exit 0; \
 	fi; \
 	mkdir -p "$(GOCACHE_DIR)"; \
 	GOCACHE="$(GOCACHE_DIR)" $(GO) mod download; \
@@ -357,8 +357,8 @@ go-mod-download:
 install-git-hooks:
 	@set -euo pipefail; \
 	if [ ! -d .git ]; then \
-	echo "No .git directory; skipping hook installation."; \
-	exit 0; \
+		echo "No .git directory; skipping hook installation."; \
+		exit 0; \
 	fi; \
 	hook_path=".git/hooks/pre-commit"; \
 	cat > "$$hook_path" <<-'EOF'
