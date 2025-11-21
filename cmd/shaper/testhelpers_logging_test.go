@@ -23,6 +23,16 @@ func fieldString(fields []zap.Field, key string) string {
 	return ""
 }
 
+func hasField(fields []zap.Field, key string) bool {
+	for _, field := range fields {
+		if field.Key == key {
+			return true
+		}
+	}
+
+	return false
+}
+
 func fieldBool(fields []zap.Field, key string) (bool, bool) {
 	for _, field := range fields {
 		if field.Key != key {

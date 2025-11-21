@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"go.uber.org/zap"
 	"oci-cpu-shaper/pkg/cgroup"
@@ -10,6 +11,14 @@ import (
 )
 
 const cgroupLowWeightBaseline = 128
+
+//nolint:gochecknoglobals // test seam for default cgroup reader construction
+var newCgroupReader = func() cgroup.Reader {
+	return cgroup.Reader{ProcPath: "", RootPath: ""}
+}
+
+//nolint:gochecknoglobals // guarded global allows tests to swap cgroup reader factory
+var cgroupReaderMu sync.RWMutex
 
 func detectAndReportCgroup(
 	deps runDeps,
@@ -38,7 +47,13 @@ func detectCgroupInfo(deps runDeps) (*cgroup.CPU, error) {
 		return deps.detectCgroup()
 	}
 
-	var reader cgroup.Reader
+	cgroupReaderMu.RLock()
+
+	readerFactory := newCgroupReader
+
+	cgroupReaderMu.RUnlock()
+
+	reader := readerFactory()
 
 	info, err := reader.Detect()
 	if err != nil {
