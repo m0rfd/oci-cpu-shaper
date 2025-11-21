@@ -5,3 +5,4 @@
 - Capture QA rules: mention ≥95% coverage (`make coverage`) and the required test updates when you describe workflows.
 - Keep headings tight and aligned with plan section numbers (e.g., §§4–7) for quick cross-reference.
 - Preserve OCI/kernel citations; add new references using Markdown reference links.
+- For CLI wiring or architecture notes, align edits with `docs/05-execution-flow.txt` §3.1 and refresh that section when scopes move.
