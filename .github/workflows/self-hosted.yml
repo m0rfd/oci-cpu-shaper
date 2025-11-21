@@ -122,9 +122,9 @@ jobs:
           path: |
             .cache/go
             .cache/gomod
-          key: ${{ runner.os }}-self-hosted-go${{ steps.go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-self-hosted-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-self-hosted-go${{ steps.go.outputs.go-version }}-
+            ${{ runner.os }}-self-hosted-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Verify Always Free guardrail alarm
         env:
