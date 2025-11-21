@@ -8,7 +8,7 @@ This guide covers the tooling expectations and command shortcuts for contributin
 - `make` for running the provided automation targets.
 - [`golangci-lint`](https://golangci-lint.run/) for linting.
 
-Run `make tools` to install or upgrade the pinned `golangci-lint` release with `go install`, and to ensure the repository-standard `gofumpt` binary is available. The helper target keeps local tooling aligned with CI, which currently runs `golangci-lint` v2.6.1 and `gofumpt` v0.9.2. Ensure `$GOBIN` (or `$(go env GOPATH)/bin` when `GOBIN` is unset) is on your `PATH` so the installed binaries are discoverable. Developers using `mise`/`asdf` can achieve the same alignment by running `mise install`, because `.tool-versions` now pins Go 1.25.4 alongside the same `golangci-lint` and `gofumpt` versions referenced in §14.
+Run `make tools` to install or upgrade the pinned `golangci-lint` release with `go install`. The helper target keeps local tooling aligned with CI, which currently runs `golangci-lint` v2.6.1. Ensure `$GOBIN` (or `$(go env GOPATH)/bin` when `GOBIN` is unset) is on your `PATH` so the installed binaries are discoverable. Developers using `mise`/`asdf` can achieve the same alignment by running `mise install`, because `.tool-versions` now pins Go 1.25.4 alongside the same `golangci-lint` version referenced in §14.
 
 ## Command Reference
 
@@ -16,8 +16,7 @@ The repository includes a `Makefile` that wraps the most common development task
 
 | Command | Purpose |
 |---------|---------|
-| `make fmt` | Format all Go source files with `gofmt` followed by `gofumpt`. |
-| `make tools` | Install pinned developer tooling (e.g., `golangci-lint` v2.6.1, `gofumpt` v0.9.2, Go 1.25.4 via `mise`/`asdf`). |
+| `make tools` | Install pinned developer tooling (e.g., `golangci-lint` v2.6.1, Go 1.25.4 via `mise`/`asdf`). |
 | `make lint` | Run `golangci-lint` with the configuration in `.golangci.yml` (auto-fixes formatting and lint findings where supported). This target also sets `GOLANGCI_LINT_CACHE` to `.cache/golangci`, so prefer `make lint` over calling `golangci-lint run` directly when working inside restricted sandboxes. |
 | `make test` | Execute `go test -race ./...` across every package. |
 | `make check` | Run linting and race-enabled tests in one step. |
@@ -53,11 +52,10 @@ Running the `test` target enables the Go race detector by default, helping detec
 ## Suggested Workflow
 
 1. Update code and add or adjust tests.
-2. Run `make fmt` to normalize formatting with `gofmt` and `gofumpt`.
-3. Execute `make check` to run linting and race-enabled tests together (or `make lint` / `make test` individually); because linting applies auto-fixes, review `git status` afterward and stage the generated edits.
-4. Re-run `go test ./... -race` and `make lint` (or `make check`) until they pass—features and fixes must never ship while any test or lint job is failing (§11).
-5. Run `make govulncheck` to confirm the dependency graph and local packages are free of published vulnerabilities before opening a pull request (§14).
-6. Optionally execute `make build` to confirm the binary compiles successfully.
+2. Execute `make check` to run linting and race-enabled tests together (or `make lint` / `make test` individually); because linting applies auto-fixes, review `git status` afterward and stage the generated edits.
+3. Re-run `go test ./... -race` and `make lint` (or `make check`) until they pass—features and fixes must never ship while any test or lint job is failing (§11).
+4. Run `make govulncheck` to confirm the dependency graph and local packages are free of published vulnerabilities before opening a pull request (§14).
+5. Optionally execute `make build` to confirm the binary compiles successfully.
 
 The lint configuration enables checks such as `staticcheck`, `ineffassign`, `gofumpt`, and `goimports`, ensuring both correctness and import formatting stay consistent with CI expectations. These steps help keep changes consistent and maintainable across the project.
 

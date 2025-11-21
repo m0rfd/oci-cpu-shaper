@@ -27,7 +27,8 @@ jobs:
             include_latest: false
     env:
       REGISTRY: ghcr.io
-      IMAGE_NAME: oci-cpu-shaper
+      # github.repository as <account>/<repo>
+      IMAGE_NAME: ${{ github.repository }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -39,7 +40,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v4
+        uses: sigstore/cosign-installer@v4.0.0
 
       - name: Log in to registry
         uses: docker/login-action@v3
@@ -71,7 +72,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: ${{ steps.tagset.outputs.tags }}
 
       - name: Build and push multi-arch image (${{ matrix.image_tag }})
@@ -98,7 +99,7 @@ jobs:
           COSIGN_YES: "true"
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          image_ref="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
+          image_ref="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
           signature_file="cosign-${{ github.ref_name }}-${{ matrix.image_tag }}.sig"
           certificate_file="cosign-${{ github.ref_name }}-${{ matrix.image_tag }}.pem"
 
@@ -114,7 +115,7 @@ jobs:
           COSIGN_YES: "true"
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          image_ref="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
+          image_ref="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
           predicate="sbom-${{ github.ref_name }}-${{ matrix.image_tag }}.spdx.json"
           attestation_file="sbom-attestation-${{ github.ref_name }}-${{ matrix.image_tag }}.jsonl"
           attestation_signature="sbom-attestation-${{ github.ref_name }}-${{ matrix.image_tag }}.sig"
@@ -133,7 +134,7 @@ jobs:
         id: sbom
         uses: anchore/sbom-action@v0
         with:
-          image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
           output-file: sbom-${{ github.ref_name }}-${{ matrix.image_tag }}.spdx.json
           format: spdx-json
 

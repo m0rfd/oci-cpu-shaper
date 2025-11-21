@@ -192,7 +192,7 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥99% 
 - Refreshed §§4–9 documentation to describe the Prometheus endpoint, offline/static metrics client behaviour, and updated `QueryP95CPU` interface so operators see the current exporter wiring and Monitoring contract.
 - Local lint tooling is standardised on `golangci-lint` v2.6.1 with pinned installation in CI and the developer Makefile helper, keeping contributor environments aligned (§14).
 - `make lint`/`make test` now create repository-local caches (`.cache/golangci` and `.cache/go`) and set `GOLANGCI_LINT_CACHE`/`GOCACHE` accordingly so the tools never write to protected runner directories; prefer using the Makefile helpers instead of invoking the linters or `go test` manually to keep sandbox runs stable (§14).
-- `.tool-versions` now pins `golangci-lint` v2.6.1 and `gofumpt` v0.9.2 so `mise`/`asdf` environments surface the same linting behaviour developers see in CI (§14).
+- `.tool-versions` now pins `golangci-lint` v2.6.1 so `mise`/`asdf` environments surface the same linting behaviour developers see in CI (§14).
 - `golangci-lint` now runs with depguard allow-listing for module imports and `issues.fix: true`, letting formatters auto-apply fixes while docs instruct contributors to stage the generated edits (§14).
 - Overview, README, and Monitoring documentation now link to the IAM, reclaim, cgroup, alarm, and Quick Start guides so operators can navigate the consolidated Always Free playbook (§§0, 5, 10).
 - Updated third-party Go modules (flock, gobreaker, testify, golang.org/x/{crypto,net,sys}) to their latest releases so the controller wiring, samplers, and tests stay aligned with upstream fixes (§§11, 14).
