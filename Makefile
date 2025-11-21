@@ -27,7 +27,7 @@ ACTIONLINT_VERSION ?= v1.7.8
 
 GO_BIN_PATH := $(shell $(GO) env GOBIN)
 ifeq ($(GO_BIN_PATH),)
-GO_BIN_PATH := $(shell $(GO) env GOPATH)/bin
+GO_BIN_PATH := $(firstword $(subst :, ,$(shell $(GO) env GOPATH)))/bin
 endif
 
 ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
