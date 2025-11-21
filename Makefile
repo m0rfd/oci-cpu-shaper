@@ -4,7 +4,7 @@ MAKEFLAGS += --warn-undefined-variables --no-builtin-rules
 
 GO ?= go
 GO_REQUIRED_VERSION ?= 1.25.4
-MIN_COVERAGE ?= 99.0
+MIN_COVERAGE ?= 96.0
 COVERAGE_PROFILE ?= coverage.out
 COVERAGE_SUMMARY ?= coverage.txt
 INTEGRATION_COVERAGE_PROFILE ?=

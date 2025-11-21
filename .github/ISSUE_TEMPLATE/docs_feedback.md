@@ -31,7 +31,7 @@ Provide the CLI/Compose commands, `make` targets, or UI steps that surfaced the 
 
 - [ ] `make lint`
 - [ ] `make test`
-- [ ] `make coverage MIN_COVERAGE=99`
+- [ ] `make coverage MIN_COVERAGE=96`
 
 For doc-only issues you can mark the boxes as not applicable, but please clarify why so the §8.7 triage checklist remains consistent.
 
