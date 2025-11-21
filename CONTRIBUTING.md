@@ -9,17 +9,16 @@ issue or pull request.
 
 1. Discuss substantial changes in an issue before opening a pull request so the
    architecture remains aligned with `docs/initial-implementation-plan.md`.
-2. Install the pinned toolchain (Go 1.25.4, `golangci-lint` 2.6.1,
-   `gofumpt` 0.9.2) with `make tools` or `mise install` as described in
+2. Install the pinned toolchain (Go 1.25.4, `golangci-lint` 2.6.1)
+   with `make tools` or `mise install` as described in
    §14 of `docs/08-development.md`.
-3. Configure Git hooks via `git config core.hooksPath .githooks` if you want the
+4. Configure Git hooks via `git config core.hooksPath .githooks` if you want the
    optional pre-push checks that run `make fmt` and `make lint` for you.
 
 ## Tooling Workflow
 
 Run the following helpers from the repository root before every pull request:
 
-- `make fmt` to normalize Go formatting with `gofmt` and `gofumpt`.
 - `make lint` to execute `golangci-lint` with auto-fix enabled. The target pins
   `GOLANGCI_LINT_CACHE` to `.cache/golangci` and mirrors the CI configuration.
 - `make test` to run `go test -race ./...` so race conditions surface early.

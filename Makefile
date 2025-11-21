@@ -22,7 +22,6 @@ COVERAGE_TAGS ?= integration e2e
 COVERAGE_TAG_ARGS := $(if $(strip $(COVERAGE_TAGS)),-tags "$(strip $(COVERAGE_TAGS))",)
 
 GOLANGCI_LINT_VERSION ?= v2.6.1
-GOFUMPT_VERSION ?= 0.9.2
 GOVULNCHECK_VERSION ?= v1.1.4
 ACTIONLINT_VERSION ?= v1.7.8
 
@@ -38,19 +37,17 @@ GOLANGCI_LINT_CACHE_DIR := $(ROOT_DIR)/.cache/golangci
 
 GOLANGCI_LINT_BIN ?= $(GO_BIN_PATH)/golangci-lint
 GOLANGCI_LINT ?= $(GOLANGCI_LINT_BIN)
-GOFUMPT_BIN ?= $(GO_BIN_PATH)/gofumpt
-GOFUMPT ?= $(GOFUMPT_BIN)
 ACTIONLINT_BIN ?= $(GO_BIN_PATH)/actionlint
 ACTIONLINT ?= $(ACTIONLINT_BIN)
 ACTIONLINT_FLAGS ?=
 ACTIONLINT_PATHS ?=
 
-.PHONY: fmt lint test build check tools ensure-golangci-lint ensure-gofumpt ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks
+.PHONY: fmt lint test build check tools ensure-golangci-lint ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks
 
 GO_MACHINE_ARCH := $(shell uname -m)
 GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
 
-tools: ensure-golangci-lint ensure-gofumpt ensure-actionlint
+tools: ensure-golangci-lint ensure-actionlint
 
 ensure-golangci-lint:
 	@set -euo pipefail; \
@@ -64,31 +61,9 @@ ensure-golangci-lint:
 		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(GO_BIN_PATH) $(GOLANGCI_LINT_VERSION); \
 	fi
 
-fmt: ensure-gofumpt
-	@set -euo pipefail; \
-	FILES="$$(find . -type f -name '*.go' -not -path './vendor/*' -not -path './.git/*' -not -path './.cache/*' 2>/dev/null)"; \
-	if [ -z "$$FILES" ]; then \
-		echo "No Go files found; skipping format."; \
-	else \
-		gofmt -w $$FILES; \
-		$(GOFUMPT) -w $$FILES; \
-	fi
-
 lint: ensure-golangci-lint
 	@mkdir -p "$(GOLANGCI_LINT_CACHE_DIR)"
 	@GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE_DIR)" $(GOLANGCI_LINT) run
-
-ensure-gofumpt:
-	@set -euo pipefail; \
-	BIN="$(GOFUMPT_BIN)"; \
-	CURRENT_VERSION=""; \
-	if [ -x "$$BIN" ]; then \
-		CURRENT_VERSION="$$($$BIN -version 2>/dev/null | awk '{print $$2}')"; \
-	fi; \
-	if [ "$$CURRENT_VERSION" != "$(GOFUMPT_VERSION)" ]; then \
-		echo "Installing gofumpt v$(GOFUMPT_VERSION)"; \
-		$(GO) install mvdan.cc/gofumpt@v$(GOFUMPT_VERSION); \
-	fi
 
 ensure-actionlint:
 	@set -euo pipefail; \
