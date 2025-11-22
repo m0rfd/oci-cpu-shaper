@@ -183,6 +183,58 @@ func assertObservation(t *testing.T, observation Observation, util float64, busy
 	}
 }
 
+func TestBuildObservationClampsWrappedAndIdleDominantDeltas(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		previous    Snapshot
+		current     Snapshot
+		utilisation float64
+		busy        uint64
+		total       uint64
+	}{
+		{
+			name:        "counter-wrap", // total decreased -> zero delta
+			previous:    Snapshot{Idle: 100, Total: 200},
+			current:     Snapshot{Idle: 90, Total: 150},
+			utilisation: 0,
+			busy:        0,
+			total:       0,
+		},
+		{
+			name:        "idle-delta-exceeds-total", // idle delta larger than total delta -> clamp busy to zero
+			previous:    Snapshot{Idle: 5, Total: 20},
+			current:     Snapshot{Idle: 30, Total: 25},
+			utilisation: 0,
+			busy:        0,
+			total:       5,
+		},
+		{
+			name:        "non-wrapping", // normal path remains unchanged
+			previous:    Snapshot{Idle: 10, Total: 20},
+			current:     Snapshot{Idle: 12, Total: 30},
+			utilisation: 0.8,
+			busy:        8,
+			total:       10,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			observation := buildObservation(time.Unix(0, 0), testCase.previous, testCase.current)
+
+			assertObservation(t, observation, testCase.utilisation, testCase.busy, testCase.total)
+
+			if observation.Utilisation < 0 || observation.Utilisation > 1 {
+				t.Fatalf("utilisation out of range: %.2f", observation.Utilisation)
+			}
+		})
+	}
+}
+
 func TestParseCPUStat(t *testing.T) {
 	t.Parallel()
 
