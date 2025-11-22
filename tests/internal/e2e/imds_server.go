@@ -126,7 +126,9 @@ func (s *IMDSServer) serveHTTP(writer http.ResponseWriter, req *http.Request) {
 
 func (s *IMDSServer) writeText(writer http.ResponseWriter, body string) {
 	writer.Header().Set("Content-Type", "text/plain")
-	_, _ = writer.Write([]byte(body))
+	if _, err := writer.Write([]byte(body)); err != nil {
+		panic(err)
+	}
 }
 
 func (s *IMDSServer) writeJSON(writer http.ResponseWriter, payload any) {
