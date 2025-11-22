@@ -58,7 +58,9 @@ func assertMetricsPortUnused(t *testing.T, port int, duration time.Duration) {
 	for {
 		conn, err := net.DialTimeout("tcp", address, 200*time.Millisecond)
 		if err == nil {
-			_ = conn.Close()
+			if err := conn.Close(); err != nil {
+				t.Fatalf("error closing connection to metrics port %d: %v", port, err)
+			}
 			t.Fatalf("expected metrics port %d to reject connections", port)
 		}
 
