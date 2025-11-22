@@ -321,3 +321,55 @@ func TestHTTPClientWaitHonorsContextCancellation(t *testing.T) {
 		t.Fatal("Region() did not return after context cancellation")
 	}
 }
+
+func TestHTTPClientFetchContextCanceledDuringBackoff(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+
+	attemptCh := make(chan struct{}, 1)
+
+	httpClient := newHTTPClient(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requireIMDSAuthHeader(t, req)
+
+		attempts.Add(1)
+
+		select {
+		case attemptCh <- struct{}{}:
+		default:
+		}
+
+		return nil, errDialFailure
+	}))
+
+	client := imds.NewClient(
+		httpClient,
+		imds.WithBaseURL("http://metadata.local/opc/v2"),
+		imds.WithMaxAttempts(3),
+		imds.WithBackoff(200*time.Millisecond),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	go func() {
+		<-attemptCh
+		time.Sleep(25 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := client.Region(ctx)
+	if err == nil {
+		t.Fatal("Region() expected error, got nil")
+	}
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Region() error = %v, want wrapped context cancellation", err)
+	}
+
+	if strings.Contains(err.Error(), "exhausted retry budget") {
+		t.Fatalf("Region() error = %v, want context cancellation before exhausting retries", err)
+	}
+
+	requireEqual(t, "attempts", attempts.Load(), int32(1))
+}
