@@ -242,6 +242,8 @@ jobs:
           cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-builder,mode=max
 
       # ------ SBOM generation (SPDX) and vulnerability scanning ------
+      # Buildx already pushes an SBOM attestation (sbom: true above); these steps
+      # additionally materialize a downloadable SPDX artifact for the release tag.
 
       - name: Generate SBOM (SPDX JSON) for rootless image
         uses: anchore/sbom-action@v0
