@@ -197,25 +197,62 @@ func TestInstancePrincipalMetricsClientSuccess(t *testing.T) {
 	}
 }
 
-func TestWithMetricsClientFactoryNilContext(t *testing.T) {
+func TestWithMetricsClientFactoryNilContextUsesBackground(t *testing.T) {
 	t.Parallel()
 
-	var nilContext context.Context
+	ctx := withMetricsClientFactory(nil, nil)
+	if ctx != context.Background() {
+		t.Fatalf("expected background context, got %v", ctx)
+	}
 
-	ctx := withMetricsClientFactory(nilContext, nil)
-	if ctx == nil {
-		t.Fatal("expected background context when nil is provided")
+	ctxWithMarker := context.WithValue(ctx, contextMarkerKey("marker"), "preserved")
+	if got := ctxWithMarker.Value(contextMarkerKey("marker")); got != "preserved" {
+		t.Fatalf("expected marker to be set on derived context, got %v", got)
 	}
 }
 
-func TestWithMetricsClientFactoryNilFactoryReturnsOriginal(t *testing.T) {
-	t.Parallel()
+//nolint:paralleltest // swaps global factory seams.
+func TestWithMetricsClientFactoryNilFactoryUsesDefault(t *testing.T) {
+	previous := newInstancePrincipalClient
+
+	t.Cleanup(func() {
+		newInstancePrincipalClient = previous
+	})
 
 	original := context.WithValue(context.Background(), contextMarkerKey("marker"), "value")
+
+	called := 0
+	newInstancePrincipalClient = func(string, string) (p95CPUQuerier, error) {
+		called++
+
+		return nil, errStubPrincipal
+	}
 
 	ctx := withMetricsClientFactory(original, nil)
 	if ctx != original {
 		t.Fatal("expected context to be returned unchanged when factory is nil")
+	}
+
+	if ctx.Value(contextMarkerKey("marker")) != "value" {
+		t.Fatalf(
+			"expected marker to persist on unchanged context, got %v",
+			ctx.Value(contextMarkerKey("marker")),
+		)
+	}
+
+	factory := metricsClientFactoryFromContext(ctx)
+
+	_, err := factory("ocid.compartment", "us-test-1")
+	if err == nil {
+		t.Fatal("expected default factory to propagate error")
+	}
+
+	if !errors.Is(err, errStubPrincipal) {
+		t.Fatalf("expected errStubPrincipal, got %v", err)
+	}
+
+	if called != 1 {
+		t.Fatalf("expected default factory to be invoked once, got %d", called)
 	}
 }
 
