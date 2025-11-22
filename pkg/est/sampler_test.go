@@ -377,7 +377,7 @@ func TestSamplerEmitsErrorObservationWhenLoopFails(t *testing.T) {
 	sampler := NewSampler(source, time.Millisecond)
 	sampler.now = func() time.Time { return time.Unix(42, 0) }
 
-	ctx := t.Context()
+	ctx := context.Background()
 
 	observations := sampler.Run(ctx)
 
