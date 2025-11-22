@@ -23,8 +23,9 @@ type IMDSConfig struct {
 
 // IMDSServer emulates the subset of IMDS endpoints exercised by the CLI.
 type IMDSServer struct {
-	server *httptest.Server
-	cfg    IMDSConfig
+	server  *httptest.Server
+	cfg     IMDSConfig
+	handler http.HandlerFunc
 
 	mu       sync.Mutex
 	requests []string
@@ -43,6 +44,21 @@ func StartIMDSServer(tb testing.TB, cfg IMDSConfig) *IMDSServer {
 	handler.server = server
 
 	return handler
+}
+
+// StartIMDSHandlerServer provisions a fake IMDS server backed by a custom handler.
+func StartIMDSHandlerServer(tb testing.TB, handler http.HandlerFunc) *IMDSServer {
+	tb.Helper()
+
+	serverHandler := new(IMDSServer)
+	serverHandler.handler = handler
+
+	server := httptest.NewServer(http.HandlerFunc(serverHandler.serveHTTP))
+	tb.Cleanup(server.Close)
+
+	serverHandler.server = server
+
+	return serverHandler
 }
 
 // Endpoint returns the IMDS base URL suitable for OCI_CPU_SHAPER_IMDS_ENDPOINT.
@@ -73,6 +89,12 @@ func (s *IMDSServer) serveHTTP(writer http.ResponseWriter, req *http.Request) {
 	s.mu.Lock()
 	s.requests = append(s.requests, req.URL.Path)
 	s.mu.Unlock()
+
+	if s.handler != nil {
+		s.handler(writer, req)
+
+		return
+	}
 
 	switch strings.TrimPrefix(req.URL.Path, "/") {
 	case "opc/v2/instance/region":
