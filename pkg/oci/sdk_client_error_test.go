@@ -15,7 +15,7 @@ import (
 
 var errCallFailed = errors.New("call failed")
 
-type fakeAPICaller struct {
+type mockAPICaller struct {
 	response *http.Response
 	err      error
 	called   bool
@@ -43,7 +43,7 @@ func newTrackingResponse(statusCode int, body string, closed *bool) *http.Respon
 }
 
 //nolint:revive // context argument retained for interface parity
-func (f *fakeAPICaller) Call(ctx context.Context, req *http.Request) (*http.Response, error) {
+func (f *mockAPICaller) Call(ctx context.Context, req *http.Request) (*http.Response, error) {
 	f.called = true
 
 	return f.response, f.err
@@ -52,7 +52,7 @@ func (f *fakeAPICaller) Call(ctx context.Context, req *http.Request) (*http.Resp
 func TestSDKMonitoringClientSummarizeMetricsDataBuildsRequest(t *testing.T) {
 	t.Parallel()
 
-	caller := &fakeAPICaller{response: nil, err: nil, called: false}
+	caller := &mockAPICaller{response: nil, err: nil, called: false}
 	client := &sdkMonitoringClient{client: caller}
 
 	request := monitoring.SummarizeMetricsDataRequest{
