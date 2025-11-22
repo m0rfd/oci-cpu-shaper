@@ -12,6 +12,11 @@ import (
 	"oci-cpu-shaper/pkg/imds"
 )
 
+// RegionInfo models the regionInfo subfield of IMDS responses.
+type RegionInfo struct {
+	CanonicalRegionName string `json:"canonicalRegionName"`
+}
+
 // IMDSConfig captures the metadata values exposed by the fake IMDS server.
 type IMDSConfig struct {
 	Region          string
@@ -101,13 +106,9 @@ func (s *IMDSServer) serveHTTP(writer http.ResponseWriter, req *http.Request) {
 		s.writeText(writer, s.cfg.Region)
 	case "opc/v2/instance", "opc/v2/instance/":
 		payload := struct {
-			RegionInfo struct {
-				CanonicalRegionName string `json:"canonicalRegionName"`
-			} `json:"regionInfo"`
+			RegionInfo RegionInfo `json:"regionInfo"`
 		}{
-			RegionInfo: struct {
-				CanonicalRegionName string `json:"canonicalRegionName"`
-			}{
+			RegionInfo: RegionInfo{
 				CanonicalRegionName: s.cfg.CanonicalRegion,
 			},
 		}
