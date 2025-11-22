@@ -41,7 +41,7 @@ oci:
 		env:            map[string]string{},
 		waitForMetrics: false,
 		onStart: func() {
-			assertMetricsPortUnused(t, metricsPort, 3*time.Second)
+			assertMetricsPortUnused(t, metricsPort, time.Second)
 		},
 	})
 
