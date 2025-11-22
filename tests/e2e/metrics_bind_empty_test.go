@@ -31,6 +31,7 @@ pool:
   workers: 1
   quantum: 150ms
 http:
+  # Intentionally use 4 spaces to test handling of whitespace-only bind strings.
   bind: "    "
 oci:
   offline: true
@@ -41,7 +42,7 @@ oci:
 		env:            map[string]string{},
 		waitForMetrics: false,
 		onStart: func() {
-			assertMetricsPortUnused(t, metricsPort, 3*time.Second)
+			assertMetricsPortUnused(t, metricsPort, time.Second)
 		},
 	})
 
@@ -58,7 +59,9 @@ func assertMetricsPortUnused(t *testing.T, port int, duration time.Duration) {
 	for {
 		conn, err := net.DialTimeout("tcp", address, 200*time.Millisecond)
 		if err == nil {
-			_ = conn.Close()
+			if err := conn.Close(); err != nil {
+				t.Fatalf("error closing connection to metrics port %d: %v", port, err)
+			}
 			t.Fatalf("expected metrics port %d to reject connections", port)
 		}
 
