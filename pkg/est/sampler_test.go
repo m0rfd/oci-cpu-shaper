@@ -301,7 +301,7 @@ func TestSamplerRunInitialSnapshotError(t *testing.T) {
 	sampler := NewSampler(&fakeSource{snapshots: nil, err: errTestBoom, index: 0}, time.Millisecond)
 	sampler.now = func() time.Time { return time.Unix(123, 0) }
 
-	ctx := t.Context()
+	ctx := context.Background()
 
 	observations := sampler.Run(ctx)
 
