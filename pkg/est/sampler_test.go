@@ -18,9 +18,9 @@ import (
 var errTestBoom = errors.New("test: boom")
 
 type fakeSource struct {
-	snapshots []Snapshot
-	err       error
-	index     int
+	snapshots      []Snapshot
+	err            error
+	snapshotIndex  int
 }
 
 func (f *fakeSource) Snapshot(_ context.Context) (Snapshot, error) {
@@ -28,7 +28,7 @@ func (f *fakeSource) Snapshot(_ context.Context) (Snapshot, error) {
 		return Snapshot{}, f.err
 	}
 
-	if f.index >= len(f.snapshots) {
+	if f.snapshotIndex >= len(f.snapshots) {
 		if len(f.snapshots) == 0 {
 			return Snapshot{Idle: 0, Total: 0}, nil
 		}
@@ -36,8 +36,8 @@ func (f *fakeSource) Snapshot(_ context.Context) (Snapshot, error) {
 		return f.snapshots[len(f.snapshots)-1], nil
 	}
 
-	snap := f.snapshots[f.index]
-	f.index++
+	snap := f.snapshots[f.snapshotIndex]
+	f.snapshotIndex++
 
 	return snap, nil
 }
@@ -58,7 +58,7 @@ func TestSamplerEmitsObservations(t *testing.T) {
 		{Idle: 10, Total: 20},
 		{Idle: 12, Total: 30},
 		{Idle: 13, Total: 40},
-	}, err: nil, index: 0}
+	}, err: nil, snapshotIndex: 0}
 
 	sampler := NewSampler(source, time.Millisecond)
 	sampler.now = func() time.Time { return time.Unix(0, 0) }
