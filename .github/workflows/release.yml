@@ -241,6 +241,78 @@ jobs:
           cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-builder
           cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-builder,mode=max
 
+      # ------ SBOM generation (SPDX) and vulnerability scanning ------
+
+      - name: Generate SBOM (SPDX JSON) for rootless image
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build_rootless.outputs.digest }}
+          format: spdx-json
+          output-file: sbom-rootless.spdx.json
+
+      - name: Upload SBOM artifact (rootless)
+        uses: actions/upload-artifact@v5
+        with:
+          name: sbom-rootless-${{ github.ref_name }}
+          path: sbom-rootless.spdx.json
+
+      - name: Generate SBOM (SPDX JSON) for rootful image
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build_rootful.outputs.digest }}
+          format: spdx-json
+          output-file: sbom-rootful.spdx.json
+
+      - name: Upload SBOM artifact (rootful)
+        uses: actions/upload-artifact@v5
+        with:
+          name: sbom-rootful-${{ github.ref_name }}
+          path: sbom-rootful.spdx.json
+
+      - name: Scan rootless image with Trivy (SARIF)
+        id: trivy_scan_rootless
+        uses: aquasecurity/trivy-action@0.33.1
+        continue-on-error: true
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build_rootless.outputs.digest }}
+          format: 'sarif'
+          output: 'trivy-results-rootless.sarif'
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'   # non-zero when CRITICAL/HIGH found
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results-rootless.sarif
+          category: trivy-rootless
+
+      - name: Fail release if Trivy found CRITICAL/HIGH vulnerabilities (rootless)
+        if: steps.trivy_scan_rootless.outcome == 'failure'
+        run: |
+          echo "Trivy found CRITICAL/HIGH vulnerabilities in the rootless image."
+          exit 1
+
+      - name: Scan rootful image with Trivy
+        id: trivy_scan_rootful
+        uses: aquasecurity/trivy-action@0.33.1
+        continue-on-error: true
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build_rootful.outputs.digest }}
+          format: 'table'
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Fail release if Trivy found CRITICAL/HIGH vulnerabilities (rootful)
+        if: steps.trivy_scan_rootful.outcome == 'failure'
+        run: |
+          echo "Trivy found CRITICAL/HIGH vulnerabilities in the rootful image."
+          exit 1
+
       # ------ Cosign signing (keyless) ------
 
       - name: Install cosign
@@ -268,46 +340,3 @@ jobs:
 
           echo "Signing ${IMAGE_REF}"
           cosign sign --yes "${IMAGE_REF}"
-
-      # ------ Trivy image scan + SARIF upload (rootless tag) ------
-
-      - name: Scan rootless image with Trivy (SARIF)
-        id: trivy_scan_rootless
-        uses: aquasecurity/trivy-action@0.33.1
-        continue-on-error: true
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
-          format: 'sarif'
-          output: 'trivy-results-rootless.sarif'
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
-          ignore-unfixed: true
-          exit-code: '1'   # non-zero when CRITICAL/HIGH found
-
-      - name: Upload Trivy SARIF to GitHub Security tab
-        if: always()
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: trivy-results-rootless.sarif
-          category: trivy-rootless
-
-      - name: Fail release if Trivy found CRITICAL/HIGH vulnerabilities
-        if: steps.trivy_scan_rootless.outcome == 'failure'
-        run: |
-          echo "Trivy found CRITICAL/HIGH vulnerabilities in the rootless image."
-          exit 1
-
-      # ------ Explicit SBOM artifact (on top of SBOM attestation) ------
-
-      - name: Generate SBOM (SPDX JSON) for rootless
-        uses: aquasecurity/trivy-action@0.33.1
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
-          format: 'spdx-json'
-          output: 'sbom-rootless.spdx.json'
-
-      - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v5
-        with:
-          name: sbom-rootless-${{ github.ref_name }}
-          path: sbom-rootless.spdx.json
