@@ -394,6 +394,45 @@ func TestControllerRecorderLoggerObserveHostCPULogsLargeDelta(t *testing.T) {
 	}
 }
 
+func TestControllerRecorderLoggerObserveHostCPUClampsNegative(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.DebugLevel)
+	logger := zap.New(core)
+	recorder := newRecorderLogger(logger, metricshttp.NewExporter())
+
+	impl, ok := recorder.(*controllerRecorderLogger)
+	if !ok {
+		t.Fatal("expected recorder to be controllerRecorderLogger")
+	}
+
+	base := time.Date(2024, time.July, 10, 12, 0, 0, 0, time.UTC)
+
+	impl.now = func() time.Time { return base }
+
+	recorder.ObserveHostCPU(-0.25)
+
+	impl.now = func() time.Time { return base.Add(5 * time.Second) }
+
+	recorder.ObserveHostCPU(-0.23)
+
+	entries := observed.Filter(func(entry observer.LoggedEntry) bool {
+		return entry.Message == hostCPUObservationMessage
+	}).All()
+
+	if len(entries) != 1 {
+		t.Fatalf("expected single host CPU log after cooldown gating, got %d", len(entries))
+	}
+
+	if got := fieldFloat(entries[0].Context, "percent"); got != 0 {
+		t.Fatalf("expected negative host CPU ratio to clamp percent to 0, got %f", got)
+	}
+
+	if impl.lastHostLog != base {
+		t.Fatalf("expected lastHostLog to capture initial timestamp, got %v", impl.lastHostLog)
+	}
+}
+
 func TestControllerRecorderLoggerShouldLogObservationFallsBackToTimeNow(t *testing.T) {
 	t.Parallel()
 
