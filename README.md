@@ -4,7 +4,8 @@
 [![OCI VM Ready](https://img.shields.io/badge/OCI%20VM-ready-fa6400?logo=oracle)](docs/10-quick-start.md)
 [![Cosign Releases](https://img.shields.io/badge/Releases-Cosign%20signed-0f9d58?logo=cosign)](#release-verification)
 
-- **Supported runtimes:** Docker/Podman Compose Mode A (rootless) and Mode B (rootful) Quadlet manifests that deploy the published distroless containers onto Oracle Cloud VMs via [`deploy/`](deploy/).
+- **Supported runtimes:** Docker/Podman Compose Mode A (rootless) and Mode B (rootful) Quadlet manifests that deploy the
+  published distroless containers onto Oracle Cloud VMs via [`deploy/`](deploy/).
 - **OCI tenancy requirements:** Instance Monitoring plugin enabled, a Dynamic Group plus tenancy policy that permits Monitoring access, and the seven-day `CpuUtilization` alarm sequence outlined in [§10 Quick Start](docs/10-quick-start.md).
 
 OCI CPU Shaper is an adaptive controller for shaping CPU utilization of workloads running on Oracle Cloud Infrastructure. The fully implemented controller now ships in the CLI and Compose/Quadlet bundles, so operators can run dry-run or enforce modes with live OCI metrics today instead of waiting for future milestones. New operators should begin with the [Quick Start](docs/10-quick-start.md) to complete the mandatory console setup before exploring the reference material.
