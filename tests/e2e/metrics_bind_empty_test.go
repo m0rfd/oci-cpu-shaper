@@ -31,6 +31,7 @@ pool:
   workers: 1
   quantum: 150ms
 http:
+  # Intentionally use 4 spaces to test handling of whitespace-only bind strings.
   bind: "    "
 oci:
   offline: true
