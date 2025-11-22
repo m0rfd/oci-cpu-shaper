@@ -123,6 +123,13 @@ oci:
 	assertOfflineLog(t, onlineLogs, false)
 }
 
+type shaperRunOptions struct {
+	metricsPort    int
+	env            map[string]string
+	waitForMetrics bool
+	onStart        func()
+}
+
 func runShaper(
 	ctx context.Context,
 	t *testing.T,
@@ -133,13 +140,29 @@ func runShaper(
 ) ([]logEntry, []byte) {
 	t.Helper()
 
+	return runShaperWithOptions(ctx, t, binary, configPath, shaperRunOptions{
+		metricsPort:    metricsPort,
+		env:            env,
+		waitForMetrics: true,
+	})
+}
+
+func runShaperWithOptions(
+	ctx context.Context,
+	t *testing.T,
+	binary string,
+	configPath string,
+	options shaperRunOptions,
+) ([]logEntry, []byte) {
+	t.Helper()
+
 	var output bytes.Buffer
 
 	cmd := exec.CommandContext(ctx, binary, "--config", configPath, "--shutdown-after=4s", "--log-level", "debug")
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 	cmd.Env = append([]string{}, os.Environ()...)
-	for key, value := range env {
+	for key, value := range options.env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", key, value))
 	}
 
@@ -147,22 +170,28 @@ func runShaper(
 		t.Fatalf("start shaper: %v", err)
 	}
 
-	metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", metricsPort)
+	if options.onStart != nil {
+		options.onStart()
+	}
+
 	var metricsData []byte
-	deadline := time.Now().Add(2500 * time.Millisecond)
-	for {
-		snapshot, err := interne2e.WaitForMetrics(ctx, metricsURL)
-		if err != nil {
-			t.Fatalf("wait for metrics: %v", err)
+	if options.waitForMetrics {
+		metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", options.metricsPort)
+		deadline := time.Now().Add(2500 * time.Millisecond)
+		for {
+			snapshot, err := interne2e.WaitForMetrics(ctx, metricsURL)
+			if err != nil {
+				t.Fatalf("wait for metrics: %v", err)
+			}
+
+			metricsData = snapshot
+
+			if time.Now().After(deadline) {
+				break
+			}
+
+			time.Sleep(200 * time.Millisecond)
 		}
-
-		metricsData = snapshot
-
-		if time.Now().After(deadline) {
-			break
-		}
-
-		time.Sleep(200 * time.Millisecond)
 	}
 
 	if err := cmd.Wait(); err != nil {
