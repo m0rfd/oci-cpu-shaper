@@ -200,7 +200,9 @@ func TestInstancePrincipalMetricsClientSuccess(t *testing.T) {
 func TestWithMetricsClientFactoryNilContextUsesBackground(t *testing.T) {
 	t.Parallel()
 
-	ctx := withMetricsClientFactory(nil, nil)
+	var nilContext context.Context
+
+	ctx := withMetricsClientFactory(nilContext, nil)
 	if ctx != context.Background() {
 		t.Fatalf("expected background context, got %v", ctx)
 	}
