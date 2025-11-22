@@ -26,6 +26,13 @@ func newIPv4TestServer(t *testing.T, handler http.Handler) *httptest.Server {
 	return server
 }
 
+// NewIPv4TestServer binds to an IPv4 loopback address for predictable scraping.
+//
+//nolint:thelper // exported helper delegates to internal helper that marks the caller as helper.
+func NewIPv4TestServer(t *testing.T, handler http.Handler) *httptest.Server {
+	return newIPv4TestServer(t, handler)
+}
+
 func freeTCPAddress(t *testing.T) string {
 	t.Helper()
 
@@ -44,6 +51,13 @@ func freeTCPAddress(t *testing.T) string {
 	}
 
 	return addr
+}
+
+// FreeTCPAddress returns an available loopback TCP address for test servers.
+//
+//nolint:thelper // exported helper delegates to internal helper that marks the caller as helper.
+func FreeTCPAddress(t *testing.T) string {
+	return freeTCPAddress(t)
 }
 
 func serveGETRequest(
