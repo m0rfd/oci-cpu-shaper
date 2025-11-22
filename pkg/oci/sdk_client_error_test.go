@@ -13,7 +13,7 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/monitoring"
 )
 
-var errCallFailed = errors.New("call failed")
+var errFakeAPICallFailed = errors.New("call failed")
 
 type mockAPICaller struct {
 	response *http.Response
