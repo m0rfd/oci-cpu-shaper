@@ -238,36 +238,85 @@ jobs:
             IMAGE_SOURCE=${{ github.repositoryUrl }}
           provenance: true
           sbom: true
-          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-builder
-          cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-builder,mode=max
 
-      # ------ Cosign signing (keyless) ------
+      # ------ Cosign signing & provenance attestations ------
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4.0.0
-        # with:
-        #   # Optionally pin a specific version; otherwise get latest
-        #   cosign-release: 'v3.0.2'
+        uses: sigstore/cosign-installer@v3.5.0
 
-      - name: Sign rootless image digest
+      - name: Sign rootless image
         env:
           COSIGN_EXPERIMENTAL: "1"
+          DIGEST: ${{ steps.build_rootless.outputs.digest }}
         run: |
-          DIGEST="${{ steps.build_rootless.outputs.digest }}"
-          IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
+          cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}
 
-          echo "Signing ${IMAGE_REF}"
-          cosign sign --yes "${IMAGE_REF}"
-
-      - name: Sign rootful image digest
+      - name: Attest rootless provenance
         env:
           COSIGN_EXPERIMENTAL: "1"
+          DIGEST: ${{ steps.build_rootless.outputs.digest }}
+          TAGS: ${{ steps.meta_rootless.outputs.tags }}
         run: |
-          DIGEST="${{ steps.build_rootful.outputs.digest }}"
-          IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
+          tags_json=$(printf '%s\n' "${TAGS}" | jq -R 'select(length>0)' | jq -s .)
 
-          echo "Signing ${IMAGE_REF}"
-          cosign sign --yes "${IMAGE_REF}"
+          cat > provenance-rootless.json <<EOF
+          {
+            "buildType": "https://github.com/docker/build-push-action@v6",
+            "builder": {"id": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"},
+            "buildInvocationId": "${{ github.run_id }}",
+            "source": {
+              "repository": "${{ github.repository }}",
+              "ref": "${{ github.ref }}",
+              "commit": "${{ github.sha }}"
+            },
+            "artifacts": {
+              "image": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}",
+              "tags": ${tags_json}
+            }
+          }
+          EOF
+
+          cosign attest --yes \
+            --predicate provenance-rootless.json \
+            --type=provenance \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}
+
+      - name: Sign rootful image
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          DIGEST: ${{ steps.build_rootful.outputs.digest }}
+        run: |
+          cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}
+
+      - name: Attest rootful provenance
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          DIGEST: ${{ steps.build_rootful.outputs.digest }}
+          TAGS: ${{ steps.meta_rootful.outputs.tags }}
+        run: |
+          tags_json=$(printf '%s\n' "${TAGS}" | jq -R 'select(length>0)' | jq -s .)
+
+          cat > provenance-rootful.json <<EOF
+          {
+            "buildType": "https://github.com/docker/build-push-action@v6",
+            "builder": {"id": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"},
+            "buildInvocationId": "${{ github.run_id }}",
+            "source": {
+              "repository": "${{ github.repository }}",
+              "ref": "${{ github.ref }}",
+              "commit": "${{ github.sha }}"
+            },
+            "artifacts": {
+              "image": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}",
+              "tags": ${tags_json}
+            }
+          }
+          EOF
+
+          cosign attest --yes \
+            --predicate provenance-rootful.json \
+            --type=provenance \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}
 
       # ------ Trivy image scan + SARIF upload (rootless tag) ------
 
