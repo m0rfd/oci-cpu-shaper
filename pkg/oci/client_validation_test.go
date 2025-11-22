@@ -18,6 +18,10 @@ const (
 	testCompartmentID = "ocid1.compartment.oc1..exampleuniqueID"
 )
 
+// testTimeBuffer is the allowed clock skew or test execution delay.
+// Chosen as a reasonable upper bound for drift to avoid flaky tests.
+const testTimeBuffer = 2 * time.Second
+
 func TestClientValidationErrors(t *testing.T) {
 	t.Parallel()
 
@@ -64,7 +68,7 @@ func TestNewInstancePrincipalClientClockFallback(t *testing.T) {
 	after := time.Now()
 
 	now := client.now()
-	if now.Before(before) || now.After(after.Add(2*time.Second)) {
+	if now.Before(before) || now.After(after.Add(testTimeBuffer)) {
 		t.Fatalf("expected clock fallback near now, got %v", now)
 	}
 
