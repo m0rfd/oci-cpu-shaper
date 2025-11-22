@@ -95,7 +95,9 @@ func TestSDKMonitoringClientSummarizeMetricsDataWrapsCallErrorsAndClosesBody(t *
 			t.Fatalf("response body was not closed by SummarizeMetricsData")
 		}
 
-		_ = response.Body.Close()
+		if !closed {
+			_ = response.Body.Close()
+		}
 	})
 
 	caller := &fakeAPICaller{response: response, err: errCallFailed, called: false}
@@ -148,7 +150,9 @@ func TestSDKMonitoringClientSummarizeMetricsDataHandlesDecodeErrors(t *testing.T
 			t.Fatalf("response body was not closed by SummarizeMetricsData")
 		}
 
-		_ = response.Body.Close()
+		if !closed {
+			_ = response.Body.Close()
+		}
 	})
 
 	caller := &fakeAPICaller{response: response, err: nil, called: false}
