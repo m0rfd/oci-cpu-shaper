@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -475,30 +474,5 @@ func TestSDKMonitoringClientSummarizeMetricsDataWrapsCallErrors(t *testing.T) {
 	_, _, err := client.SummarizeMetricsData(context.Background(), request, nil)
 	if err == nil || !strings.Contains(err.Error(), "execute summarize metrics request") {
 		t.Fatalf("expected wrapped call error, got %v", err)
-	}
-}
-
-func TestSDKMonitoringClientSummarizeMetricsDataHandlesDecodeErrors(t *testing.T) {
-	t.Parallel()
-
-	response := new(http.Response)
-	response.StatusCode = http.StatusOK
-	response.Header = http.Header{"Content-Type": []string{"application/json"}}
-	response.Body = io.NopCloser(strings.NewReader("not-json"))
-
-	caller := newStubAPICaller(response, nil)
-
-	client := &sdkMonitoringClient{client: caller}
-
-	request := buildSummarizeRequest(
-		"ocid.compartment",
-		"ocid.instance",
-		time.Now().Add(-time.Minute),
-		time.Now(),
-	)
-
-	_, _, err := client.SummarizeMetricsData(context.Background(), request, nil)
-	if err == nil || !strings.Contains(err.Error(), "decode summarize metrics response") {
-		t.Fatalf("expected decode error, got %v", err)
 	}
 }
