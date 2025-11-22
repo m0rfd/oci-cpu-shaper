@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -209,6 +210,125 @@ func metricDataWithNilFields() monitoring.MetricData {
 	return data
 }
 
+func TestCollectLatestDatapointSkipsWhitespaceNextPageHeaders(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2025, time.January, 15, 12, 0, 0, 0, time.UTC)
+	compartmentID := testCompartmentID
+	instanceID := "ocid1.instance.oc1..exampleuniqueID"
+
+	server, requestCount := newWhitespacePagingServer(t, instanceID, compartmentID, now)
+	t.Cleanup(server.Close)
+
+	client, err := newTestClient(
+		&sdkMonitoringClient{client: newServerCaller(t, server)},
+		compartmentID,
+		func() time.Time { return now },
+	)
+	requireNoError(t, err, "create client")
+
+	request := buildSummarizeRequest(compartmentID, instanceID, now.Add(-time.Hour), now)
+
+	value, found, err := client.collectLatestDatapoint(context.Background(), request)
+	requireNoError(t, err, "collect datapoint")
+
+	if !found {
+		t.Fatalf("expected datapoint to be found")
+	}
+
+	requireEqual(t, value, float32(20.0), "latest datapoint")
+
+	if *requestCount != 1 {
+		t.Fatalf("expected one page to be fetched, got %d", *requestCount)
+	}
+}
+
+func newWhitespacePagingServer(
+	t *testing.T,
+	instanceID, compartmentID string,
+	now time.Time,
+) (*httptest.Server, *int) {
+	t.Helper()
+
+	firstPagePayload := marshalMetricsPayload(
+		t,
+		metricData(instanceID, compartmentID, now.Add(-15*time.Minute), 12.5),
+		metricData(instanceID, compartmentID, now.Add(-5*time.Minute), 20.0),
+	)
+
+	secondPagePayload := marshalMetricsPayload(
+		t,
+		metricData(instanceID, compartmentID, now, 99.0),
+	)
+
+	requestCount := 0
+
+	server := newIPv4TestServer(
+		t,
+		http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+			t.Helper()
+
+			requestCount++
+
+			assertSummarizeRequest(t, req, "")
+			assertQueryPayload(t, req, compartmentID, instanceID)
+
+			writer.Header().Set("Content-Type", "application/json")
+
+			switch requestCount {
+			case 1:
+				writer.Header().Set("Opc-Next-Page", "  \t ")
+
+				_, err := writer.Write(firstPagePayload)
+				requireNoError(t, err, "write first page")
+			case 2:
+				_, err := writer.Write(secondPagePayload)
+				requireNoError(t, err, "write second page")
+			default:
+				t.Fatalf("unexpected request %d with query %q", requestCount, req.URL.RawQuery)
+			}
+		}),
+	)
+
+	return server, &requestCount
+}
+
+func marshalMetricsPayload(t *testing.T, metrics ...monitoring.MetricData) []byte {
+	t.Helper()
+
+	payload, err := json.Marshal(metrics)
+	requireNoError(t, err, "marshal metrics payload")
+
+	return payload
+}
+
+func assertQueryPayload(
+	t *testing.T,
+	req *http.Request,
+	compartmentID, instanceID string,
+) {
+	t.Helper()
+
+	query := req.URL.Query()
+
+	requireEqual(t, query.Get("compartmentId"), compartmentID, "compartment query")
+	requireEqual(t, query.Get("page"), "", "page query")
+
+	var payload map[string]any
+
+	err := json.NewDecoder(req.Body).Decode(&payload)
+	requireNoError(t, err, "decode request payload")
+
+	queryExpression, ok := payload["query"].(string)
+	if !ok || !strings.Contains(queryExpression, instanceID) {
+		t.Fatalf(
+			"expected query payload to reference instance %q, got %#v",
+			instanceID,
+			payload["query"],
+		)
+	}
+}
+
 func requireNoError(t *testing.T, err error, message string) {
 	t.Helper()
 
@@ -364,4 +484,38 @@ func newIPv4TestServer(t *testing.T, handler http.Handler) *httptest.Server {
 	server.Start()
 
 	return server
+}
+
+type serverCaller struct {
+	serverURL *url.URL
+	client    *http.Client
+}
+
+func (s *serverCaller) Call(ctx context.Context, req *http.Request) (*http.Response, error) {
+	cloned := req.Clone(ctx)
+
+	cloned.URL.Scheme = s.serverURL.Scheme
+	cloned.URL.Host = s.serverURL.Host
+	cloned.Host = s.serverURL.Host
+
+	response, err := s.client.Do(cloned)
+	if err != nil {
+		return nil, fmt.Errorf("issue mock request: %w", err)
+	}
+
+	return response, nil
+}
+
+func newServerCaller(t *testing.T, server *httptest.Server) *serverCaller {
+	t.Helper()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse server URL: %v", err)
+	}
+
+	return &serverCaller{
+		serverURL: serverURL,
+		client:    server.Client(),
+	}
 }
