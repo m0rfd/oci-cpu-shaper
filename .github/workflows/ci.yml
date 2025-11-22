@@ -240,6 +240,9 @@ jobs:
   coverage:
     name: go test & coverage
     needs:
+      - unit-test
+      - lint
+      - govulncheck
       - integration
     runs-on: ubuntu-latest
     env:
