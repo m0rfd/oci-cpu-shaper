@@ -86,3 +86,19 @@ func TestAdaptiveControllerStateAccessors(t *testing.T) {
 		t.Fatalf("expected mode to be enforce, got %q", controller.Mode())
 	}
 }
+
+func TestClampEnforcesBounds(t *testing.T) {
+	t.Parallel()
+
+	if got := clamp(-0.5, 0, 1); got != 0 {
+		t.Fatalf("expected clamp to return lower bound, got %f", got)
+	}
+
+	if got := clamp(1.5, 0, 1); got != 1 {
+		t.Fatalf("expected clamp to return upper bound, got %f", got)
+	}
+
+	if got := clamp(0.5, 0, 1); got != 0.5 {
+		t.Fatalf("expected clamp to preserve value within bounds, got %f", got)
+	}
+}
