@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"oci-cpu-shaper/pkg/oci"
+	"oci-cpu-shaper/pkg/oci/metricsclient"
 	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
@@ -28,9 +28,9 @@ func TestCreateMetricsClientOfflineUsesStaticSeed(t *testing.T) {
 		},
 	}
 
-	ctx := withMetricsClientFactory(
+	ctx := metricsclient.WithBuilder(
 		context.Background(),
-		func(string, string) (oci.MetricsClient, error) {
+		func(string, string) (metricsclient.MetricsClient, error) {
 			t.Fatalf("factory should not be called when offline")
 
 			return nil, errStubFactoryInvoked
@@ -67,9 +67,9 @@ func TestCreateMetricsClientOnlineUsesInjectedFactory(t *testing.T) {
 		calls               int
 	)
 
-	ctx := withMetricsClientFactory(
+	ctx := metricsclient.WithBuilder(
 		context.Background(),
-		func(compartmentID, region string) (oci.MetricsClient, error) {
+		func(compartmentID, region string) (metricsclient.MetricsClient, error) {
 			calls++
 			receivedCompartment = compartmentID
 			receivedRegion = region
@@ -105,9 +105,9 @@ func TestCreateMetricsClientOnlineUsesInjectedFactory(t *testing.T) {
 func TestCreateMetricsClientOnlinePropagatesFactoryErrors(t *testing.T) {
 	t.Parallel()
 
-	ctx := withMetricsClientFactory(
+	ctx := metricsclient.WithBuilder(
 		context.Background(),
-		func(string, string) (oci.MetricsClient, error) {
+		func(string, string) (metricsclient.MetricsClient, error) {
 			return nil, errStubFactoryFailure
 		},
 	)

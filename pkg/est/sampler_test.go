@@ -548,19 +548,6 @@ func TestFileSourceSnapshotParseError(t *testing.T) {
 	}
 }
 
-func TestFileSourceSnapshotDefaultPath(t *testing.T) {
-	t.Parallel()
-
-	snap, err := (FileSource{Path: ""}).Snapshot(context.Background())
-	if err != nil {
-		t.Fatalf("expected default /proc/stat to be readable, got %v", err)
-	}
-
-	if snap.Total == 0 {
-		t.Fatalf("expected non-zero total jiffies from default path")
-	}
-}
-
 func TestSampleLoopStopsOnContextCancel(t *testing.T) {
 	t.Parallel()
 

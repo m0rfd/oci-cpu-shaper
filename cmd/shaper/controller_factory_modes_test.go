@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"oci-cpu-shaper/pkg/adapt"
-	"oci-cpu-shaper/pkg/oci"
+	"oci-cpu-shaper/pkg/oci/metricsclient"
 	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
@@ -133,9 +133,9 @@ func TestDefaultControllerFactoryErrorsOnMissingCompartmentID(t *testing.T) {
 func TestDefaultControllerFactoryPropagatesMetricsFailure(t *testing.T) {
 	t.Parallel()
 
-	ctx := withMetricsClientFactory(
+	ctx := metricsclient.WithBuilder(
 		context.Background(),
-		func(string, string) (oci.MetricsClient, error) {
+		func(string, string) (metricsclient.MetricsClient, error) {
 			return nil, errStubControllerRun
 		},
 	)

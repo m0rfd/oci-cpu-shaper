@@ -15,7 +15,10 @@ const (
 	metricsServerWait = time.Second
 )
 
-var errMetricsServerBoom = errors.New("metrics server start failure")
+var (
+	errMetricsServerBoom = errors.New("metrics server start failure")
+	errStubQueryFailure  = errors.New("stub: query failure")
+)
 
 type stubMetricsAdapter struct{}
 
