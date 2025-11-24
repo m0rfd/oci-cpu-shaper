@@ -16,6 +16,7 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  GOTOOLCHAIN: local
 
 # ---------------------------
 # Job 1: PR build & test only
@@ -37,6 +38,32 @@ jobs:
       - name: Set up Go with cache
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
+
+      - name: Cache Go build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/go
+            .cache/gomod
+          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-cache-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-cache-
+
+      - name: Cache golangci-lint workspace
+        uses: actions/cache@v4
+        with:
+          path: .cache/golangci
+          key: ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/.golangci.yml', '**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-
+
+      - name: Cache Python tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-mbake-1.4.3
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Run lint
         run: make lint

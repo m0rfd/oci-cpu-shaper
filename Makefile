@@ -59,11 +59,11 @@ MBAKE_BIN ?= $(HOME)/.local/bin/mbake
 MBAKE ?= $(MBAKE_BIN)
 MBAKE_FORMAT_PATHS ?= Makefile
 
-.PHONY: lint test build check tools ensure-golangci-lint ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks verify-go-version ensure-mbake mbake help clean
+.PHONY: lint test build check tools ensure-golangci-lint ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks verify-go-version ensure-mbake mbake help clean ci
 
 GO_MACHINE_ARCH := $(shell uname -m)
 GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
-HELP_TARGETS := lint test coverage build check govulncheck integration e2e agents actionlint help clean
+HELP_TARGETS := lint test coverage build check govulncheck integration e2e agents actionlint ci help clean
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-mbake
 
@@ -99,6 +99,7 @@ help:
 			e2e) desc="Execute end-to-end suite";; \ \
 			agents) desc="Validate agent instructions";; \ \
 			actionlint) desc="Lint GitHub Actions workflows";; \ \
+			ci) desc="Run the full CI suite locally (lint, tests, coverage, agents, workflows)";; \ \
 			clean) desc="Remove build caches and coverage artifacts";; \ \
 			help) desc="Show this help";; \ \
 			*) desc="";; \ \
@@ -234,6 +235,8 @@ govulncheck: verify-go-version
         $(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
 check: lint test agents
+
+ci: lint test coverage agents actionlint
 
 actionlint: ensure-actionlint
 	@set -euo pipefail; \
