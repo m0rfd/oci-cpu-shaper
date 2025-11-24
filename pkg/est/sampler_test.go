@@ -23,6 +23,16 @@ type fakeSource struct {
 	snapshotIndex int
 }
 
+type sequenceSource struct {
+	responses []snapshotResponse
+	index     int
+}
+
+type snapshotResponse struct {
+	snapshot Snapshot
+	err      error
+}
+
 func (f *fakeSource) Snapshot(_ context.Context) (Snapshot, error) {
 	if f.err != nil {
 		return Snapshot{}, f.err
@@ -46,6 +56,21 @@ type SnapshotFunc func(context.Context) (Snapshot, error)
 
 func (f SnapshotFunc) Snapshot(ctx context.Context) (Snapshot, error) {
 	return f(ctx)
+}
+
+func (s *sequenceSource) Snapshot(_ context.Context) (Snapshot, error) {
+	if len(s.responses) == 0 {
+		return Snapshot{Idle: 0, Total: 0}, nil
+	}
+
+	if s.index >= len(s.responses) {
+		return s.responses[len(s.responses)-1].snapshot, nil
+	}
+
+	response := s.responses[s.index]
+	s.index++
+
+	return response.snapshot, response.err
 }
 
 func TestSamplerEmitsObservations(t *testing.T) {
@@ -112,6 +137,29 @@ func gatherObservations(t *testing.T, observationsCh <-chan Observation, count i
 	return observations
 }
 
+func receiveObservation(
+	t *testing.T,
+	observations <-chan Observation,
+	description string,
+) Observation {
+	t.Helper()
+
+	select {
+	case observation := <-observations:
+		return observation
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("timed out waiting for %s", description)
+
+		return Observation{
+			Timestamp:    time.Time{},
+			Utilisation:  0,
+			BusyJiffies:  0,
+			TotalJiffies: 0,
+			Err:          nil,
+		}
+	}
+}
+
 func TestBuildObservationHandlesDiverseDeltas(t *testing.T) {
 	t.Parallel()
 
@@ -163,6 +211,50 @@ func TestBuildObservationHandlesDiverseDeltas(t *testing.T) {
 
 			observation := buildObservation(time.Unix(0, 0), testCase.previous, testCase.current)
 			assertObservation(t, observation, testCase.utilisation, testCase.busy, testCase.total)
+		})
+	}
+}
+
+func TestBuildObservationClampsDecreasingAndZeroDeltas(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		previous    Snapshot
+		current     Snapshot
+		utilisation float64
+		busy        uint64
+		total       uint64
+	}{
+		{
+			name:        "decreasing-counters", // wrap-around clamped to zero delta
+			previous:    Snapshot{Idle: 300, Total: 600},
+			current:     Snapshot{Idle: 200, Total: 500},
+			utilisation: 0,
+			busy:        0,
+			total:       0,
+		},
+		{
+			name:        "zero-delta", // unchanged snapshot keeps utilisation at zero
+			previous:    Snapshot{Idle: 400, Total: 800},
+			current:     Snapshot{Idle: 400, Total: 800},
+			utilisation: 0,
+			busy:        0,
+			total:       0,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			observation := buildObservation(time.Unix(0, 0), testCase.previous, testCase.current)
+
+			assertObservation(t, observation, testCase.utilisation, testCase.busy, testCase.total)
+
+			if observation.Utilisation < 0 || observation.Utilisation > 1 {
+				t.Fatalf("utilisation out of range: %.2f", observation.Utilisation)
+			}
 		})
 	}
 }
@@ -571,6 +663,67 @@ func TestSampleLoopStopsOnContextCancel(t *testing.T) {
 	case observation := <-observations:
 		t.Fatalf("expected no observations after cancellation, got %+v", observation)
 	default:
+	}
+}
+
+func TestSampleLoopPublishesErrorAndContinues(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ticks := make(chan time.Time)
+	ticker := &time.Ticker{C: ticks}
+
+	sampler := NewSampler(&sequenceSource{responses: []snapshotResponse{
+		{snapshot: Snapshot{Idle: 0, Total: 0}, err: errTestBoom},
+		{snapshot: Snapshot{Idle: 12, Total: 32}, err: nil},
+	}, index: 0}, time.Millisecond)
+	sampler.now = func() time.Time { return time.Unix(99, 0) }
+
+	observations := make(chan Observation, 3)
+	done := make(chan struct{})
+
+	go func() {
+		sampler.sampleLoop(ctx, sampler.source, Snapshot{Idle: 10, Total: 22}, ticker, observations)
+		close(done)
+	}()
+
+	ticks <- time.Unix(0, 0)
+
+	ticks <- time.Unix(0, 0)
+
+	errorObservation := receiveObservation(t, observations, "error observation")
+
+	if errorObservation.Err == nil ||
+		!strings.Contains(errorObservation.Err.Error(), "sample snapshot") {
+		t.Fatalf("expected sample snapshot error, got %v", errorObservation.Err)
+	}
+
+	observation := receiveObservation(t, observations, "recovery observation")
+
+	if observation.Err != nil {
+		t.Fatalf("unexpected error in subsequent observation: %v", observation.Err)
+	}
+
+	if observation.BusyJiffies != 8 {
+		t.Fatalf("unexpected busy jiffies: got %d want 8", observation.BusyJiffies)
+	}
+
+	if observation.TotalJiffies != 10 {
+		t.Fatalf("unexpected total jiffies: got %d want 10", observation.TotalJiffies)
+	}
+
+	if observation.Utilisation < 0 || observation.Utilisation > 1 {
+		t.Fatalf("utilisation out of bounds: %.2f", observation.Utilisation)
+	}
+
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("sampler loop did not exit after cancellation")
 	}
 }
 
