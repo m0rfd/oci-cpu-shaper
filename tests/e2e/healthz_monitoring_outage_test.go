@@ -53,7 +53,7 @@ pool:
 http:
   bind: "127.0.0.1:%d"
 oci:
-  fallbackTarget: 0.25
+  fallbackTarget: 0.22
 `, metricsPort))
 
 	var output bytes.Buffer
