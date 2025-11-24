@@ -60,6 +60,8 @@ jobs:
 
   lint:
     name: golangci-lint
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
@@ -213,6 +215,8 @@ jobs:
 
   unit-test:
     name: go test
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
@@ -247,6 +251,9 @@ jobs:
     name: go test & coverage
     # Coverage suite normally completes in ~1-2m; cap at 5m to catch hangs.
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
     needs:
       - unit-test
       - lint
@@ -323,6 +330,13 @@ jobs:
     name: duty-cycle benchmarks
     # Benchmarks finish in under 2m in recent runs; allow 5m for headroom.
     timeout-minutes: 5
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      actions: write
+    needs:
+      - lint
+      - unit-test
     runs-on: ubuntu-latest
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
@@ -364,6 +378,13 @@ jobs:
     name: container smoke
     # Container build/scan flow wraps in ~2; limit to 5m to prevent runaway builds.
     timeout-minutes: 5
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      actions: write
+    needs:
+      - lint
+      - unit-test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -454,6 +475,10 @@ jobs:
     name: integration tests (cgroup v2)
     # Integration suite usually finishes within ~1-2m; cap at 5m for retries.
     timeout-minutes: 5
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-latest
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
