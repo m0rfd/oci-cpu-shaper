@@ -6,42 +6,46 @@ import (
 )
 
 const (
-	defaultModeLabel       = "normal"
-	dryRunModeLabel        = "dry-run"
-	noopModeLabel          = "noop"
-	defaultTargetStart     = 0.22
-	defaultTargetMin       = 0.20
-	defaultTargetMax       = 0.32
-	defaultStepUp          = 0.01
-	defaultStepDown        = 0.005
-	defaultFallbackTarget  = 0.22
-	defaultGoalLow         = 0.21
-	defaultGoalHigh        = 0.27
-	defaultRelaxedInterval = 4 * time.Hour
-	defaultRelaxedThresh   = 0.26
-	defaultSuppressThresh  = 0.80
-	defaultSuppressResume  = 0.68
-	suppressResumeScale    = 0.8
+	defaultModeLabel              = "normal"
+	dryRunModeLabel               = "dry-run"
+	noopModeLabel                 = "noop"
+	defaultTargetStart            = 0.22
+	defaultTargetMin              = 0.20
+	defaultTargetMax              = 0.32
+	defaultStepUp                 = 0.01
+	defaultStepDown               = 0.005
+	defaultFallbackTarget         = 0.22
+	defaultGoalLow                = 0.21
+	defaultGoalHigh               = 0.27
+	defaultRelaxedInterval        = 4 * time.Hour
+	defaultRelaxedThresh          = 0.26
+	defaultSuppressThresh         = 0.80
+	defaultSuppressResume         = 0.68
+	defaultRunnableSuppressThresh = 1.20
+	defaultRunnableSuppressResume = 0.96
+	suppressResumeScale           = 0.8
 )
 
 // DefaultConfig mirrors the initial implementation plan for control loop cadence.
 func DefaultConfig() Config {
 	return Config{
-		ResourceID:        "",
-		Mode:              defaultModeLabel,
-		TargetStart:       defaultTargetStart,
-		TargetMin:         defaultTargetMin,
-		TargetMax:         defaultTargetMax,
-		StepUp:            defaultStepUp,
-		StepDown:          defaultStepDown,
-		FallbackTarget:    defaultFallbackTarget,
-		GoalLow:           defaultGoalLow,
-		GoalHigh:          defaultGoalHigh,
-		Interval:          time.Hour,
-		RelaxedInterval:   defaultRelaxedInterval,
-		RelaxedThreshold:  defaultRelaxedThresh,
-		SuppressThreshold: defaultSuppressThresh,
-		SuppressResume:    defaultSuppressResume,
+		ResourceID:                "",
+		Mode:                      defaultModeLabel,
+		TargetStart:               defaultTargetStart,
+		TargetMin:                 defaultTargetMin,
+		TargetMax:                 defaultTargetMax,
+		StepUp:                    defaultStepUp,
+		StepDown:                  defaultStepDown,
+		FallbackTarget:            defaultFallbackTarget,
+		GoalLow:                   defaultGoalLow,
+		GoalHigh:                  defaultGoalHigh,
+		Interval:                  time.Hour,
+		RelaxedInterval:           defaultRelaxedInterval,
+		RelaxedThreshold:          defaultRelaxedThresh,
+		SuppressThreshold:         defaultSuppressThresh,
+		SuppressResume:            defaultSuppressResume,
+		SuppressRunnableThreshold: defaultRunnableSuppressThresh,
+		SuppressRunnableResume:    defaultRunnableSuppressResume,
 	}
 }
 

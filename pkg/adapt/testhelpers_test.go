@@ -104,10 +104,26 @@ func (f *fakeEstimator) Run(context.Context) <-chan est.Observation {
 	return observationsCh
 }
 
-func feedObservation(controller *AdaptiveController, ts int64, utilisation float64, err error) {
+func feedObservation(
+	controller *AdaptiveController,
+	timestamp int64,
+	utilisation float64,
+	err error,
+) {
+	feedObservationWithRunnable(controller, timestamp, utilisation, 0, err)
+}
+
+func feedObservationWithRunnable(
+	controller *AdaptiveController,
+	timestamp int64,
+	utilisation float64,
+	runnable float64,
+	err error,
+) {
 	controller.handleObservation(est.Observation{
-		Timestamp:    time.Unix(ts, 0),
+		Timestamp:    time.Unix(timestamp, 0),
 		Utilisation:  utilisation,
+		Runnable:     runnable,
 		BusyJiffies:  0,
 		TotalJiffies: 0,
 		Err:          err,

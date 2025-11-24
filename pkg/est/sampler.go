@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -14,10 +15,12 @@ import (
 )
 
 // Observation represents a host CPU utilisation snapshot derived from /proc/stat
-// deltas. The Utilisation field is expressed as a ratio in the range [0,1].
+// deltas. The Utilisation field is expressed as a ratio in the range [0,1] and
+// Runnable reflects the per-CPU runnable task count reported by the kernel.
 type Observation struct {
 	Timestamp    time.Time
 	Utilisation  float64
+	Runnable     float64
 	BusyJiffies  uint64
 	TotalJiffies uint64
 	Err          error
@@ -32,6 +35,8 @@ type Source interface {
 type Snapshot struct {
 	Idle  uint64
 	Total uint64
+	// Runnable is the instantaneous runnable task count on the host.
+	Runnable uint64
 }
 
 // FileSource reads CPU statistics from the Linux /proc/stat pseudo file.
@@ -180,6 +185,7 @@ func (s *Sampler) publishError(ctx context.Context, observations chan<- Observat
 	observation := Observation{
 		Timestamp:    s.timeSource()(),
 		Utilisation:  0,
+		Runnable:     0,
 		BusyJiffies:  0,
 		TotalJiffies: 0,
 		Err:          err,
@@ -214,6 +220,7 @@ func buildObservation(timestamp time.Time, previous, current Snapshot) Observati
 	idleDelta := diffCounter(previous.Idle, current.Idle)
 	busyDelta := uint64(0)
 	utilisation := 0.0
+	runnable := 0.0
 
 	if totalDelta > 0 && idleDelta <= totalDelta {
 		busyDelta = totalDelta - idleDelta
@@ -226,9 +233,15 @@ func buildObservation(timestamp time.Time, previous, current Snapshot) Observati
 		}
 	}
 
+	cpuCount := runtime.NumCPU()
+	if cpuCount > 0 {
+		runnable = float64(current.Runnable) / float64(cpuCount)
+	}
+
 	return Observation{
 		Timestamp:    timestamp,
 		Utilisation:  utilisation,
+		Runnable:     runnable,
 		BusyJiffies:  busyDelta,
 		TotalJiffies: totalDelta,
 		Err:          nil,
@@ -254,14 +267,27 @@ func parseCPUStat(r io.Reader) (Snapshot, error) {
 		return Snapshot{}, io.EOF
 	}
 
-	line := scanner.Text()
+	idle, total, err := parseCPULine(scanner.Text())
+	if err != nil {
+		return Snapshot{}, err
+	}
+
+	runnable, err := parseRunnableCount(scanner)
+	if err != nil {
+		return Snapshot{}, err
+	}
+
+	return Snapshot{Idle: idle, Total: total, Runnable: runnable}, nil
+}
+
+func parseCPULine(line string) (uint64, uint64, error) {
 	if !strings.HasPrefix(line, "cpu ") {
-		return Snapshot{}, fmt.Errorf("%w: %q", ErrUnexpectedProcStatFormat, line)
+		return 0, 0, fmt.Errorf("%w: %q", ErrUnexpectedProcStatFormat, line)
 	}
 
 	fields := strings.Fields(line)
 	if len(fields) < minimumCPUFields {
-		return Snapshot{}, fmt.Errorf("%w: %q", ErrProcStatTooShort, line)
+		return 0, 0, fmt.Errorf("%w: %q", ErrProcStatTooShort, line)
 	}
 
 	var (
@@ -272,7 +298,7 @@ func parseCPUStat(r io.Reader) (Snapshot, error) {
 	for index, field := range fields[1:] {
 		value, err := strconv.ParseUint(field, 10, 64)
 		if err != nil {
-			return Snapshot{}, fmt.Errorf("parse field %d: %w", index+1, err)
+			return 0, 0, fmt.Errorf("parse field %d: %w", index+1, err)
 		}
 
 		total += value
@@ -285,5 +311,28 @@ func parseCPUStat(r io.Reader) (Snapshot, error) {
 		}
 	}
 
-	return Snapshot{Idle: idle, Total: total}, nil
+	return idle, total, nil
+}
+
+func parseRunnableCount(scanner *bufio.Scanner) (uint64, error) {
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) != 2 || fields[0] != "procs_running" {
+			continue
+		}
+
+		value, err := strconv.ParseUint(fields[1], 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("parse procs_running: %w", err)
+		}
+
+		return value, nil
+	}
+
+	err := scanner.Err()
+	if err != nil {
+		return 0, fmt.Errorf("scan cpu lines: %w", err)
+	}
+
+	return 0, nil
 }

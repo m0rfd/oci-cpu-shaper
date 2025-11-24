@@ -116,6 +116,48 @@ func TestNormalizeConfigDisablesSuppressionWhenThresholdZero(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfigAdjustsRunnableResume(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.SuppressRunnableThreshold = 1.4
+	cfg.SuppressRunnableResume = 1.5
+
+	normalized, _, err := normalizeConfig(cfg)
+	if err != nil {
+		t.Fatalf("normalizeConfig returned error: %v", err)
+	}
+
+	expected := cfg.SuppressRunnableThreshold * suppressResumeScale
+	if math.Abs(normalized.SuppressRunnableResume-expected) > 1e-6 {
+		t.Fatalf(
+			"expected runnable resume %.2f, got %.2f",
+			expected,
+			normalized.SuppressRunnableResume,
+		)
+	}
+}
+
+func TestNormalizeConfigDisablesRunnableSuppressionWhenThresholdZero(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.SuppressRunnableThreshold = 0
+	cfg.SuppressRunnableResume = 1
+
+	normalized, _, err := normalizeConfig(cfg)
+	if err != nil {
+		t.Fatalf("normalizeConfig returned error: %v", err)
+	}
+
+	if normalized.SuppressRunnableResume != 0 {
+		t.Fatalf(
+			"expected runnable resume reset to 0 when disabled, got %.2f",
+			normalized.SuppressRunnableResume,
+		)
+	}
+}
+
 func TestNormalizeConfigValidatesThresholds(t *testing.T) {
 	t.Parallel()
 

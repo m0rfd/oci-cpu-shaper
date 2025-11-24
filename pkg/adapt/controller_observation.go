@@ -1,6 +1,10 @@
 package adapt
 
-import "oci-cpu-shaper/pkg/est"
+import (
+	"math"
+
+	"oci-cpu-shaper/pkg/est"
+)
 
 func (c *AdaptiveController) handleObservation(observation est.Observation) {
 	c.mu.Lock()
@@ -16,6 +20,16 @@ func (c *AdaptiveController) handleObservation(observation est.Observation) {
 	c.lastEstErr = nil
 
 	utilisation := clamp(observation.Utilisation, 0, 1)
+
+	runnable := observation.Runnable
+	if math.IsNaN(runnable) || math.IsInf(runnable, 0) {
+		runnable = 0
+	}
+
+	if runnable < 0 {
+		runnable = 0
+	}
+
 	if c.recorder != nil {
 		c.recorder.ObserveHostCPU(utilisation)
 	}
@@ -24,11 +38,12 @@ func (c *AdaptiveController) handleObservation(observation est.Observation) {
 		c.shaper.ObserveHostLoad(utilisation)
 	}
 
-	if c.cfg.SuppressThreshold <= 0 {
+	if c.cfg.SuppressThreshold <= 0 && c.cfg.SuppressRunnableThreshold <= 0 {
 		return
 	}
 
 	c.updateHostLoadLocked(utilisation)
+	c.hostRunnable = runnable
 	previouslySuppressed := c.transitionSuppressionLocked()
 	c.applySuppressionTargetsLocked(previouslySuppressed)
 	c.updateEffectiveStateLocked()

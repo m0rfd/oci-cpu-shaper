@@ -73,7 +73,7 @@ func resolveOptions(opts []Option) instancePrincipalOptions {
 	return resolved
 }
 
-//nolint:ireturn // constructor must return the interface seam used by the wrapper.
+//nolint:ireturn // interface return preserves client swap seams for tests and adapters.
 func defaultInstancePrincipalConstructor(
 	compartmentID, region string,
 	factory *oci.ClientFactory,

@@ -12,6 +12,8 @@ controller:
   relaxedThreshold: 0.27
   suppressThreshold: 0.9
   suppressResume: 0.6
+  suppressRunnableThreshold: 1.05
+  suppressRunnableResume: 0.8
 estimator:
   interval: 2s
 pool:

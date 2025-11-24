@@ -41,6 +41,18 @@ func TestLoadConfigUsesDefaultsWhenFileMissing(t *testing.T) {
 		defaults.SuppressThreshold,
 	)
 	assertFloatEqual(t, "suppressResume", cfg.Controller.SuppressResume, defaults.SuppressResume)
+	assertFloatEqual(
+		t,
+		"suppressRunnableThreshold",
+		cfg.Controller.SuppressRunnableThreshold,
+		defaults.SuppressRunnableThreshold,
+	)
+	assertFloatEqual(
+		t,
+		"suppressRunnableResume",
+		cfg.Controller.SuppressRunnableResume,
+		defaults.SuppressRunnableResume,
+	)
 	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, defaults.SuppressThreshold)
 	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, defaults.SuppressResume)
 }
@@ -94,6 +106,8 @@ func TestLoadConfigAppliesFileOverrides(t *testing.T) {
 	assertStringEqual(t, "region", cfg.OCI.Region, stubRegion)
 	assertFloatEqual(t, "suppressThreshold", cfg.Controller.SuppressThreshold, 0.9)
 	assertFloatEqual(t, "suppressResume", cfg.Controller.SuppressResume, 0.6)
+	assertFloatEqual(t, "suppressRunnableThreshold", cfg.Controller.SuppressRunnableThreshold, 1.05)
+	assertFloatEqual(t, "suppressRunnableResume", cfg.Controller.SuppressRunnableResume, 0.8)
 	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, 0.88)
 	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, 0.44)
 }
@@ -115,6 +129,8 @@ func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
 	t.Setenv(envOCIOffline, "true")
 	t.Setenv(envSuppressThreshold, "0.88")
 	t.Setenv(envSuppressResume, "0.51")
+	t.Setenv(envSuppressRunnableThreshold, "1.3")
+	t.Setenv(envSuppressRunnableResume, "0.7")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -128,6 +144,13 @@ func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
 	assertDurationEqual(t, "relaxedInterval", cfg.Controller.RelaxedInterval, 12*time.Hour)
 	assertFloatEqual(t, "suppressThreshold", cfg.Controller.SuppressThreshold, 0.88)
 	assertFloatEqual(t, "suppressResume", cfg.Controller.SuppressResume, 0.51)
+	assertFloatEqual(
+		t,
+		"suppressRunnableThreshold",
+		cfg.Controller.SuppressRunnableThreshold,
+		1.3,
+	)
+	assertFloatEqual(t, "suppressRunnableResume", cfg.Controller.SuppressRunnableResume, 0.7)
 	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, 0.81)
 	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, 0.49)
 	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, 250*time.Millisecond)
