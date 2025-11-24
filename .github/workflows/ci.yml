@@ -3,6 +3,14 @@ name: CI
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
+env:
+  GOCACHE: ${{ github.workspace }}/.cache/go
+  GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -21,9 +29,7 @@ jobs:
   agents:
     name: agents policy
     runs-on: ubuntu-latest
-    env:
-      GOCACHE: ${{ github.workspace }}/.cache/go
-      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+    timeout-minutes: 5
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -48,9 +54,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    env:
-      GOCACHE: ${{ github.workspace }}/.cache/go
-      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -90,9 +94,6 @@ jobs:
   actionlint:
     name: actionlint (${{ matrix.workflow }})
     runs-on: ubuntu-latest
-    env:
-      GOCACHE: ${{ github.workspace }}/.cache/go
-      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
     strategy:
       matrix:
         workflow:
@@ -101,6 +102,7 @@ jobs:
           - release.yml
           - self-hosted.yml
           - go-dependency-submission.yml
+    timeout-minutes: 5
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -134,9 +136,7 @@ jobs:
   govulncheck:
     name: govulncheck
     runs-on: ubuntu-latest
-    env:
-      GOCACHE: ${{ github.workspace }}/.cache/go
-      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -173,9 +173,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    env:
-      GOCACHE: ${{ github.workspace }}/.cache/go
-      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6

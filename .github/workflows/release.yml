@@ -13,9 +13,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  GOCACHE: ${{ github.workspace }}/.cache/go
+  GOMODCACHE: ${{ github.workspace }}/.cache/gomod
 
 # ---------------------------
 # Job 1: PR build & test only
@@ -26,9 +32,9 @@ jobs:
     name: Verify tag (lint, test, coverage)
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    env:
-      GOCACHE: ${{ github.workspace }}/.cache/go
-      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+    permissions:
+      contents: read
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -37,6 +43,24 @@ jobs:
       - name: Set up Go with cache
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
+
+      - name: Cache Go build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/go
+            .cache/gomod
+          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-release-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-release-
+
+      - name: Cache golangci-lint workspace
+        uses: actions/cache@v4
+        with:
+          path: .cache/golangci
+          key: ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-release-${{ hashFiles('**/.golangci.yml', '**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-release-
 
       - name: Run lint
         run: make lint
@@ -54,6 +78,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -148,6 +173,7 @@ jobs:
       contents: read
       packages: write          # GHCR push (release job)
       id-token: write          # Cosign keyless (release job)
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
