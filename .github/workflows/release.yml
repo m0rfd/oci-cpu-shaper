@@ -1,12 +1,17 @@
 name: Docker CI & Release
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [ main ]
   merge_group:
   push:
     tags:
       - 'v*'     # release on v* tags (assumed from main)
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
