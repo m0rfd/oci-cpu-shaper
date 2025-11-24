@@ -322,6 +322,67 @@ func TestHTTPClientWaitHonorsContextCancellation(t *testing.T) {
 	}
 }
 
+func TestHTTPClientFetchCanceledDuringRetryWait(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+
+	attemptCh := make(chan struct{}, 1)
+
+	httpClient := newHTTPClient(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requireIMDSAuthHeader(t, req)
+
+		if attempts.Add(1) > 1 {
+			t.Fatalf("unexpected retry attempt: %d", attempts.Load())
+		}
+
+		select {
+		case attemptCh <- struct{}{}:
+		default:
+		}
+
+		return newHTTPResponse(
+			http.StatusServiceUnavailable,
+			io.NopCloser(strings.NewReader("retryable")),
+			req,
+		), nil
+	}))
+
+	client := imds.NewClient(
+		httpClient,
+		imds.WithBaseURL("http://metadata.local/opc/v2"),
+		imds.WithMaxAttempts(3),
+		imds.WithBackoff(25*time.Millisecond),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errCh := make(chan error, 1)
+
+	go func() {
+		_, err := client.Region(ctx)
+		errCh <- err
+	}()
+
+	<-attemptCh
+	cancel()
+
+	err := <-errCh
+	if err == nil {
+		t.Fatal("Region() expected error, got nil")
+	}
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Region() error = %v, want wrapped context cancellation", err)
+	}
+
+	if !strings.Contains(err.Error(), "retry wait for region") {
+		t.Fatalf("Region() error = %v, want retry wait cancellation", err)
+	}
+
+	requireEqual(t, "attempts", attempts.Load(), int32(1))
+}
+
 func TestHTTPClientFetchContextCanceledDuringBackoff(t *testing.T) {
 	t.Parallel()
 
