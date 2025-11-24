@@ -63,6 +63,17 @@ func TestExporterRenderRejectsNilBufferFactory(t *testing.T) {
 	}
 }
 
+func TestExporterWriteToRejectsNilWriter(t *testing.T) {
+	t.Parallel()
+
+	exporter := NewExporter()
+
+	_, err := exporter.WriteTo(nil)
+	if !errors.Is(err, errNilWriter) {
+		t.Fatalf("expected errNilWriter, got %v", err)
+	}
+}
+
 func TestExporterObserveHostCPUClampsOutOfRangeValues(t *testing.T) {
 	t.Parallel()
 
