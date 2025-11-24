@@ -16,6 +16,7 @@ import (
 	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
+//nolint:funlen // integration-style test validates shutdown wiring.
 func TestRunAppliesShutdownAfter(t *testing.T) {
 	t.Parallel()
 
@@ -64,7 +65,25 @@ func TestRunAppliesShutdownAfter(t *testing.T) {
 		return ctrl, nil, nil
 	}
 
-	exitCode := run(t.Context(), []string{"--shutdown-after", "200ms"}, deps, io.Discard)
+	application := newApp(deps)
+
+	ctx, boot, exitCode, ready := application.bootstrap(
+		t.Context(),
+		[]string{"--shutdown-after", "200ms"},
+		io.Discard,
+	)
+	if !ready {
+		t.Fatalf("expected bootstrap to succeed, got exit code %d", exitCode)
+	}
+	defer boot.cleanup()
+
+	runtime, exitCode, controllerReady := application.prepareController(ctx, boot)
+	if !controllerReady {
+		t.Fatalf("expected controller preparation to succeed, got exit code %d", exitCode)
+	}
+	defer runtime.cleanup(ctx)
+
+	exitCode = runtime.start(ctx)
 	if exitCode != exitCodeSuccess {
 		t.Fatalf("expected zero exit code, got %d", exitCode)
 	}
@@ -105,6 +124,7 @@ func TestRunHandlesContextShutdown(t *testing.T) {
 	}
 }
 
+//nolint:funlen // helper sequences shutdown wiring for different contexts.
 func runShutdownScenario(t *testing.T, runErr error, reason string) {
 	t.Helper()
 
@@ -135,7 +155,25 @@ func runShutdownScenario(t *testing.T, runErr error, reason string) {
 		return ctrl, nil, nil
 	}
 
-	exitCode := run(t.Context(), []string{"--shutdown-after", "50ms"}, deps, io.Discard)
+	application := newApp(deps)
+
+	ctx, boot, exitCode, ready := application.bootstrap(
+		t.Context(),
+		[]string{"--shutdown-after", "50ms"},
+		io.Discard,
+	)
+	if !ready {
+		t.Fatalf("expected bootstrap to succeed, got exit code %d", exitCode)
+	}
+	defer boot.cleanup()
+
+	runtime, exitCode, controllerReady := application.prepareController(ctx, boot)
+	if !controllerReady {
+		t.Fatalf("expected controller preparation to succeed, got exit code %d", exitCode)
+	}
+	defer runtime.cleanup(ctx)
+
+	exitCode = runtime.start(ctx)
 	if exitCode != exitCodeSuccess {
 		t.Fatalf("expected zero exit code, got %d", exitCode)
 	}
