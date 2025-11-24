@@ -77,4 +77,6 @@ Configuration manifests keep policy inputs and infrastructure wiring distinct. T
 
 Environment variables override the YAML manifest so operators can ship the published `configs/mode-a.yaml` and `configs/mode-b.yaml` defaults and apply targeted adjustments for experiments or incident response. The complete CLI and configuration reference lives in [`09-cli.md`](./09-cli.md) and links directly to the §10 Quick Start onboarding steps for deployment context.
 
+Configuration loading is layered to keep those overrides predictable: defaults live alongside the controller in `pkg/adapt/config_defaults.go`, YAML and env inputs are normalized via `config_normalize.go` before validation runs in `config_validate.go`, and the final sanitized config is passed into the adaptive controller.
+
 Additional documents will be added to detail interfaces, deployment flows, and best practices as the project evolves. For local development environment setup and contributor tooling expectations, see [`08-development.md`](./08-development.md).
