@@ -106,6 +106,9 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   updating the exporter, Grafana dashboard, and monitoring docs/tests so
   Prometheus queries continue to track state transitions accurately (§§3.2, 5,
   7, 9, 11).
+- CLI `--mode` now defaults to enforcing/normal operation instead of `dry-run`,
+  updating the help text and docs so operators start with the adaptive
+  controller active unless explicitly opting into monitor-only mode (§§5, 9).
 - Introduced `pkg/oci/metricsclient` for metrics builders/context helpers and shifted the
   CLI defaults to consume it, keeping metrics wiring thin while preserving the e2e
   override path. Updated §3.1 package touchpoints to note the new module (§§3.1, 5, 12).
@@ -117,7 +120,7 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   images track the latest stable release, and refreshed badges/docs to match (§§8, 12, 14).
 - CLI documentation (§9), `runtimeconfig.Default()`, and `adapt.DefaultConfig()` now
   match the Mode A/Mode B manifests exactly (0.22 target start, 0.20–0.32 band, 4 hour
-  relaxed interval, 2 second estimator loop, 0.80/0.68 suppression + pool thresholds,
+  relaxed interval, 1 second estimator loop, 0.80/0.68 suppression + pool thresholds,
   two-worker pool, etc.), keeping the published YAML and binary defaults aligned.
 - Metadata logging now queries IMDS for canonical-region names even when
   `OCI_REGION` overrides are provided, only falling back to the override when

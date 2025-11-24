@@ -128,7 +128,7 @@ func defaultControllerFactory(
 ) (adapt.Controller, poolStarter, error) {
 	trimmed := strings.TrimSpace(mode)
 	if trimmed == "" {
-		trimmed = modeDryRun
+		trimmed = modeEnforce
 	}
 
 	if trimmed == modeNoop {

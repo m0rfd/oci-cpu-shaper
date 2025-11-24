@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	defaultEstimatorInterval = 2 * time.Second
+	defaultEstimatorInterval = time.Second
 	defaultPoolWorkers       = 2
 )
 
