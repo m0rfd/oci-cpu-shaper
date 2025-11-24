@@ -2,16 +2,24 @@ package adapt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"oci-cpu-shaper/pkg/est"
 )
 
+var errEstimatorNilChannel = errors.New("estimator returned nil observations channel")
+
 // Run executes the control loop until the context is cancelled.
 func (c *AdaptiveController) Run(ctx context.Context) error {
 	if c.estimator != nil {
-		go c.consumeEstimator(ctx, c.estimator.Run(ctx))
+		estimatorCh := c.estimator.Run(ctx)
+		if estimatorCh == nil {
+			return fmt.Errorf("adaptive controller run: %w", errEstimatorNilChannel)
+		}
+
+		go c.consumeEstimator(ctx, estimatorCh)
 	}
 
 	ticker := time.NewTicker(c.interval)

@@ -7,6 +7,7 @@ package adapt
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -113,6 +114,46 @@ func TestConsumeEstimatorStopsOnClose(t *testing.T) {
 		t.Fatal("expected host load to be observed after consuming estimator values")
 	}
 }
+
+func TestAdaptiveControllerRunHandlesNilEstimatorChannel(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	estimator := nilChannelEstimator{}
+
+	controller, err := NewAdaptiveController(cfg, metrics, estimator, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	ctx := t.Context()
+
+	done := make(chan error, 1)
+
+	go func() {
+		done <- controller.Run(ctx)
+	}()
+
+	select {
+	case runErr := <-done:
+		if runErr == nil {
+			t.Fatal("expected error from run with nil estimator channel")
+		}
+
+		if !strings.Contains(runErr.Error(), "nil observations channel") {
+			t.Fatalf("unexpected run error: %v", runErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run did not terminate after estimator returned nil channel")
+	}
+}
+
+type nilChannelEstimator struct{}
+
+func (nilChannelEstimator) Run(context.Context) <-chan est.Observation { return nil }
 
 func TestAdaptiveControllerRunEmitsMetricsSignals(t *testing.T) {
 	t.Parallel()
