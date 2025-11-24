@@ -9,9 +9,16 @@ import (
 
 type contextMarkerKey string
 
+const (
+	compartmentID = "ocid.compartment"
+	region        = "us-test-1"
+)
+
 var (
-	errFallbackInvoked = errors.New("fallback invoked")
-	errFallback        = errors.New("fallback")
+	errFallbackInvoked       = errors.New("fallback invoked")
+	errFallback              = errors.New("fallback")
+	errUnexpectedCompartment = errors.New("unexpected compartment")
+	errUnexpectedRegion      = errors.New("unexpected region")
 )
 
 func TestWithBuilderNilContextUsesBackground(t *testing.T) {
@@ -53,7 +60,7 @@ func TestWithBuilderNilFactoryUsesFallback(t *testing.T) {
 
 	builder := FromContext(ctx, fallback)
 
-	_, err := builder("ocid.compartment", "us-test-1")
+	_, err := builder(compartmentID, region)
 	if err == nil {
 		t.Fatal("expected fallback builder to propagate error")
 	}
@@ -65,13 +72,13 @@ func TestFromContextUsesStoredBuilder(t *testing.T) {
 	stub := new(stubMetricsAdapter)
 	ctx := WithBuilder(
 		context.Background(),
-		func(compartmentID, region string) (MetricsClient, error) {
-			if compartmentID != "ocid.compartment" {
-				t.Fatalf("unexpected compartment %q", compartmentID)
+		func(id, rgn string) (MetricsClient, error) {
+			if id != compartmentID {
+				t.Fatalf("unexpected compartment %q", id)
 			}
 
-			if region != "us-test-1" {
-				t.Fatalf("unexpected region %q", region)
+			if rgn != region {
+				t.Fatalf("unexpected region %q", rgn)
 			}
 
 			return stub, nil
@@ -80,7 +87,7 @@ func TestFromContextUsesStoredBuilder(t *testing.T) {
 
 	builder := FromContext(ctx, nil)
 
-	client, err := builder("ocid.compartment", "us-test-1")
+	client, err := builder(compartmentID, region)
 	if err != nil {
 		t.Fatalf("builder returned error: %v", err)
 	}
@@ -97,7 +104,7 @@ func TestFromContextDefaultsWhenMissing(t *testing.T) {
 		return nil, errFallback
 	})
 
-	_, err := builder("ocid.compartment", "us-test-1")
+	_, err := builder(compartmentID, region)
 	if err == nil {
 		t.Fatal("expected fallback builder to propagate error")
 	}
@@ -116,12 +123,45 @@ func TestFromContextSkipsNilBuilder(t *testing.T) {
 		},
 	)
 
-	_, err := builder("ocid.compartment", "us-test-1")
+	_, err := builder(compartmentID, region)
 	if err == nil {
 		t.Fatal("expected fallback builder to propagate error")
 	}
 
 	if called != 1 {
 		t.Fatalf("expected fallback builder to be invoked once, got %d", called)
+	}
+}
+
+//nolint:paralleltest // swaps default builder factory for fallback coverage.
+func TestFromContextUsesDefaultBuilderFactory(t *testing.T) {
+	previous := defaultBuilderFactory
+	defaultBuilderFactory = func() Builder {
+		return func(id, rgn string) (MetricsClient, error) {
+			if id != compartmentID {
+				return nil, errUnexpectedCompartment
+			}
+
+			if rgn != region {
+				return nil, errUnexpectedRegion
+			}
+
+			return new(stubMetricsAdapter), nil
+		}
+	}
+
+	t.Cleanup(func() {
+		defaultBuilderFactory = previous
+	})
+
+	builder := FromContext(context.Background(), nil)
+
+	client, err := builder(compartmentID, region)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if client == nil {
+		t.Fatal("expected default builder to produce a client")
 	}
 }

@@ -130,6 +130,25 @@ func TestInstancePrincipalMetricsClientDelegateError(t *testing.T) {
 	}
 }
 
+func TestInstancePrincipalBuilderConstructorError(t *testing.T) {
+	t.Parallel()
+
+	builder := InstancePrincipalBuilder(
+		WithConstructor(func(string, string, *oci.ClientFactory) (p95CPUQuerier, error) {
+			return nil, errStubQueryFailure
+		}),
+	)
+
+	_, err := builder("ocid.compartment", "us-test-1")
+	if err == nil {
+		t.Fatal("expected constructor error to propagate")
+	}
+
+	if !errors.Is(err, errStubQueryFailure) {
+		t.Fatalf("expected errStubQueryFailure, got %v", err)
+	}
+}
+
 func TestInstancePrincipalMetricsClientSuccess(t *testing.T) {
 	t.Parallel()
 

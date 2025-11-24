@@ -11,6 +11,10 @@ type Builder func(compartmentID, region string) (oci.MetricsClient, error)
 
 type builderKey struct{}
 
+var defaultBuilderFactory = func() Builder { //nolint:gochecknoglobals // swapped in tests to cover fallback resolution.
+	return InstancePrincipalBuilder()
+}
+
 // WithBuilder stores a MetricsClient builder on the supplied context.
 func WithBuilder(ctx context.Context, builder Builder) context.Context {
 	if ctx == nil {
@@ -37,5 +41,5 @@ func FromContext(ctx context.Context, fallback Builder) Builder {
 		return fallback
 	}
 
-	return InstancePrincipalBuilder()
+	return defaultBuilderFactory()
 }
