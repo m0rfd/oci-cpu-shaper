@@ -100,7 +100,7 @@ func TestSDKMonitoringClientSummarizeMetricsDataWrapsCallErrorsAndClosesBody(t *
 		}
 	})
 
-	caller := &fakeAPICaller{response: response, err: errCallFailed, called: false}
+	caller := &mockAPICaller{response: response, err: errFakeAPICallFailed, called: false}
 	client := &sdkMonitoringClient{client: caller}
 
 	request := buildSummarizeRequest(
@@ -116,7 +116,7 @@ func TestSDKMonitoringClientSummarizeMetricsDataWrapsCallErrorsAndClosesBody(t *
 	}
 
 	wrapped := common.PostProcessServiceError(
-		errCallFailed,
+		errFakeAPICallFailed,
 		"Monitoring",
 		"SummarizeMetricsData",
 		"https://docs.oracle.com/iaas/api/#/en/monitoring/20180401/MetricData/SummarizeMetricsData",
@@ -155,7 +155,7 @@ func TestSDKMonitoringClientSummarizeMetricsDataHandlesDecodeErrors(t *testing.T
 		}
 	})
 
-	caller := &fakeAPICaller{response: response, err: nil, called: false}
+	caller := &mockAPICaller{response: response, err: nil, called: false}
 	client := &sdkMonitoringClient{client: caller}
 
 	request := buildSummarizeRequest(
