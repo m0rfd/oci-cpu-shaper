@@ -52,6 +52,10 @@ controller.Run(ctx) -----------------> slow loop ticker (default 1h)
   `metadata_logging_runtime_test.go` for runtime metadata/config logging) to keep responsibilities separated.
 - `logger_factory.go`: constructs zap loggers with the configured level and encoder settings.
 - `metadata_resolver.go`: resolves IMDS/OCI metadata for runtime config and validates controller prerequisites.
+- `logger_factory.go`: constructs zap loggers with the configured level and encoder settings. IMDS HTTP
+  behaviors stay in `pkg/imds` while the CLI factory/resolution logic is covered by focused suites (`metadata_imds_factory_test.go`
+  for endpoint overrides, `metadata_logging_imds_test.go` for logIMDSMetadata success/warn/offline paths, and
+  `metadata_logging_runtime_test.go` for runtime metadata/config logging) to keep responsibilities separated.
 - `logging_metadata.go`: records resolved metadata for structured logging and recorder enrichment.
 - `metrics_http.go`: builds the metrics exporter and HTTP listener used by `/metrics` and `/healthz`.
 - `cgroup_inspection.go`: probes the local cgroup v2 CPU settings so metrics and `/healthz` reflect sandbox limits.
