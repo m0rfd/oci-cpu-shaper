@@ -244,5 +244,4 @@ func TestPrepareControllerHandlesConstructionFailure(t *testing.T) {
 	if len(entries) == 0 {
 		t.Fatalf("expected controller build error log, got %+v", observed.All())
 	}
-
 }

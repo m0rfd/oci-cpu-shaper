@@ -10,12 +10,16 @@ Operators looking for the fastest onboarding path should start with the [§10 Qu
 
 ```mermaid
 flowchart LR
-    IMDS["IMDSv2 inputs\n(instance OCID, region, shape)"] --> CTRL["Adaptive Controller\n(policies + estimator)"]
-    MQL["OCI Monitoring queries\n(MQL responses)"] --> CTRL
-    CTRL --> POOL["Worker pools\n(cpu.weight + duty cycle)"]
-    CTRL --> HTTP["HTTP surfaces\n/metrics + /healthz"]
+    CLI["CLI flags + environment\n`cmd/shaper`"] --> CFG["Runtime config layering\n`pkg/runtimeconfig`"]
+    YAML["Config manifests\n`configs/mode-*.yaml`"] --> CFG
+    IMDS["IMDSv2 inputs\n(instance OCID, region, shape)"] --> CFG
+    CFG --> CTRL["Adaptive controller\n`pkg/adapt`"]
+    CTRL --> POOL["Worker pools\n`pkg/shape`"]
+    CTRL --> HTTP["HTTP surfaces\n`pkg/http`"]
     POOL --> HTTP
     HTTP --> PROM["Prometheus / operators"]
+    CTRL --> OCI["Monitoring client\n`pkg/oci`"]
+    OCI --> CTRL
 ```
 
 ## §0.1 Interface Jump Table
@@ -25,6 +29,23 @@ flowchart LR
 | **IMDSv2** | Supplies compartment, region, and instance OCIDs so the adaptive controller can authenticate Monitoring clients even when configs rely on instance principals. | [§2 IMDS Integration](./02-imds-v2.md) |
 | **OCI Monitoring (MQL)** | Streams tenancy metrics (e.g., `CpuUtilization`) into the controller’s suppression logic and alarms to sustain Always Free guardrails. | [§5 Monitoring & Alerts](./05-monitoring-mql.md) |
 | **Prometheus surfaces** | Exposes `/metrics` and `/healthz` for fleet monitoring and debugging, mirroring the CLI toggles and HTTP config described in §9. | [§9 CLI Reference](./09-cli.md) |
+
+## §0.2 Runtime configuration pipeline
+
+Controller wiring follows the layered configuration path defined in the implementation plan (§§3.1, 5.2) and detailed in [`docs/05-execution-flow.txt`](./05-execution-flow.txt):
+
+1. **CLI flags** set bootstrap defaults for the config path, log level, run mode, and optional shutdown timer without requiring YAML upfront.
+2. **YAML manifests** such as [`configs/mode-a.yaml`](../configs/mode-a.yaml) and [`configs/mode-b.yaml`](../configs/mode-b.yaml) load next to supply controller targets, estimator cadence, worker sizing, HTTP binding, and OCI tenancy inputs.
+3. **Environment overrides** (`SHAPER_*` variables) merge on top so operators can reuse the shipped manifests while tuning Always Free guardrails in CI or incident response.
+4. **Validation and translation** in [`pkg/runtimeconfig`](../pkg/runtimeconfig) enforce bounds before emitting controller-ready structs consumed by [`pkg/adapt`](../pkg/adapt) and the CLI factories.
+
+The same pipeline powers the container entrypoint and the CLI so downstream binaries can share the configuration API without re-implementing loaders. See [§9 CLI Reference](./09-cli.md) for the full flag and environment matrix.
+
+## §0.3 Controller layers and metrics surfaces
+
+- **Runtime layers** – [`cmd/shaper`](../cmd/shaper) builds the adaptive controller using the translated config, injects the Monitoring client, and installs the worker pool. [`pkg/adapt`](../pkg/adapt) owns suppression logic, estimator inputs, and mode handling, while [`pkg/shape`](../pkg/shape) manages the duty-cycle worker threads.
+- **Metrics surfaces** – [`pkg/http`](../pkg/http) exposes `/metrics` (Prometheus) plus `/healthz` status JSON, and [`cmd/shaper`](../cmd/shaper/metrics_handlers.go) wires controller state, cgroup readings, and OCI error strings into those endpoints. `docker compose` and Quadlet bundles bind the listener to `:9108` by default; operators can disable the HTTP listener with `HTTP_ADDR=` when smoke testing.
+- **Telemetry loop** – [`pkg/oci`](../pkg/oci) streams `CpuUtilization` samples into the controller so suppression and target tracking stay aligned with the Always Free reclaim guardrails, while the `/metrics` export mirrors loop cadence and last-error details for fleet observability.
 
 - **Threat Model** – Baseline trust boundaries, IAM scope, and exposed surfaces. See [§1 Threat Model](#%C2%A71-threat-model).
 - **Non-goals** – Out-of-scope behaviors so operators can quickly identify unsupported asks. See [§2 Non-goals](#%C2%A72-non-goals).
@@ -76,5 +97,7 @@ Configuration manifests keep policy inputs and infrastructure wiring distinct. T
 - `oci.*` – Compartment OCID, region, optional instance OCID override, and offline toggle used to wire Monitoring clients or static fallbacks.
 
 Environment variables override the YAML manifest so operators can ship the published `configs/mode-a.yaml` and `configs/mode-b.yaml` defaults and apply targeted adjustments for experiments or incident response. The complete CLI and configuration reference lives in [`09-cli.md`](./09-cli.md) and links directly to the §10 Quick Start onboarding steps for deployment context.
+
+Configuration loading is layered to keep those overrides predictable: defaults live alongside the controller in `pkg/adapt/config_defaults.go`, YAML and env inputs are normalized via `config_normalize.go` before validation runs in `config_validate.go`, and the final sanitized config is passed into the adaptive controller.
 
 Additional documents will be added to detail interfaces, deployment flows, and best practices as the project evolves. For local development environment setup and contributor tooling expectations, see [`08-development.md`](./08-development.md).
