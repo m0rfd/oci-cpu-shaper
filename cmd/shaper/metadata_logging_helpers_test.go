@@ -3,17 +3,10 @@ package main
 import (
 	"testing"
 
-	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 	"oci-cpu-shaper/pkg/adapt"
 )
-
-func newObservedLogger(level zapcore.Level) (*zap.Logger, *observer.ObservedLogs) {
-	core, observed := observer.New(level)
-
-	return zap.New(core), observed
-}
 
 func assertNoIMDSCalls(t *testing.T, client *stubIMDSClient) {
 	t.Helper()
