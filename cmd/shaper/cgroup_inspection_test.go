@@ -163,7 +163,9 @@ func TestDetectAndReportCgroupUsesDefaultReaderFallback(t *testing.T) {
 	logger := zap.New(core)
 
 	info := detectAndReportCgroup(
-		runDeps{detectCgroup: func() (*cgroup.CPU, error) { return nil, errCgroupDetect }},
+		runDeps{ //nolint:exhaustruct // tests override detectCgroup only
+			detectCgroup: func() (*cgroup.CPU, error) { return nil, errCgroupDetect },
+		},
 		logger,
 		exporter,
 	)
