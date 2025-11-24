@@ -20,7 +20,7 @@ PROD_PKGS := $(shell $(GO) list $(PROD_PATTERNS) 2>/dev/null)
 COVERAGE_PKGS := $(filter-out $(COVERAGE_EXCLUDES),$(PROD_PKGS))
 INTEGRATION_PKGS_RAW := $(shell $(GO) list ./tests/integration/... ./cmd/shaper 2>/dev/null)
 INTEGRATION_PKGS := $(filter-out $(COVERAGE_EXCLUDES),$(INTEGRATION_PKGS_RAW))
-E2E_PKGS_RAW := $(shell $(GO) list ./tests/e2e/... 2>/dev/null)
+E2E_PKGS_RAW := $(shell $(GO) list ./tests/e2e/... ./cmd/shaper 2>/dev/null)
 UNIT_TEST_PKGS := $(filter-out $(INTEGRATION_PKGS_RAW) $(E2E_PKGS_RAW),$(PKGS))
 COVERAGE_TAGS ?=
 E2E_PKGS := $(filter-out $(COVERAGE_EXCLUDES),$(E2E_PKGS_RAW))
@@ -141,10 +141,11 @@ test: verify-go-version
 		mkdir -p "$(GOCACHE_DIR)"; \
 		GOCACHE="$(GOCACHE_DIR)" $(GO) test -race $(UNIT_TEST_PKGS); \
 	fi
-	@if [ "$(strip $(RUN_E2E_TESTS))" = "1" ] && [ -d "$(ROOT_DIR)/tests/e2e" ]; then \
+	@e2e_pkgs="$(strip $(E2E_PKGS))"; \
+	if [ "$(strip $(RUN_E2E_TESTS))" = "1" ] && [ -n "$$e2e_pkgs" ]; then \
 		mkdir -p "$(GOCACHE_DIR)"; \
-		GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=e2e ./tests/e2e/...; \
-	elif [ -d "$(ROOT_DIR)/tests/e2e" ]; then \
+		GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=e2e $$e2e_pkgs; \
+	elif [ -n "$$e2e_pkgs" ]; then \
 		echo "Skipping e2e tests; set RUN_E2E_TESTS=1 to enable."; \
 	fi
 
@@ -323,12 +324,13 @@ integration: verify-go-version
 
 e2e:
 	@set -euo pipefail; \
-	if [ ! -d "$(ROOT_DIR)/tests/e2e" ]; then \
+	e2e_pkgs="$(strip $(E2E_PKGS))"; \
+	if [ -z "$$e2e_pkgs" ]; then \
 		echo "e2e suite not available"; \
 		exit 0; \
 	fi; \
 	mkdir -p "$(GOCACHE_DIR)"; \
-	GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=e2e -v ./tests/e2e/...
+	GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=e2e -v $$e2e_pkgs
 
 setup: ensure-dev-deps ensure-go maintenance
 	@set -euo pipefail; \
