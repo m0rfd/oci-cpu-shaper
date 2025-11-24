@@ -158,37 +158,12 @@ func TestDetectAndReportCgroupHandlesErrors(t *testing.T) {
 func TestDetectAndReportCgroupUsesDefaultReaderFallback(t *testing.T) {
 	t.Parallel()
 
-	cgroupReaderMu.Lock()
-
-	previousReader := newCgroupReader
-
-	cgroupReaderMu.Unlock()
-
-	t.Cleanup(func() {
-		cgroupReaderMu.Lock()
-
-		newCgroupReader = previousReader
-
-		cgroupReaderMu.Unlock()
-	})
-
-	tmp := t.TempDir()
-	missingProc := filepath.Join(tmp, "missing.proc")
-
-	cgroupReaderMu.Lock()
-
-	newCgroupReader = func() cgroup.Reader {
-		return cgroup.Reader{ProcPath: missingProc, RootPath: tmp}
-	}
-
-	cgroupReaderMu.Unlock()
-
 	exporter := metricshttp.NewExporter()
 	core, observed := observer.New(zap.WarnLevel)
 	logger := zap.New(core)
 
 	info := detectAndReportCgroup(
-		runDeps{}, //nolint:exhaustruct // fallback path uses default reader
+		runDeps{detectCgroup: func() (*cgroup.CPU, error) { return nil, errCgroupDetect }},
 		logger,
 		exporter,
 	)

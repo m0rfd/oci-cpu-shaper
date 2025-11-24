@@ -39,8 +39,9 @@ controller.Run(ctx) -----------------> slow loop ticker (default 1h)
 ### §3.1 CLI Entrypoint boundaries
 - `entrypoint.go`: builds `defaultRunDeps`, invokes the app runner, and leaves process exit handling isolated for tests.
 - `run_deps.go`: defines exit codes and dependency factories (logger, IMDS, controller, metrics exporter/server, cgroup inspection) plus config/logging helpers.
-- `app_bootstrap.go`: parses flags/YAML/env into runtime config, configures the logger, applies shutdown timers, and emits startup/config logs.
-- `app_controller.go`: resolves IMDS metadata, wires the controller/metrics/cgroup reporters, and exposes lifecycle helpers for starting/stopping the metrics server and controller.
+- `bootstrap_args.go`/`bootstrap_config.go`/`bootstrap_metadata.go`/`bootstrap_metrics.go`/`bootstrap_controller.go`: stage CLI parsing/version printing, config/logging setup, metadata resolution, metrics bootstrap, and controller start sequencing.
+- `app_bootstrap.go`: composes the bootstrap helpers to parse flags/YAML/env into runtime config, configure the logger, apply shutdown timers, and emit startup/config logs.
+- `app_controller.go`: wires the staged metadata/metrics/controller bootstrap and exposes lifecycle helpers for starting/stopping the metrics server and controller.
 - `app.go`/`app_run.go`: maintain the signal-aware run loop and compose the bootstrap/controller stages without re-embedding wiring logic.
 - `controller_helpers.go`: converts runtime config into adaptive-controller inputs and keeps controller state machines out of the CLI.
 - `logging_metadata.go`: resolves IMDS/OCI metadata for structured logging and recorder enrichment.

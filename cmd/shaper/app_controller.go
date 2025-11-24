@@ -41,71 +41,28 @@ func (c controllerRuntime) cleanup(ctx context.Context) {
 }
 
 func (c controllerRuntime) start(ctx context.Context) int {
-	if c.pool != nil {
-		c.pool.SetWorkerStartErrorHandler(func(err error) {
-			if err == nil {
-				return
-			}
-
-			c.logger.Warn("worker failed to enter sched_idle", zap.Error(err))
-		})
-
-		c.logger.Info(
-			"starting worker pool",
-			zap.Int("workers", c.pool.Workers()),
-			zap.Duration("quantum", c.pool.Quantum()),
-		)
-
-		c.pool.Start(ctx)
-	}
-
-	logIMDSMetadata(
-		ctx,
-		c.logger,
-		c.imdsClient,
-		c.controller,
-		c.cfg.OCI.InstanceID,
-		c.cfg.OCI.CompartmentID,
-		c.cfg.OCI.Region,
-		c.cfg.OCI.Offline,
-	)
-
-	c.logger.Info(
-		"starting controller run",
-		zap.String("mode", c.controller.Mode()),
-		zap.String("controllerState", c.controller.State().String()),
-	)
-
-	return handleControllerRunResult(c.logger, c.controller.Run(ctx))
+	return startController(ctx, c)
 }
 
-//nolint:funlen // wiring stage sequences metadata, metrics, and controller bootstrap.
 func (a app) prepareController(
 	ctx context.Context,
 	boot bootstrapResult,
 ) (controllerRuntime, int, bool) {
-	imdsClient := boot.deps.newIMDS()
-
-	metricsExporter := buildMetricsExporter(boot.deps)
-	cgroupInfo := detectAndReportCgroup(boot.deps, boot.logger, metricsExporter)
-	metricsRecorder := newRecorderLogger(boot.logger, metricsExporter)
-
-	cfg, metadata, metadataErr := prepareRunMetadata(ctx, boot.cfg, imdsClient, boot.opts.mode)
-	if metadataErr != nil {
-		boot.logger.Error("failed to resolve oci metadata", zap.Error(metadataErr))
-
+	metadataStage, exitCode, ready := stageMetadata(ctx, boot)
+	if !ready {
 		var empty controllerRuntime
 
-		return empty, exitCodeRuntimeError, false
+		return empty, exitCode, false
 	}
 
-	logMetadataResolution(boot.logger, boot.opts.mode, metadata, cfg.OCI.Offline)
+	metricsExporter := buildMetricsExporter(boot.deps)
+	metricsRecorder := newRecorderLogger(boot.logger, metricsExporter)
 
 	controller, pool, buildErr := boot.deps.newController(
 		ctx,
 		boot.opts.mode,
-		cfg,
-		imdsClient,
+		metadataStage.cfg,
+		metadataStage.imdsClient,
 		metricsRecorder,
 	)
 	if buildErr != nil {
@@ -118,16 +75,14 @@ func (a app) prepareController(
 		return empty, code, false
 	}
 
-	logControllerInitialization(boot.logger, cfg, controller, metricsExporter)
-
-	metricsHandler := configureMetrics(boot.logger, metricsExporter, pool, controller, cgroupInfo)
-
-	metricsShutdown, metricsCancel, metricsErr := startMetricsEndpoint(
+	metricsStage, metricsErr := stageMetrics(
 		ctx,
 		boot.deps,
 		boot.logger,
-		cfg.HTTP.Bind,
-		metricsHandler,
+		metadataStage.cfg,
+		pool,
+		controller,
+		metricsExporter,
 	)
 	if metricsErr != nil {
 		boot.logger.Error("failed to start metrics server", zap.Error(metricsErr))
@@ -137,14 +92,16 @@ func (a app) prepareController(
 		return empty, exitCodeRuntimeError, false
 	}
 
+	logControllerInitialization(boot.logger, metadataStage.cfg, controller, metricsStage.exporter)
+
 	return controllerRuntime{
-		cfg:             cfg,
+		cfg:             metadataStage.cfg,
 		opts:            boot.opts,
 		logger:          boot.logger,
-		imdsClient:      imdsClient,
-		metricsExporter: metricsExporter,
-		metricsShutdown: metricsShutdown,
-		metricsCancel:   metricsCancel,
+		imdsClient:      metadataStage.imdsClient,
+		metricsExporter: metricsStage.exporter,
+		metricsShutdown: metricsStage.shutdown,
+		metricsCancel:   metricsStage.cancel,
 		controller:      controller,
 		pool:            pool,
 	}, exitCodeSuccess, true

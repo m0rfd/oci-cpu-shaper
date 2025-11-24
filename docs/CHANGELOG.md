@@ -101,6 +101,10 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   boundaries and responsibilities, and linked `docs/AGENTS.md` plus
   `cmd/shaper/AGENTS.md` back to the architecture section so wiring guidance
   stays current (§§3, 8, 12).
+- Staged the CLI bootstrap into dedicated helpers for argument parsing, config/logging setup,
+  metadata resolution, metrics bootstrap, and controller start to keep `cmd/shaper`
+  wiring small and directly testable. Updated §3.1 to map the new helpers and added
+  focused unit suites per stage to preserve the ≥96% coverage contract (§§3.1, 8, 11, 12).
 - Raised the Go toolchain to 1.25.4 in `go.mod`, `.tool-versions`, and the container build ARG so CI, local builds, and release
   images track the latest stable release, and refreshed badges/docs to match (§§8, 12, 14).
 - CLI documentation (§9), `runtimeconfig.Default()`, and `adapt.DefaultConfig()` now
