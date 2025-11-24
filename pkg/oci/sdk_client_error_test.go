@@ -13,9 +13,9 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/monitoring"
 )
 
-var errCallFailed = errors.New("call failed")
+var errFakeAPICallFailed = errors.New("call failed")
 
-type fakeAPICaller struct {
+type mockAPICaller struct {
 	response *http.Response
 	err      error
 	called   bool
@@ -43,7 +43,7 @@ func newTrackingResponse(statusCode int, body string, closed *bool) *http.Respon
 }
 
 //nolint:revive // context argument retained for interface parity
-func (f *fakeAPICaller) Call(ctx context.Context, req *http.Request) (*http.Response, error) {
+func (f *mockAPICaller) Call(ctx context.Context, req *http.Request) (*http.Response, error) {
 	f.called = true
 
 	return f.response, f.err
@@ -52,7 +52,7 @@ func (f *fakeAPICaller) Call(ctx context.Context, req *http.Request) (*http.Resp
 func TestSDKMonitoringClientSummarizeMetricsDataBuildsRequest(t *testing.T) {
 	t.Parallel()
 
-	caller := &fakeAPICaller{response: nil, err: nil, called: false}
+	caller := &mockAPICaller{response: nil, err: nil, called: false}
 	client := &sdkMonitoringClient{client: caller}
 
 	request := monitoring.SummarizeMetricsDataRequest{
@@ -95,10 +95,12 @@ func TestSDKMonitoringClientSummarizeMetricsDataWrapsCallErrorsAndClosesBody(t *
 			t.Fatalf("response body was not closed by SummarizeMetricsData")
 		}
 
-		_ = response.Body.Close()
+		if !closed {
+			_ = response.Body.Close()
+		}
 	})
 
-	caller := &fakeAPICaller{response: response, err: errCallFailed, called: false}
+	caller := &mockAPICaller{response: response, err: errFakeAPICallFailed, called: false}
 	client := &sdkMonitoringClient{client: caller}
 
 	request := buildSummarizeRequest(
@@ -114,7 +116,7 @@ func TestSDKMonitoringClientSummarizeMetricsDataWrapsCallErrorsAndClosesBody(t *
 	}
 
 	wrapped := common.PostProcessServiceError(
-		errCallFailed,
+		errFakeAPICallFailed,
 		"Monitoring",
 		"SummarizeMetricsData",
 		"https://docs.oracle.com/iaas/api/#/en/monitoring/20180401/MetricData/SummarizeMetricsData",
@@ -148,10 +150,12 @@ func TestSDKMonitoringClientSummarizeMetricsDataHandlesDecodeErrors(t *testing.T
 			t.Fatalf("response body was not closed by SummarizeMetricsData")
 		}
 
-		_ = response.Body.Close()
+		if !closed {
+			_ = response.Body.Close()
+		}
 	})
 
-	caller := &fakeAPICaller{response: response, err: nil, called: false}
+	caller := &mockAPICaller{response: response, err: nil, called: false}
 	client := &sdkMonitoringClient{client: caller}
 
 	request := buildSummarizeRequest(
