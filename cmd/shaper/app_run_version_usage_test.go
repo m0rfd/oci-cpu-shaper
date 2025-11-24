@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"strings"
 	"testing"
 
@@ -29,7 +28,13 @@ func assertRunVersionPrints(t *testing.T, args []string, info buildinfo.Info) {
 	}
 	deps.versionWriter = &stdout
 
-	exitCode := run(t.Context(), args, deps, io.Discard)
+	application := newApp(deps)
+
+	_, _, exitCode, ready := application.bootstrap(t.Context(), args, &stdout)
+	if ready {
+		t.Fatalf("expected bootstrap to stop after printing version, got exit code %d", exitCode)
+	}
+
 	if exitCode != exitCodeSuccess {
 		t.Fatalf("expected exit code %d, got %d", exitCodeSuccess, exitCode)
 	}
@@ -71,7 +76,17 @@ func TestRunReturnsParseErrorExitCode(t *testing.T) {
 		return stubBuildInfo("", "", "")
 	}
 
-	exitCode := run(t.Context(), []string{"--mode", "invalid"}, deps, &stderr)
+	application := newApp(deps)
+
+	_, _, exitCode, ready := application.bootstrap(
+		t.Context(),
+		[]string{"--mode", "invalid"},
+		&stderr,
+	)
+	if ready {
+		t.Fatal("expected bootstrap to fail when parsing invalid mode")
+	}
+
 	if exitCode != exitCodeParseError {
 		t.Fatalf("expected exit code 2 for parse errors, got %d", exitCode)
 	}

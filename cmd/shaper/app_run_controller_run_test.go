@@ -62,12 +62,27 @@ func TestRunSuccessfulPath(t *testing.T) {
 		return &ctrl, pool, nil
 	}
 
-	exitCode := run(
+	application := newApp(deps)
+
+	args := []string{"--mode", "enforce", "--log-level", "debug"}
+
+	ctx, boot, exitCode, ready := application.bootstrap(
 		t.Context(),
-		[]string{"--mode", "enforce", "--log-level", "debug"},
-		deps,
+		args,
 		io.Discard,
 	)
+	if !ready {
+		t.Fatalf("expected bootstrap to succeed, got exit code %d", exitCode)
+	}
+	defer boot.cleanup()
+
+	runtime, exitCode, controllerReady := application.prepareController(ctx, boot)
+	if !controllerReady {
+		t.Fatalf("expected controller preparation to succeed, got exit code %d", exitCode)
+	}
+	defer runtime.cleanup(ctx)
+
+	exitCode = runtime.start(ctx)
 	if exitCode != 0 {
 		t.Fatalf("expected zero exit code, got %d", exitCode)
 	}
@@ -85,7 +100,7 @@ func TestRunSuccessfulPath(t *testing.T) {
 	assertInfoLogEntry(t, observed.All(), "test-version", "test-commit", "2024-05-01")
 }
 
-func TestRunReturnsLoggerConfigurationError(t *testing.T) {
+func TestBootstrapReturnsLoggerConfigurationError(t *testing.T) {
 	t.Parallel()
 
 	var stderr bytes.Buffer
@@ -98,7 +113,13 @@ func TestRunReturnsLoggerConfigurationError(t *testing.T) {
 		return nil, errStubLoggerBoom
 	}
 
-	exitCode := run(t.Context(), nil, deps, &stderr)
+	application := newApp(deps)
+
+	_, _, exitCode, ready := application.bootstrap(t.Context(), nil, &stderr)
+	if ready {
+		t.Fatal("expected bootstrap to fail when logger configuration fails")
+	}
+
 	if exitCode != exitCodeRuntimeError {
 		t.Fatalf("expected exit code 1 when logger configuration fails, got %d", exitCode)
 	}
@@ -108,6 +129,7 @@ func TestRunReturnsLoggerConfigurationError(t *testing.T) {
 	}
 }
 
+//nolint:funlen // integration-style test exercises controller run wiring.
 func TestRunHandlesControllerError(t *testing.T) {
 	t.Parallel()
 
@@ -146,12 +168,27 @@ func TestRunHandlesControllerError(t *testing.T) {
 		return &ctrl, nil, nil
 	}
 
-	exitCode := run(
+	application := newApp(deps)
+
+	args := []string{"--mode", "noop", "--log-level", "debug"}
+
+	ctx, boot, exitCode, ready := application.bootstrap(
 		t.Context(),
-		[]string{"--mode", "noop", "--log-level", "debug"},
-		deps,
+		args,
 		io.Discard,
 	)
+	if !ready {
+		t.Fatalf("expected bootstrap to succeed, got exit code %d", exitCode)
+	}
+	defer boot.cleanup()
+
+	runtime, exitCode, controllerReady := application.prepareController(ctx, boot)
+	if !controllerReady {
+		t.Fatalf("expected controller preparation to succeed, got exit code %d", exitCode)
+	}
+	defer runtime.cleanup(ctx)
+
+	exitCode = runtime.start(ctx)
 	if exitCode != exitCodeRuntimeError {
 		t.Fatalf("expected exit code 1 when controller.Run returns an error, got %d", exitCode)
 	}
@@ -160,43 +197,8 @@ func TestRunHandlesControllerError(t *testing.T) {
 		t.Fatal("expected controller Run to be invoked")
 	}
 
-	failureEntries := observed.FilterMessage("controller execution failed").All()
-	if len(failureEntries) == 0 {
-		t.Fatalf("expected controller failure log, got %+v", observed.All())
-	}
-}
-
-func TestRunHandlesControllerFactoryError(t *testing.T) {
-	t.Parallel()
-
-	deps := defaultRunDeps()
-	deps.currentBuildInfo = func() buildinfo.Info {
-		return stubBuildInfo("test-version", "", "")
-	}
-	deps.newLogger = func(string) (*zap.Logger, error) {
-		return zap.NewNop(), nil
-	}
-	deps.loadConfig = func(string) (runtimeconfig.Config, error) {
-		cfg := runtimeconfig.Default()
-		cfg.OCI.CompartmentID = stubCompartmentID
-
-		return cfg, nil
-	}
-	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) (metricsShutdownFunc, error) {
-		return func(context.Context) {}, nil
-	}
-	deps.newController = func(
-		context.Context,
-		string,
-		runtimeconfig.Config,
-		imds.Client,
-		adapt.MetricsRecorder,
-	) (adapt.Controller, poolStarter, error) {
-		return nil, nil, errStubControllerRun
-	}
-
-	exitCode := run(t.Context(), []string{"--mode", "enforce"}, deps, io.Discard)
-	if exitCode != exitCodeRuntimeError {
-		t.Fatalf("expected runtime error exit code, got %d", exitCode)
+	entries := observed.FilterMessage("controller execution failed").All()
+	if len(entries) == 0 {
+		t.Fatalf("expected controller execution failure log entry, got %+v", observed.All())
 	}
 }

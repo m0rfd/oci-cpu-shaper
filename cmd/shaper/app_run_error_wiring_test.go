@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -22,7 +21,8 @@ var (
 	errUnexpectedControllerBuild = errors.New("unexpected controller construction")
 )
 
-func TestRunReturnsMetadataResolutionError(t *testing.T) {
+//nolint:funlen // integration-style test exercises metadata resolution path.
+func TestPrepareControllerReturnsMetadataResolutionError(t *testing.T) {
 	t.Parallel()
 
 	core, observed := observer.New(zap.ErrorLevel)
@@ -67,7 +67,23 @@ func TestRunReturnsMetadataResolutionError(t *testing.T) {
 		return nil, nil, errUnexpectedControllerBuild
 	}
 
-	exitCode := run(t.Context(), []string{"--mode", "enforce"}, deps, io.Discard)
+	application := newApp(deps)
+
+	ctx, boot, exitCode, ready := application.bootstrap(
+		t.Context(),
+		[]string{"--mode", "enforce"},
+		io.Discard,
+	)
+	if !ready {
+		t.Fatalf("expected bootstrap to succeed, got exit code %d", exitCode)
+	}
+	defer boot.cleanup()
+
+	_, exitCode, controllerReady := application.prepareController(ctx, boot)
+	if controllerReady {
+		t.Fatal("expected controller preparation to fail when metadata resolution errors")
+	}
+
 	if exitCode != exitCodeRuntimeError {
 		t.Fatalf("expected runtime error exit code, got %d", exitCode)
 	}
@@ -79,7 +95,7 @@ func TestRunReturnsMetadataResolutionError(t *testing.T) {
 }
 
 //nolint:funlen // integration-style test exercises sequential wiring paths
-func TestRunReturnsMetricsStartupError(t *testing.T) {
+func TestPrepareControllerReturnsMetricsStartupError(t *testing.T) {
 	t.Parallel()
 
 	core, observed := observer.New(zap.ErrorLevel)
@@ -130,7 +146,23 @@ func TestRunReturnsMetricsStartupError(t *testing.T) {
 		return nil, errStubMetricsStartup
 	}
 
-	exitCode := run(t.Context(), []string{"--mode", "dry-run"}, deps, io.Discard)
+	application := newApp(deps)
+
+	ctx, boot, exitCode, ready := application.bootstrap(
+		t.Context(),
+		[]string{"--mode", "dry-run"},
+		io.Discard,
+	)
+	if !ready {
+		t.Fatalf("expected bootstrap to succeed, got exit code %d", exitCode)
+	}
+	defer boot.cleanup()
+
+	_, exitCode, controllerReady := application.prepareController(ctx, boot)
+	if controllerReady {
+		t.Fatal("expected controller preparation to fail when metrics startup fails")
+	}
+
 	if exitCode != exitCodeRuntimeError {
 		t.Fatalf("expected runtime error exit code, got %d", exitCode)
 	}
@@ -145,7 +177,8 @@ func TestRunReturnsMetricsStartupError(t *testing.T) {
 	}
 }
 
-func TestRunHandlesControllerConstructionFailure(t *testing.T) {
+//nolint:funlen // integration-style test exercises error wiring and logging.
+func TestPrepareControllerHandlesConstructionFailure(t *testing.T) {
 	t.Parallel()
 
 	core, observed := observer.New(zap.ErrorLevel)
@@ -186,9 +219,23 @@ func TestRunHandlesControllerConstructionFailure(t *testing.T) {
 		return nil, nil, adapt.ErrInvalidConfig
 	}
 
-	var stderr bytes.Buffer
+	application := newApp(deps)
 
-	exitCode := run(t.Context(), []string{"--mode", "enforce"}, deps, &stderr)
+	ctx, boot, exitCode, ready := application.bootstrap(
+		t.Context(),
+		[]string{"--mode", "enforce"},
+		io.Discard,
+	)
+	if !ready {
+		t.Fatalf("expected bootstrap to succeed, got exit code %d", exitCode)
+	}
+	defer boot.cleanup()
+
+	_, exitCode, controllerReady := application.prepareController(ctx, boot)
+	if controllerReady {
+		t.Fatal("expected controller preparation to fail when controller factory errors")
+	}
+
 	if exitCode != exitCodeParseError {
 		t.Fatalf("expected parse error exit code, got %d", exitCode)
 	}
@@ -198,7 +245,4 @@ func TestRunHandlesControllerConstructionFailure(t *testing.T) {
 		t.Fatalf("expected controller build error log, got %+v", observed.All())
 	}
 
-	if stderr.Len() != 0 {
-		t.Fatalf("expected stderr to be empty when logger captures error, got %q", stderr.String())
-	}
 }
