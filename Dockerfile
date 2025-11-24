@@ -31,7 +31,12 @@ RUN --mount=type=bind,source=.,target=/src,readonly \
       -trimpath \
       -ldflags="-s -w -X oci-cpu-shaper/internal/buildinfo.Version=${VERSION} -X oci-cpu-shaper/internal/buildinfo.GitCommit=${GIT_COMMIT} -X oci-cpu-shaper/internal/buildinfo.BuildDate=${BUILD_DATE}" \
       -o /out/oci-cpu-shaper \
-      ./cmd/shaper
+      ./cmd/shaper \
+    && go build \
+      -trimpath \
+      -ldflags="-s -w -X oci-cpu-shaper/internal/buildinfo.Version=${VERSION} -X oci-cpu-shaper/internal/buildinfo.GitCommit=${GIT_COMMIT} -X oci-cpu-shaper/internal/buildinfo.BuildDate=${BUILD_DATE}" \
+      -o /out/oci-cpu-shaper-healthcheck \
+      ./cmd/healthcheck
 
 FROM gcr.io/distroless/static:nonroot AS rootless
 
@@ -48,12 +53,15 @@ LABEL org.opencontainers.image.title="oci-cpu-shaper" \
       org.opencontainers.image.created="${BUILD_DATE}"
 
 COPY --from=builder /out/oci-cpu-shaper /usr/local/bin/oci-cpu-shaper
+COPY --from=builder /out/oci-cpu-shaper-healthcheck /usr/local/bin/oci-cpu-shaper-healthcheck
 COPY configs/offline-smoke.yaml /etc/oci-cpu-shaper/config.yaml
 COPY configs /etc/oci-cpu-shaper/configs
 
 USER nonroot:nonroot
 
 EXPOSE 9108
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s CMD ["/usr/local/bin/oci-cpu-shaper-healthcheck", "--url", "http://127.0.0.1:9108/healthz"]
 
 ENTRYPOINT ["/usr/local/bin/oci-cpu-shaper"]
 
@@ -72,11 +80,14 @@ LABEL org.opencontainers.image.title="oci-cpu-shaper" \
       org.opencontainers.image.created="${BUILD_DATE}"
 
 COPY --from=builder /out/oci-cpu-shaper /usr/local/bin/oci-cpu-shaper
+COPY --from=builder /out/oci-cpu-shaper-healthcheck /usr/local/bin/oci-cpu-shaper-healthcheck
 COPY configs/offline-smoke.yaml /etc/oci-cpu-shaper/config.yaml
 COPY configs /etc/oci-cpu-shaper/configs
 
 USER 0:0
 
 EXPOSE 9108
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s CMD ["/usr/local/bin/oci-cpu-shaper-healthcheck", "--url", "http://127.0.0.1:9108/healthz"]
 
 ENTRYPOINT ["/usr/local/bin/oci-cpu-shaper"]
