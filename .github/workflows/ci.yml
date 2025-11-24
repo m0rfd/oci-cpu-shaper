@@ -60,6 +60,8 @@ jobs:
 
   lint:
     name: golangci-lint
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
@@ -213,6 +215,8 @@ jobs:
 
   unit-test:
     name: go test
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
@@ -245,6 +249,9 @@ jobs:
 
   coverage:
     name: go test & coverage
+    permissions:
+      contents: read
+      actions: write
     needs:
       - unit-test
       - lint
@@ -319,6 +326,14 @@ jobs:
 
   benchmarks:
     name: duty-cycle benchmarks
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      actions: write
+    needs:
+      - lint
+      - unit-test
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
@@ -358,6 +373,14 @@ jobs:
 
   container-smoke:
     name: container smoke
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      actions: write
+    needs:
+      - lint
+      - unit-test
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -446,6 +469,11 @@ jobs:
 
   integration:
     name: integration tests (cgroup v2)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      actions: write
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
