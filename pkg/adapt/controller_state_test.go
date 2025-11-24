@@ -102,3 +102,73 @@ func TestClampEnforcesBounds(t *testing.T) {
 		t.Fatalf("expected clamp to preserve value within bounds, got %f", got)
 	}
 }
+
+func TestApplySuppressionTargetsLockedRestoresClampedStart(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	controller.mu.Lock()
+	controller.desired = 0
+	controller.suppressed = false
+	controller.cfg.TargetMin = 0.15
+	controller.cfg.TargetMax = 0.25
+	controller.cfg.TargetStart = 0.30
+	controller.applySuppressionTargetsLocked(true)
+	target := controller.target
+	controller.mu.Unlock()
+
+	if target != controller.cfg.TargetMax {
+		t.Fatalf(
+			"expected target to clamp to max %.2f after suppression, got %.2f",
+			controller.cfg.TargetMax,
+			target,
+		)
+	}
+
+	if shaper.Target() != controller.cfg.TargetMax {
+		t.Fatalf(
+			"expected shaper to receive clamped target %.2f, got %.2f",
+			controller.cfg.TargetMax,
+			shaper.Target(),
+		)
+	}
+}
+
+func TestApplySuppressionTargetsLockedMaintainsZeroWhenSuppressed(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	controller.mu.Lock()
+	controller.applyTargetLocked(0.2)
+	controller.suppressed = true
+	controller.applySuppressionTargetsLocked(false)
+	target := controller.target
+	controller.mu.Unlock()
+
+	if target != 0 {
+		t.Fatalf("expected suppression to force target to zero, got %.2f", target)
+	}
+
+	if shaper.Target() != 0 {
+		t.Fatalf(
+			"expected shaper to receive zero target while suppressed, got %.2f",
+			shaper.Target(),
+		)
+	}
+}
