@@ -101,6 +101,9 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   boundaries and responsibilities, and linked `docs/AGENTS.md` plus
   `cmd/shaper/AGENTS.md` back to the architecture section so wiring guidance
   stays current (§§3, 8, 12).
+- Hard-coded `pkg/oci.Client.QueryP95CPU` to the trailing seven-day window and
+  updated the instance-principal adapters, CLI tool, and docs to rely on that
+  fixed scope so Monitoring queries stay aligned with the reclaim period (§5.2).
 - Introduced `pkg/oci/metricsclient` for metrics builders/context helpers and shifted the
   CLI defaults to consume it, keeping metrics wiring thin while preserving the e2e
   override path. Updated §3.1 package touchpoints to note the new module (§§3.1, 5, 12).

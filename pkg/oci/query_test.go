@@ -58,7 +58,7 @@ func TestQueryP95CPUFetchesLatestDatapoint(t *testing.T) {
 	client, err := newTestClient(verifying, compartmentID, func() time.Time { return now })
 	requireNoError(t, err, "create client")
 
-	value, err := client.QueryP95CPU(context.Background(), instanceID, true)
+	value, err := client.QueryP95CPU(context.Background(), instanceID)
 	requireNoError(t, err, "QueryP95CPU")
 
 	requireEqual(t, value, float32(18.75), "unexpected value")
@@ -96,7 +96,7 @@ func TestQueryP95CPUHandlesMissingData(t *testing.T) {
 	)
 	requireNoError(t, err, "create client")
 
-	_, err = client.QueryP95CPU(context.Background(), "ocid1.instance.oc1.phx.empty", false)
+	_, err = client.QueryP95CPU(context.Background(), "ocid1.instance.oc1.phx.empty")
 	if !errors.Is(err, ErrNoMetricsData) {
 		t.Fatalf("expected ErrNoMetricsData, got %v", err)
 	}
@@ -114,40 +114,23 @@ func TestQueryP95CPUPropagatesErrors(t *testing.T) {
 	client, err := newTestClient(verifying, "ocid1.compartment.oc1..exampleuniqueID", time.Now)
 	requireNoError(t, err, "create client")
 
-	_, err = client.QueryP95CPU(context.Background(), "ocid1.instance.oc1.phx.failure", false)
+	_, err = client.QueryP95CPU(context.Background(), "ocid1.instance.oc1.phx.failure")
 	if err == nil || !strings.Contains(err.Error(), "summarize metrics") {
 		t.Fatalf("expected wrapped error, got %v", err)
 	}
 }
 
-func TestComputeWindowRespectsLookbackLimits(t *testing.T) {
+func TestComputeWindowRespectsSevenDayLimit(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2024, time.July, 1, 15, 30, 45, 123456789, time.UTC)
 
-	t.Run("24h-window", func(t *testing.T) {
-		t.Parallel()
+	start, end := computeWindow(now)
 
-		t.Helper()
+	expectedWindow := time.Duration(maxOneMinuteWindowHours) * time.Hour
 
-		start, end := computeWindow(now, false)
-
-		requireEqual(t, end, now.Truncate(time.Second), "end timestamp truncated")
-		requireEqual(t, start, end.Add(-24*time.Hour), "24h lookback")
-	})
-
-	t.Run("7d-window-truncated", func(t *testing.T) {
-		t.Parallel()
-
-		t.Helper()
-
-		start, end := computeWindow(now, true)
-
-		expectedWindow := time.Duration(maxOneMinuteWindowHours) * time.Hour
-
-		requireEqual(t, end, now.Truncate(time.Second), "end timestamp truncated")
-		requireEqual(t, start, end.Add(-expectedWindow), "seven day lookback")
-	})
+	requireEqual(t, end, now.Truncate(time.Second), "end timestamp truncated")
+	requireEqual(t, start, end.Add(-expectedWindow), "seven day lookback")
 }
 
 func TestBuildSummarizeRequestEscapesInstanceOCID(t *testing.T) {
