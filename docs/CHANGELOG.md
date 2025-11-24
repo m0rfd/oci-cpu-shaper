@@ -101,6 +101,9 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   boundaries and responsibilities, and linked `docs/AGENTS.md` plus
   `cmd/shaper/AGENTS.md` back to the architecture section so wiring guidance
   stays current (§§3, 8, 12).
+- Hard-coded `pkg/oci.Client.QueryP95CPU` to the trailing seven-day window and
+  updated the instance-principal adapters, CLI tool, and docs to rely on that
+  fixed scope so Monitoring queries stay aligned with the reclaim period (§5.2).
 - CLI `--mode` now defaults to enforcing/normal operation instead of `dry-run`,
   updating the help text and docs so operators start with the adaptive
   controller active unless explicitly opting into monitor-only mode (§§5, 9).
@@ -114,6 +117,9 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
 - Tightened the estimator default interval to 1 second (from 2 seconds) while
   keeping `SHAPER_FAST_INTERVAL` overrides intact across the YAML/env/CLI
   layers. Updated samples and docs to reflect the faster cadence (§§5.2, 9, 12).
+- CLI `--mode` now defaults to `enforce` to match the documented production posture; startup logs,
+  `/metrics`/`/healthz` exports, and the Quick Start/CLI docs note the default along with the
+  `dry-run`/`noop` opt-ins (§§5, 9, 10, 11).
 - Raised the Go toolchain to 1.25.4 in `go.mod`, `.tool-versions`, and the container build ARG so CI, local builds, and release
   images track the latest stable release, and refreshed badges/docs to match (§§8, 12, 14).
 - CLI documentation (§9), `runtimeconfig.Default()`, and `adapt.DefaultConfig()` now

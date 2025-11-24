@@ -141,7 +141,7 @@ func TestRunReturnsRuntimeErrorWhenMetadataResolutionFails(t *testing.T) {
 	}
 }
 
-//nolint:funlen // integration-style test exercises metrics wiring end to end.
+//nolint:funlen,cyclop // integration-style test exercises metrics wiring end to end.
 func TestRunExposesMetricsOffline(t *testing.T) {
 	t.Parallel()
 
@@ -154,7 +154,7 @@ func TestRunExposesMetricsOffline(t *testing.T) {
 	exitCh := make(chan int, 1)
 
 	go func() {
-		exitCh <- run(ctx, []string{"--mode", "dry-run"}, deps, io.Discard)
+		exitCh <- run(ctx, nil, deps, io.Discard)
 	}()
 
 	var server *httptest.Server
@@ -188,8 +188,8 @@ func TestRunExposesMetricsOffline(t *testing.T) {
 		t,
 		output,
 		[]string{
-			"shaper_mode{mode=\"dry-run\"} 1",
-			"shaper_enforcing 0",
+			"shaper_mode{mode=\"enforce\"} 1",
+			"shaper_enforcing 1",
 			"shaper_state{state=\"normal\"} 1",
 			"shaper_target_ratio 0.330000",
 			"worker_count 4",
@@ -201,6 +201,10 @@ func TestRunExposesMetricsOffline(t *testing.T) {
 	)
 
 	snapshot := fetchHealthSnapshot(ctx, t, server.Client(), server.URL)
+
+	if snapshot.Mode != modeEnforce {
+		t.Fatalf("expected health mode %q, got %q", modeEnforce, snapshot.Mode)
+	}
 
 	if snapshot.State != adapt.StateNormal.String() {
 		t.Fatalf("expected health state %q, got %q", adapt.StateNormal.String(), snapshot.State)

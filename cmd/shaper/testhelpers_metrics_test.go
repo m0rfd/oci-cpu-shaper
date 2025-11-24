@@ -40,6 +40,7 @@ func expectMetricsSnippets(t *testing.T, output string, snippets []string) {
 
 type healthSnapshot struct {
 	State          string `json:"state"`
+	Mode           string `json:"mode"`
 	LastOCIError   string `json:"ociError"`
 	EstimatorError string `json:"estimatorError"`
 }
