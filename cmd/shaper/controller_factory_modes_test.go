@@ -70,7 +70,7 @@ func TestDefaultControllerFactoryTrimsModeToEnforce(t *testing.T) {
 	}
 
 	if controller.Mode() != modeEnforce {
-		t.Fatalf("expected modeEnforce, got %q", controller.Mode())
+		t.Fatalf("expected default enforce mode, got %q", controller.Mode())
 	}
 }
 
