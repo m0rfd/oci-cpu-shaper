@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -60,6 +61,83 @@ func TestParseOptionsOrPrintVersionHandlesErrors(t *testing.T) {
 			t.Fatalf("unexpected version output: %q", output.String())
 		}
 	})
+}
+
+//nolint:paralleltest // captures os.Stdout; running in parallel would affect other tests.
+func TestParseOptionsOrPrintVersionUsesStdoutWhenVersionWriterUnset(t *testing.T) {
+	var (
+		opts     options
+		exitCode int
+		proceed  bool
+	)
+
+	output := captureStdout(t, func() {
+		deps := defaultRunDeps()
+		deps.versionWriter = nil
+		deps.currentBuildInfo = func() buildinfo.Info {
+			return buildinfo.Info{Version: "vTest", GitCommit: "deadbeef", BuildDate: "today"}
+		}
+
+		opts, exitCode, proceed = parseOptionsOrPrintVersion(
+			deps,
+			[]string{"--version"},
+			io.Discard,
+		)
+	})
+
+	if proceed {
+		t.Fatalf("expected parseOptionsOrPrintVersion to halt when printing version: %#v", opts)
+	}
+
+	if exitCode != exitCodeSuccess {
+		t.Fatalf("expected success exit code, got %d", exitCode)
+	}
+
+	if !strings.Contains(output, "Version:vTest") ||
+		!strings.Contains(output, "GitCommit:deadbeef") {
+		t.Fatalf("unexpected version output to stdout: %q", output)
+	}
+}
+
+func captureStdout(t *testing.T, captureFn func()) string {
+	t.Helper()
+
+	originalStdout := os.Stdout
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create stdout pipe: %v", err)
+	}
+
+	t.Cleanup(func() {
+		os.Stdout = originalStdout
+	})
+
+	t.Cleanup(func() {
+		_ = reader.Close()
+	})
+
+	t.Cleanup(func() {
+		_ = writer.Close()
+	})
+
+	os.Stdout = writer
+
+	captureFn()
+
+	writerCloseErr := writer.Close()
+	if writerCloseErr != nil {
+		t.Fatalf("failed to close stdout writer: %v", writerCloseErr)
+	}
+
+	var output bytes.Buffer
+
+	_, copyErr := io.Copy(&output, reader)
+	if copyErr != nil {
+		t.Fatalf("failed to capture stdout output: %v", copyErr)
+	}
+
+	return output.String()
 }
 
 func TestParseOptionsOrPrintVersionReturnsOptions(t *testing.T) {
