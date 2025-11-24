@@ -113,14 +113,20 @@ We support two documented modes. Rootless is first-class but not exclusive.
 
 ### 5.2 Config (env or flags). Defaults chosen to avoid manual tuning
 
-* `SHAPER_TARGET_START=0.25`
-* `SHAPER_TARGET_MIN=0.22`
-* `SHAPER_TARGET_MAX=0.40`
-* `SHAPER_STEP_UP=0.02`
-* `SHAPER_STEP_DOWN=0.01`
+Defaults now track the live controller values in `pkg/adapt/config_defaults.go`, leaning on a slightly more aggressive-but-safe
+band that stays above the OCI reclaim floor while closing faster when idle:
+
+* `SHAPER_TARGET_START=0.22`
+* `SHAPER_TARGET_MIN=0.20`
+* `SHAPER_TARGET_MAX=0.32`
+* `SHAPER_STEP_UP=0.01`
+* `SHAPER_STEP_DOWN=0.005`
 * `SHAPER_FAST_INTERVAL=1s`
 * `SHAPER_SLOW_INTERVAL=1h`
-* `SHAPER_SLOW_INTERVAL_RELAXED=6h`
+* `SHAPER_SLOW_INTERVAL_RELAXED=4h`
+* `SHAPER_SUPPRESS_THRESHOLD=0.80`
+* `SHAPER_SUPPRESS_RESUME=0.68`
+* `SHAPER_FALLBACK_TARGET=0.22`
 * `HTTP_ADDR=:9108`
 * No region/OCID input needed; IMDSv2 supplies them.
 
@@ -142,7 +148,7 @@ services:
     # cpus: "0.30"
     network_mode: "host"
     environment:
-      - SHAPER_TARGET_START=0.25
+      - SHAPER_TARGET_START=0.22 # aligns with pkg/adapt/config_defaults.go
     restart: unless-stopped
 ```
 
