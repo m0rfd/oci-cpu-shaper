@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"time"
 
 	"go.uber.org/zap"
 	"oci-cpu-shaper/pkg/adapt"
@@ -9,6 +10,13 @@ import (
 	metricshttp "oci-cpu-shaper/pkg/http/metrics"
 	statushttp "oci-cpu-shaper/pkg/http/status"
 )
+
+type metricsExporter interface {
+	http.Handler
+
+	SetWorkerCount(count int)
+	SetDutyCycle(duration time.Duration)
+}
 
 func buildMetricsExporter(deps runDeps) *metricshttp.Exporter {
 	if deps.newMetricsExporter != nil {
@@ -23,7 +31,7 @@ func buildMetricsExporter(deps runDeps) *metricshttp.Exporter {
 
 func configureMetrics(
 	logger *zap.Logger,
-	exporter *metricshttp.Exporter,
+	exporter metricsExporter,
 	pool poolStarter,
 	controller adapt.Controller,
 	cpuInfo *cgroup.CPU,
