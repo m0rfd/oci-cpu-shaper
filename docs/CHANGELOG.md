@@ -101,6 +101,9 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   boundaries and responsibilities, and linked `docs/AGENTS.md` plus
   `cmd/shaper/AGENTS.md` back to the architecture section so wiring guidance
   stays current (§§3, 8, 12).
+- CLI `--mode` now defaults to enforcing/normal operation instead of `dry-run`,
+  updating the help text and docs so operators start with the adaptive
+  controller active unless explicitly opting into monitor-only mode (§§5, 9).
 - Introduced `pkg/oci/metricsclient` for metrics builders/context helpers and shifted the
   CLI defaults to consume it, keeping metrics wiring thin while preserving the e2e
   override path. Updated §3.1 package touchpoints to note the new module (§§3.1, 5, 12).
