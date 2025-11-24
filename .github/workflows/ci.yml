@@ -244,6 +244,8 @@ jobs:
 
   coverage:
     name: go test & coverage
+    # Coverage suite normally completes in ~10-15m; cap at 25m to catch hangs.
+    timeout-minutes: 25
     needs:
       - unit-test
       - lint
@@ -318,6 +320,8 @@ jobs:
 
   benchmarks:
     name: duty-cycle benchmarks
+    # Benchmarks finish in under 15m in recent runs; allow 30m for headroom.
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
@@ -357,6 +361,8 @@ jobs:
 
   container-smoke:
     name: container smoke
+    # Container build/scan flow wraps in ~20m; limit to 30m to prevent runaway builds.
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -445,6 +451,8 @@ jobs:
 
   integration:
     name: integration tests (cgroup v2)
+    # Integration suite usually finishes within ~20-25m; cap at 35m for retries.
+    timeout-minutes: 35
     runs-on: ubuntu-latest
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
