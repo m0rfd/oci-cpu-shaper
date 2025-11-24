@@ -23,4 +23,10 @@ services:
       - no-new-privileges:true
     cpu_shares: ${SHAPER_CPU_SHARES:-128}
     # cpus: ${SHAPER_CPUS:-0.30}
+    healthcheck:
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+      test: ["/usr/local/bin/oci-cpu-shaper-healthcheck"]
     restart: "unless-stopped"

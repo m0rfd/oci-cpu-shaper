@@ -22,4 +22,10 @@ services:
     cpu_shares: ${SHAPER_CPU_SHARES:-128}
     # cpus: ${SHAPER_CPUS:-0.30}
     network_mode: "${SHAPER_NETWORK_MODE:-host}"
+    healthcheck:
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+      test: ["/usr/local/bin/oci-cpu-shaper-healthcheck"]
     restart: "${SHAPER_RESTART_POLICY:-unless-stopped}"
