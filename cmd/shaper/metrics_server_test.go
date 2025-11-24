@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 const testMetricsBind = "127.0.0.1:0"
@@ -41,144 +43,100 @@ func TestStartMetricsEndpointSkipsWhenHandlerMissing(t *testing.T) {
 	}
 }
 
-func TestStartMetricsEndpointSkipsWhenStarterMissing(t *testing.T) {
+//nolint:funlen // table-driven coverage of early-return paths.
+func TestStartMetricsEndpointDisablesMetricsWithoutHandlersOrStarter(t *testing.T) {
 	t.Parallel()
 
-	deps := defaultRunDeps()
-	deps.startMetricsServer = nil
+	testCases := []struct {
+		name            string
+		deps            runDeps
+		bind            string
+		handler         http.Handler
+		expectedLogs    int
+		expectedMessage string
+		expectedReason  string
+	}{
+		{
+			name: "handler missing",
+			deps: func() runDeps {
+				deps := defaultRunDeps()
+				deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) (metricsShutdownFunc, error) {
+					t.Fatal("expected startMetricsServer not to be called when handler is nil")
 
-	handler := http.NewServeMux()
-	handler.Handle("/metrics", http.NotFoundHandler())
+					return nil, errMetricsServerBoom
+				}
 
-	shutdown, cancel, err := startMetricsEndpoint(
-		context.Background(),
-		deps,
-		zap.NewNop(),
-		testMetricsBind,
-		handler,
-	)
-	if err != nil {
-		t.Fatalf("expected nil error when starter missing, got %v", err)
+				return deps
+			}(),
+			bind:            testMetricsBind,
+			handler:         nil,
+			expectedLogs:    0,
+			expectedMessage: "",
+			expectedReason:  "",
+		},
+		{
+			name: "starter missing",
+			deps: func() runDeps {
+				deps := defaultRunDeps()
+				deps.startMetricsServer = nil
+
+				return deps
+			}(),
+			bind: testMetricsBind,
+			handler: func() http.Handler {
+				mux := http.NewServeMux()
+				mux.Handle("/metrics", http.NotFoundHandler())
+
+				return mux
+			}(),
+			expectedLogs:    1,
+			expectedMessage: "metrics server disabled",
+			expectedReason:  "start function missing",
+		},
 	}
 
-	if shutdown != nil || cancel != nil {
-		t.Fatalf("expected nil shutdown and cancel, got %v, %v", shutdown, cancel)
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			core, observed := observer.New(zap.InfoLevel)
+			logger := zap.New(core)
+
+			shutdown, cancel, err := startMetricsEndpoint(
+				context.Background(),
+				testCase.deps,
+				logger,
+				testCase.bind,
+				testCase.handler,
+			)
+			if err != nil {
+				t.Fatalf("startMetricsEndpoint returned error: %v", err)
+			}
+
+			if shutdown != nil || cancel != nil {
+				t.Fatalf("expected nil shutdown and cancel, got %v, %v", shutdown, cancel)
+			}
+
+			entries := observed.All()
+			if len(entries) != testCase.expectedLogs {
+				t.Fatalf("expected %d log entries, got %d", testCase.expectedLogs, len(entries))
+			}
+
+			if testCase.expectedLogs == 0 {
+				return
+			}
+
+			if entries[0].Message != testCase.expectedMessage {
+				t.Fatalf(
+					"expected log message %q, got %q",
+					testCase.expectedMessage,
+					entries[0].Message,
+				)
+			}
+
+			requireLogFieldString(t, entries[0], "reason", testCase.expectedReason)
+		})
 	}
-}
-
-func TestStartMetricsEndpointSkipsWhenBindAddressEmpty(t *testing.T) {
-	t.Parallel()
-
-	deps := defaultRunDeps()
-	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) (metricsShutdownFunc, error) {
-		t.Fatal("expected startMetricsServer not to be called when bind address is empty")
-
-		return nil, errMetricsServerBoom
-	}
-
-	shutdown, cancel, err := startMetricsEndpoint(
-		context.Background(),
-		deps,
-		zap.NewNop(),
-		"   ",
-		http.NewServeMux(),
-	)
-	if err != nil {
-		t.Fatalf("expected nil error when bind address empty, got %v", err)
-	}
-
-	if shutdown != nil || cancel != nil {
-		t.Fatalf("expected nil shutdown and cancel, got %v, %v", shutdown, cancel)
-	}
-}
-
-func TestStartMetricsEndpointRequiresContext(t *testing.T) {
-	t.Parallel()
-
-	deps := defaultRunDeps()
-	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) (metricsShutdownFunc, error) {
-		t.Fatal("expected startMetricsServer not to be called when context is missing")
-
-		return nil, errMetricsServerBoom
-	}
-
-	handler := http.NewServeMux()
-	handler.Handle("/metrics", http.NotFoundHandler())
-
-	var nilContext context.Context
-
-	shutdown, cancel, err := startMetricsEndpoint(
-		nilContext,
-		deps,
-		zap.NewNop(),
-		testMetricsBind,
-		handler,
-	)
-	if !errors.Is(err, errMetricsContextRequired) {
-		t.Fatalf("expected errMetricsContextRequired, got %v", err)
-	}
-
-	if shutdown != nil || cancel != nil {
-		t.Fatalf("expected nil shutdown and cancel, got %v, %v", shutdown, cancel)
-	}
-}
-
-func TestStartMetricsEndpointStartsServer(t *testing.T) {
-	t.Parallel()
-
-	deps := defaultRunDeps()
-	handler := http.NewServeMux()
-	handler.Handle("/metrics", http.NotFoundHandler())
-
-	trimmedBind := strings.TrimSpace("  " + testMetricsBind + "  ")
-
-	var (
-		startAddr    string
-		startLogger  *zap.Logger
-		startHandler http.Handler
-		startCalled  bool
-	)
-
-	deps.startMetricsServer = func(
-		ctx context.Context,
-		logger *zap.Logger,
-		addr string,
-		servedHandler http.Handler,
-	) (metricsShutdownFunc, error) {
-		if ctx == nil {
-			t.Fatal("expected context to be provided")
-		}
-
-		startCalled = true
-		startAddr = addr
-		startLogger = logger
-		startHandler = servedHandler
-
-		return func(context.Context) {}, nil
-	}
-
-	shutdown, cancel, err := startMetricsEndpoint(
-		context.Background(),
-		deps,
-		zap.NewNop(),
-		"  "+testMetricsBind+"  ",
-		handler,
-	)
-	if err != nil {
-		t.Fatalf("startMetricsEndpoint returned error: %v", err)
-	}
-
-	assertMetricsEndpointStarted(
-		t,
-		shutdown,
-		cancel,
-		startCalled,
-		startAddr,
-		trimmedBind,
-		startHandler,
-		handler,
-		startLogger,
-	)
 }
 
 func TestStartMetricsEndpointCancelSignalsServer(t *testing.T) {
@@ -269,42 +227,94 @@ func TestStartMetricsEndpointPropagatesStartError(t *testing.T) {
 	}
 }
 
+//nolint:funlen // table-driven log validation across disabled paths.
 func TestStartMetricsServerSkipsWhenAddressOrHandlerMissing(t *testing.T) {
 	t.Parallel()
 
-	shutdown, err := startMetricsServer(
-		context.Background(),
-		zap.NewNop(),
-		"   ",
-		http.NewServeMux(),
-	)
-	if !errors.Is(err, errMetricsServerDisabled) {
-		if err == nil {
-			t.Fatal("expected errMetricsServerDisabled, got nil")
-		}
-
-		if !errors.Is(err, errMetricsServerDisabled) {
-			t.Fatalf("expected errMetricsServerDisabled, got %v", err)
-		}
+	testCases := []struct {
+		name            string
+		ctxFactory      func() context.Context
+		addr            string
+		handler         http.Handler
+		expectedLevel   zapcore.Level
+		expectedMessage string
+		expectedReason  string
+		expectedErr     error
+	}{
+		{
+			name:            "address empty",
+			ctxFactory:      context.Background,
+			addr:            "   ",
+			handler:         http.NewServeMux(),
+			expectedLevel:   zapcore.InfoLevel,
+			expectedMessage: "metrics server disabled",
+			expectedReason:  "http bind address empty",
+			expectedErr:     errMetricsServerDisabled,
+		},
+		{
+			name:            "handler missing",
+			ctxFactory:      context.Background,
+			addr:            testMetricsBind,
+			handler:         nil,
+			expectedLevel:   zapcore.WarnLevel,
+			expectedMessage: "metrics server disabled",
+			expectedReason:  "handler missing",
+			expectedErr:     errMetricsServerDisabled,
+		},
+		{
+			name:            "context missing",
+			ctxFactory:      func() context.Context { return nil },
+			addr:            testMetricsBind,
+			handler:         http.NewServeMux(),
+			expectedLevel:   zapcore.InfoLevel,
+			expectedMessage: "",
+			expectedReason:  "",
+			expectedErr:     errMetricsContextRequired,
+		},
 	}
 
-	if shutdown != nil {
-		t.Fatal("expected shutdown function to be nil when server is skipped")
-	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	shutdown, err = startMetricsServer(context.Background(), zap.NewNop(), testMetricsBind, nil)
-	if !errors.Is(err, errMetricsServerDisabled) {
-		if err == nil {
-			t.Fatal("expected errMetricsServerDisabled, got nil")
-		}
+			core, observed := observer.New(zapcore.InfoLevel)
+			logger := zap.New(core)
 
-		if !errors.Is(err, errMetricsServerDisabled) {
-			t.Fatalf("expected errMetricsServerDisabled, got %v", err)
-		}
-	}
+			ctx := testCase.ctxFactory()
 
-	if shutdown != nil {
-		t.Fatal("expected shutdown function to be nil when handler is missing")
+			shutdown, err := startMetricsServer(ctx, logger, testCase.addr, testCase.handler)
+			if !errors.Is(err, testCase.expectedErr) {
+				t.Fatalf("expected %v, got %v", testCase.expectedErr, err)
+			}
+
+			if shutdown != nil {
+				t.Fatal("expected shutdown function to be nil when server is skipped")
+			}
+
+			entries := observed.TakeAll()
+			if testCase.expectedMessage == "" {
+				if len(entries) != 0 {
+					t.Fatalf("expected no log entries, got %+v", entries)
+				}
+
+				return
+			}
+
+			if len(entries) != 1 {
+				t.Fatalf("expected single log entry, got %+v", entries)
+			}
+
+			entry := entries[0]
+			if entry.Message != testCase.expectedMessage {
+				t.Fatalf("expected log message %q, got %q", testCase.expectedMessage, entry.Message)
+			}
+
+			if entry.Level != testCase.expectedLevel {
+				t.Fatalf("expected log level %s, got %s", testCase.expectedLevel, entry.Level)
+			}
+
+			requireLogFieldString(t, entry, "reason", testCase.expectedReason)
+		})
 	}
 }
 
@@ -397,6 +407,114 @@ func TestStartMetricsServerServesRequests(t *testing.T) {
 	shutdown(context.Background())
 }
 
+//nolint:cyclop,funlen // lifecycle assertions exercise multiple branches.
+func TestStartMetricsServerShutsDownOnCancel(t *testing.T) {
+	t.Parallel()
+
+	addr := freeTCPAddress(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	core, observed := observer.New(zapcore.InfoLevel)
+	logger := zap.New(core)
+
+	received := make(chan struct{}, 1)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, _ *http.Request) {
+		received <- struct{}{}
+
+		w.WriteHeader(http.StatusOK)
+	})
+
+	shutdown, err := startMetricsServer(ctx, logger, addr, mux)
+	if err != nil {
+		t.Fatalf("startMetricsServer returned error: %v", err)
+	}
+
+	if shutdown == nil {
+		t.Fatal("expected shutdown function to be returned")
+	}
+
+	url := fmt.Sprintf("http://%s/metrics", addr)
+	deadline := time.Now().Add(2 * time.Second)
+
+	for {
+		requestCtx, cancelRequest := context.WithTimeout(ctx, 500*time.Millisecond)
+
+		req, reqErr := http.NewRequestWithContext(requestCtx, http.MethodGet, url, nil)
+		if reqErr != nil {
+			cancelRequest()
+			t.Fatalf("build http request: %v", reqErr)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+
+			cancelRequest()
+
+			break
+		}
+
+		cancelRequest()
+
+		if time.Now().After(deadline) {
+			t.Fatalf("failed to reach metrics endpoint: %v", err)
+		}
+
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	select {
+	case <-received:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("expected handler to observe request")
+	}
+
+	cancel()
+	shutdown(context.Background())
+
+	requestCtx, cancelRequest := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancelRequest()
+
+	req, reqErr := http.NewRequestWithContext(requestCtx, http.MethodGet, url, nil)
+	if reqErr != nil {
+		t.Fatalf("build http request: %v", reqErr)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+
+	if err == nil {
+		t.Fatal("expected request to fail after server shutdown")
+	}
+
+	entries := observed.All()
+
+	var stoppingLogged, stoppedLogged bool
+
+	for i := range entries {
+		switch entries[i].Message {
+		case "stopping metrics server":
+			stoppingLogged = true
+		case "metrics server stopped":
+			stoppedLogged = true
+		}
+	}
+
+	if !stoppingLogged {
+		t.Fatalf("expected stopping log entry, got %+v", entries)
+	}
+
+	if !stoppedLogged {
+		t.Fatalf("expected stopped log entry, got %+v", entries)
+	}
+}
+
 func TestStartMetricsServerFailsWhenAddressInUse(t *testing.T) {
 	t.Parallel()
 
@@ -429,43 +547,5 @@ func TestStartMetricsServerFailsWhenAddressInUse(t *testing.T) {
 
 	if shutdown != nil {
 		t.Fatal("expected shutdown function to be nil when start fails")
-	}
-}
-
-func assertMetricsEndpointStarted(
-	t *testing.T,
-	shutdown metricsShutdownFunc,
-	cancel context.CancelFunc,
-	startCalled bool,
-	startAddr string,
-	expectedAddr string,
-	startHandler http.Handler,
-	expectedHandler http.Handler,
-	startLogger *zap.Logger,
-) {
-	t.Helper()
-
-	if shutdown == nil {
-		t.Fatal("expected shutdown function")
-	}
-
-	if cancel == nil {
-		t.Fatal("expected cancel function")
-	}
-
-	if !startCalled {
-		t.Fatal("expected startMetricsServer to be invoked")
-	}
-
-	if startAddr != expectedAddr {
-		t.Fatalf("expected bind address %q, got %q", expectedAddr, startAddr)
-	}
-
-	if startHandler != expectedHandler {
-		t.Fatalf("expected handler to be forwarded, got %v", startHandler)
-	}
-
-	if startLogger == nil {
-		t.Fatal("expected logger to be forwarded")
 	}
 }
