@@ -18,9 +18,9 @@ import (
 var errTestBoom = errors.New("test: boom")
 
 type fakeSource struct {
-	snapshots []Snapshot
-	err       error
-	index     int
+	snapshots     []Snapshot
+	err           error
+	snapshotIndex int
 }
 
 func (f *fakeSource) Snapshot(_ context.Context) (Snapshot, error) {
@@ -28,7 +28,7 @@ func (f *fakeSource) Snapshot(_ context.Context) (Snapshot, error) {
 		return Snapshot{}, f.err
 	}
 
-	if f.index >= len(f.snapshots) {
+	if f.snapshotIndex >= len(f.snapshots) {
 		if len(f.snapshots) == 0 {
 			return Snapshot{Idle: 0, Total: 0}, nil
 		}
@@ -36,8 +36,8 @@ func (f *fakeSource) Snapshot(_ context.Context) (Snapshot, error) {
 		return f.snapshots[len(f.snapshots)-1], nil
 	}
 
-	snap := f.snapshots[f.index]
-	f.index++
+	snap := f.snapshots[f.snapshotIndex]
+	f.snapshotIndex++
 
 	return snap, nil
 }
@@ -58,7 +58,7 @@ func TestSamplerEmitsObservations(t *testing.T) {
 		{Idle: 10, Total: 20},
 		{Idle: 12, Total: 30},
 		{Idle: 13, Total: 40},
-	}, err: nil, index: 0}
+	}, err: nil, snapshotIndex: 0}
 
 	sampler := NewSampler(source, time.Millisecond)
 	sampler.now = func() time.Time { return time.Unix(0, 0) }
@@ -298,10 +298,13 @@ func TestFileSourceSnapshotReadsProvidedPath(t *testing.T) {
 func TestSamplerRunInitialSnapshotError(t *testing.T) {
 	t.Parallel()
 
-	sampler := NewSampler(&fakeSource{snapshots: nil, err: errTestBoom, index: 0}, time.Millisecond)
+	sampler := NewSampler(
+		&fakeSource{snapshots: nil, err: errTestBoom, snapshotIndex: 0},
+		time.Millisecond,
+	)
 	sampler.now = func() time.Time { return time.Unix(123, 0) }
 
-	ctx := t.Context()
+	ctx := context.Background()
 
 	observations := sampler.Run(ctx)
 
@@ -327,7 +330,7 @@ func TestSamplerRunRejectsDoubleStart(t *testing.T) {
 	t.Parallel()
 
 	sampler := NewSampler(
-		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, index: 0},
+		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, snapshotIndex: 0},
 		time.Hour,
 	)
 	sampler.now = func() time.Time { return time.Unix(0, 0) }
@@ -377,7 +380,7 @@ func TestSamplerEmitsErrorObservationWhenLoopFails(t *testing.T) {
 	sampler := NewSampler(source, time.Millisecond)
 	sampler.now = func() time.Time { return time.Unix(42, 0) }
 
-	ctx := t.Context()
+	ctx := context.Background()
 
 	observations := sampler.Run(ctx)
 
@@ -509,7 +512,7 @@ func TestNewSamplerDefaultsInterval(t *testing.T) {
 	t.Parallel()
 
 	sampler := NewSampler(
-		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, index: 0},
+		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, snapshotIndex: 0},
 		0,
 	)
 	if sampler.interval != DefaultInterval {
@@ -517,7 +520,7 @@ func TestNewSamplerDefaultsInterval(t *testing.T) {
 	}
 
 	negative := NewSampler(
-		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, index: 0},
+		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, snapshotIndex: 0},
 		-time.Second,
 	)
 	if negative.interval != DefaultInterval {
@@ -565,7 +568,7 @@ func TestSampleLoopStopsOnContextCancel(t *testing.T) {
 	cancel()
 
 	sampler := NewSampler(
-		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, index: 0},
+		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, snapshotIndex: 0},
 		time.Millisecond,
 	)
 	sampler.now = func() time.Time { return time.Unix(0, 0) }
