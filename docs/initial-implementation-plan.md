@@ -65,7 +65,7 @@ We support two documented modes. Rootless is first-class but not exclusive.
 
 * Minimal HTTP `/metrics` in Prometheus text format:
 
-  * `shaper_target_ratio`, `shaper_mode` (normal|fallback), `oci_p95`, `oci_last_success_epoch`, `duty_cycle_ms`, `worker_count`, `host_cpu_percent`.
+  * `shaper_target_ratio`, `shaper_mode` (normal|fallback), `shaper_enforcement_mode` (noop|dry-run|enforce), `oci_p95`, `oci_last_success_epoch`, `duty_cycle_ms`, `worker_count`, `host_cpu_percent`.
 * No push. No external dependencies.
 
 ### 3.3 Instance discovery

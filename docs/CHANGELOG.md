@@ -101,6 +101,11 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   boundaries and responsibilities, and linked `docs/AGENTS.md` plus
   `cmd/shaper/AGENTS.md` back to the architecture section so wiring guidance
   stays current (§§3, 8, 12).
+- Repurposed the `shaper_mode` metric to publish controller states and added a
+  labelled `shaper_enforcement_mode` series for CLI enforcement selections,
+  updating the exporter, Grafana dashboard, and monitoring docs/tests so
+  Prometheus queries continue to track state transitions accurately (§§3.2, 5,
+  7, 9, 11).
 - Introduced `pkg/oci/metricsclient` for metrics builders/context helpers and shifted the
   CLI defaults to consume it, keeping metrics wiring thin while preserving the e2e
   override path. Updated §3.1 package touchpoints to note the new module (§§3.1, 5, 12).

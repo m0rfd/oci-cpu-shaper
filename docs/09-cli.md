@@ -181,8 +181,8 @@ Binding failures still abort startup: when the requested `http.bind` address is 
 | Metric | Type | Description |
 | ------ | ---- | ----------- |
 | `shaper_target_ratio` | gauge | Current duty-cycle target assigned to the worker pool (0.0–1.0). |
-| `shaper_mode{mode="<name>"}` | gauge | Active controller mode (`noop`, `dry-run`, or `enforce`) reported as a labelled one-hot gauge. |
-| `shaper_state{state="<name>"}` | gauge | Controller state-machine output (`normal`, `fallback`, `suppressed`, or `unknown`). |
+| `shaper_mode{state="<name>"}` | gauge | Controller state-machine output (`normal`, `fallback`, `suppressed`, or `unknown`). |
+| `shaper_enforcement_mode{mode="<name>"}` | gauge | CLI enforcement selection (`noop`, `dry-run`, or `enforce`) reported as a labelled one-hot gauge. |
 | `oci_p95` | gauge | Latest OCI `CpuUtilization` P95 ratio used for adaptive decisions. |
 | `oci_last_success_epoch` | counter | Unix epoch seconds when `QueryP95CPU` last succeeded (`0` while offline). |
 | `duty_cycle_ms` | gauge | Worker quantum configured for each duty-cycle interval in milliseconds. |
@@ -195,12 +195,12 @@ Binding failures still abort startup: when the requested `http.bind` address is 
 # HELP shaper_target_ratio Target duty cycle ratio assigned to worker pool.
 # TYPE shaper_target_ratio gauge
 shaper_target_ratio 0.275000
-# HELP shaper_mode Controller operating mode (value set to 1 for the active mode).
+# HELP shaper_mode Controller operating state (value set to 1 for the active state).
 # TYPE shaper_mode gauge
-shaper_mode{mode="dry-run"} 1
-# HELP shaper_state Controller state machine output (value set to 1 for the active state).
-# TYPE shaper_state gauge
-shaper_state{state="fallback"} 1
+shaper_mode{state="fallback"} 1
+# HELP shaper_enforcement_mode CLI enforcement mode (value set to 1 for the active mode).
+# TYPE shaper_enforcement_mode gauge
+shaper_enforcement_mode{mode="dry-run"} 1
 # HELP oci_p95 Last observed OCI CPU P95 ratio.
 # TYPE oci_p95 gauge
 oci_p95 0.180000

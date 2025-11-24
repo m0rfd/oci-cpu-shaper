@@ -20,7 +20,8 @@ const (
 	millisecondsPerSecond    = 1000.0
 	hundredPercent           = 100.0
 	defaultErrorLabelNone    = "none"
-	defaultErrorLabelUnknown = "unknown"
+	defaultLabelUnknown      = "unknown"
+	defaultErrorLabelUnknown = defaultLabelUnknown
 )
 
 var (
@@ -38,9 +39,9 @@ type Exporter struct {
 	mu sync.RWMutex
 
 	shaperTarget    float64
-	shaperMode      string
+	enforcementMode string
 	shaperEnforcing float64
-	shaperState     string
+	controllerState string
 	ociP95          float64
 	ociLastSuccess  time.Time
 	dutyCycleMillis float64
@@ -66,11 +67,11 @@ func NewExporter() *Exporter {
 	return exporter
 }
 
-// SetMode records the controller mode label.
+// SetMode records the CLI enforcement mode label.
 func (e *Exporter) SetMode(mode string) {
 	trimmed := strings.TrimSpace(mode)
 	if trimmed == "" {
-		trimmed = "unknown"
+		trimmed = defaultLabelUnknown
 	}
 
 	enforcement := 0.0
@@ -79,7 +80,7 @@ func (e *Exporter) SetMode(mode string) {
 	}
 
 	e.mu.Lock()
-	e.shaperMode = trimmed
+	e.enforcementMode = trimmed
 	e.shaperEnforcing = enforcement
 	e.mu.Unlock()
 }
@@ -88,11 +89,11 @@ func (e *Exporter) SetMode(mode string) {
 func (e *Exporter) SetState(state string) {
 	trimmed := strings.TrimSpace(state)
 	if trimmed == "" {
-		trimmed = "unknown"
+		trimmed = defaultLabelUnknown
 	}
 
 	e.mu.Lock()
-	e.shaperState = trimmed
+	e.controllerState = trimmed
 	e.mu.Unlock()
 }
 
@@ -289,15 +290,15 @@ func (e *Exporter) WriteTo(dst io.Writer) (int64, error) {
 		"# HELP shaper_target_ratio Target duty cycle ratio assigned to worker pool.\n",
 		"# TYPE shaper_target_ratio gauge\n",
 		fmt.Sprintf("shaper_target_ratio %.6f\n", snapshot.shaperTarget),
-		"# HELP shaper_mode Controller operating mode (value set to 1 for the active mode).\n",
+		"# HELP shaper_mode Controller operating state (value set to 1 for the active state).\n",
 		"# TYPE shaper_mode gauge\n",
-		fmt.Sprintf("shaper_mode{mode=\"%s\"} 1\n", snapshot.shaperMode),
+		fmt.Sprintf("shaper_mode{state=\"%s\"} 1\n", snapshot.controllerState),
+		"# HELP shaper_enforcement_mode CLI enforcement mode (value set to 1 for the active mode).\n",
+		"# TYPE shaper_enforcement_mode gauge\n",
+		fmt.Sprintf("shaper_enforcement_mode{mode=\"%s\"} 1\n", snapshot.enforcementMode),
 		"# HELP shaper_enforcing Controller enforcement status (1 when worker targets are applied).\n",
 		"# TYPE shaper_enforcing gauge\n",
 		fmt.Sprintf("shaper_enforcing %.0f\n", snapshot.shaperEnforcing),
-		"# HELP shaper_state Controller state machine output (value set to 1 for the active state).\n",
-		"# TYPE shaper_state gauge\n",
-		fmt.Sprintf("shaper_state{state=\"%s\"} 1\n", snapshot.shaperState),
 		"# HELP controller_interval_seconds Duration until the next controller step (seconds).\n",
 		"# TYPE controller_interval_seconds gauge\n",
 		fmt.Sprintf("controller_interval_seconds %.6f\n", snapshot.intervalSeconds),
@@ -350,9 +351,9 @@ func (e *Exporter) WriteTo(dst io.Writer) (int64, error) {
 
 type exporterSnapshot struct {
 	shaperTarget        float64
-	shaperMode          string
+	enforcementMode     string
 	shaperEnforcing     float64
-	shaperState         string
+	controllerState     string
 	ociP95              float64
 	ociLastSuccessEpoch float64
 	dutyCycleMillis     float64
@@ -380,11 +381,21 @@ func (e *Exporter) snapshot() exporterSnapshot {
 		errorLabel = defaultErrorLabelNone
 	}
 
+	controllerState := strings.TrimSpace(e.controllerState)
+	if controllerState == "" {
+		controllerState = defaultLabelUnknown
+	}
+
+	enforcementMode := strings.TrimSpace(e.enforcementMode)
+	if enforcementMode == "" {
+		enforcementMode = defaultLabelUnknown
+	}
+
 	return exporterSnapshot{
 		shaperTarget:        e.shaperTarget,
-		shaperMode:          e.shaperMode,
+		enforcementMode:     enforcementMode,
 		shaperEnforcing:     e.shaperEnforcing,
-		shaperState:         e.shaperState,
+		controllerState:     controllerState,
 		ociP95:              e.ociP95,
 		ociLastSuccessEpoch: epoch,
 		dutyCycleMillis:     e.dutyCycleMillis,

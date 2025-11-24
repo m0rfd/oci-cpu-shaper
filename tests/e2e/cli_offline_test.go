@@ -240,7 +240,7 @@ func parseLogEntries(t *testing.T, data []byte) []logEntry {
 func assertMetricsState(t *testing.T, metrics []byte, expected string) {
 	t.Helper()
 
-	want := fmt.Sprintf(`shaper_state{state="%s"} 1`, expected)
+	want := fmt.Sprintf(`shaper_mode{state="%s"} 1`, expected)
 	if !bytes.Contains(metrics, []byte(want)) {
 		t.Fatalf("expected metrics to include %q\nmetrics:\n%s", want, metrics)
 	}

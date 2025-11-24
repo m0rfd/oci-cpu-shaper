@@ -306,7 +306,8 @@ func TestConfigureMetricsServesPrometheusText(t *testing.T) {
 	body := recorder.Body.String()
 	for _, snippet := range []string{
 		"# HELP shaper_target_ratio",
-		`shaper_mode{mode="enforce"} 1`,
+		`shaper_enforcement_mode{mode="enforce"} 1`,
+		`shaper_mode{state="normal"} 1`,
 		"shaper_enforcing 1",
 		"worker_count 3",
 		"duty_cycle_ms 2.000",

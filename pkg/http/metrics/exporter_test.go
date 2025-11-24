@@ -48,15 +48,15 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 		"# HELP shaper_target_ratio Target duty cycle ratio assigned to worker pool.",
 		"# TYPE shaper_target_ratio gauge",
 		"shaper_target_ratio 0.275000",
-		"# HELP shaper_mode Controller operating mode (value set to 1 for the active mode).",
+		"# HELP shaper_mode Controller operating state (value set to 1 for the active state).",
 		"# TYPE shaper_mode gauge",
-		"shaper_mode{mode=\"dry-run\"} 1",
+		"shaper_mode{state=\"fallback\"} 1",
+		"# HELP shaper_enforcement_mode CLI enforcement mode (value set to 1 for the active mode).",
+		"# TYPE shaper_enforcement_mode gauge",
+		"shaper_enforcement_mode{mode=\"dry-run\"} 1",
 		"# HELP shaper_enforcing Controller enforcement status (1 when worker targets are applied).",
 		"# TYPE shaper_enforcing gauge",
 		"shaper_enforcing 0",
-		"# HELP shaper_state Controller state machine output (value set to 1 for the active state).",
-		"# TYPE shaper_state gauge",
-		"shaper_state{state=\"fallback\"} 1",
 		"# HELP controller_interval_seconds Duration until the next controller step (seconds).",
 		"# TYPE controller_interval_seconds gauge",
 		"controller_interval_seconds 45.000000",
@@ -157,7 +157,7 @@ func TestExporterSetModeNoopDisablesEnforcement(t *testing.T) {
 	}
 
 	output := string(body)
-	if !strings.Contains(output, "shaper_mode{mode=\"NoOp\"} 1") {
+	if !strings.Contains(output, "shaper_enforcement_mode{mode=\"NoOp\"} 1") {
 		t.Fatalf("expected noop mode metric in %s", output)
 	}
 
@@ -258,11 +258,11 @@ func TestExporterGuardsAgainstInvalidInputs(t *testing.T) {
 	}
 
 	output := string(data)
-	if !strings.Contains(output, "shaper_mode{mode=\"unknown\"} 1") {
-		t.Fatalf("expected unknown mode, got %s", output)
+	if !strings.Contains(output, "shaper_enforcement_mode{mode=\"unknown\"} 1") {
+		t.Fatalf("expected unknown enforcement mode, got %s", output)
 	}
 
-	if !strings.Contains(output, "shaper_state{state=\"unknown\"} 1") {
+	if !strings.Contains(output, "shaper_mode{state=\"unknown\"} 1") {
 		t.Fatalf("expected unknown state, got %s", output)
 	}
 
