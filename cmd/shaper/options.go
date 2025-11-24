@@ -50,7 +50,7 @@ func parseArgs(args []string) (options, error) {
 	flagSet.StringVar(
 		&opts.mode,
 		"mode",
-		modeDryRun,
+		modeEnforce,
 		"Controller mode to use (dry-run, enforce, noop)",
 	)
 	flagSet.DurationVar(
@@ -90,7 +90,7 @@ func normalizeOptions(opts *options) error {
 
 	opts.mode = strings.ToLower(strings.TrimSpace(opts.mode))
 	if opts.mode == "" {
-		opts.mode = modeDryRun
+		opts.mode = modeEnforce
 	}
 
 	if !isValidMode(opts.mode) {

@@ -8,18 +8,21 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"oci-cpu-shaper/internal/buildinfo"
 	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
 var errStageConfigBoom = errors.New("boom")
 
+//nolint:cyclop,funlen // coverage-focused test exercises bootstrap flow
 func TestStageConfigReturnsConfigAndLogger(t *testing.T) {
 	t.Parallel()
 
 	deps := defaultRunDeps()
+	core, observed := observer.New(zap.InfoLevel)
 	deps.loadConfig = func(string) (runtimeconfig.Config, error) { return runtimeconfig.Default(), nil }
-	deps.newLogger = func(string) (*zap.Logger, error) { return zap.NewNop(), nil }
+	deps.newLogger = func(string) (*zap.Logger, error) { return zap.New(core), nil }
 	deps.currentBuildInfo = func() buildinfo.Info {
 		return buildinfo.Info{Version: "v1", GitCommit: "test", BuildDate: "now"}
 	}
@@ -27,7 +30,7 @@ func TestStageConfigReturnsConfigAndLogger(t *testing.T) {
 	opts := options{
 		configPath:    "/tmp/config.yaml",
 		logLevel:      "debug",
-		mode:          modeDryRun,
+		mode:          modeEnforce,
 		shutdownAfter: time.Second,
 		showVersion:   false,
 	}
@@ -64,6 +67,25 @@ func TestStageConfigReturnsConfigAndLogger(t *testing.T) {
 	if !errors.Is(ctx.Err(), context.Canceled) {
 		t.Fatalf("expected cancel to propagate, got %v", ctx.Err())
 	}
+
+	entries := observed.All()
+	if len(entries) == 0 {
+		t.Fatal("expected startup log entry to be recorded")
+	}
+
+	var startupMode string
+
+	for i := range entries {
+		if entries[i].Message != "starting oci-cpu-shaper" {
+			continue
+		}
+
+		startupMode = fieldString(entries[i].Context, "mode")
+	}
+
+	if startupMode != opts.mode {
+		t.Fatalf("expected startup log to record mode %q, got %q", opts.mode, startupMode)
+	}
 }
 
 func TestStageConfigHandlesConfigFailure(t *testing.T) {
@@ -83,7 +105,7 @@ func TestStageConfigHandlesConfigFailure(t *testing.T) {
 		options{
 			configPath:    "missing",
 			logLevel:      defaultLogLevel,
-			mode:          modeDryRun,
+			mode:          modeEnforce,
 			shutdownAfter: 0,
 			showVersion:   false,
 		},
@@ -114,7 +136,7 @@ func TestStageConfigHandlesLoggerFailure(t *testing.T) {
 		options{
 			configPath:    defaultConfigPath,
 			logLevel:      defaultLogLevel,
-			mode:          modeDryRun,
+			mode:          modeEnforce,
 			shutdownAfter: 0,
 			showVersion:   false,
 		},

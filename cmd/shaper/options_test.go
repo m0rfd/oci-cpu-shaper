@@ -25,7 +25,7 @@ func TestParseArgsDefaults(t *testing.T) {
 		t.Fatalf("expected default log level, got %q", opts.logLevel)
 	}
 
-	if opts.mode != modeDryRun {
+	if opts.mode != modeEnforce {
 		t.Fatalf("expected default mode, got %q", opts.mode)
 	}
 
@@ -247,7 +247,7 @@ func TestNormalizeOptionsAppliesDefaultMode(t *testing.T) {
 		t.Fatalf("normalizeOptions returned error: %v", err)
 	}
 
-	if opts.mode != modeDryRun {
-		t.Fatalf("expected default mode %q, got %q", modeDryRun, opts.mode)
+	if opts.mode != modeEnforce {
+		t.Fatalf("expected default mode %q, got %q", modeEnforce, opts.mode)
 	}
 }

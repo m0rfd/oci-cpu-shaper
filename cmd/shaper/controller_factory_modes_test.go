@@ -41,7 +41,7 @@ func TestDefaultControllerFactoryReturnsNoopForMode(t *testing.T) {
 	}
 }
 
-func TestDefaultControllerFactoryTrimsModeToDryRun(t *testing.T) {
+func TestDefaultControllerFactoryTrimsModeToDefault(t *testing.T) {
 	t.Parallel()
 
 	cfg := runtimeconfig.Default()
@@ -69,8 +69,8 @@ func TestDefaultControllerFactoryTrimsModeToDryRun(t *testing.T) {
 		t.Fatal("expected pool to be created for adaptive controller")
 	}
 
-	if controller.Mode() != modeDryRun {
-		t.Fatalf("expected modeDryRun, got %q", controller.Mode())
+	if controller.Mode() != modeEnforce {
+		t.Fatalf("expected default enforce mode, got %q", controller.Mode())
 	}
 }
 
