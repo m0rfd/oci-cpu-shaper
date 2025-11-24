@@ -16,8 +16,9 @@ import (
 const openMetricsContentType = "application/openmetrics-text; version=1.0.0; charset=utf-8"
 
 var (
-	errFailingWriter = errors.New("metrics: failing writer")
-	errMonitoringGap = errors.New("monitoring gap")
+	errFailingWriter   = errors.New("metrics: failing writer")
+	errMonitoringGap   = errors.New("monitoring gap")
+	errWhitespaceError = errors.New("   ")
 )
 
 //nolint:funlen // covers entire OpenMetrics payload in a single assertion for clarity.
@@ -95,6 +96,52 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 
 	if got != expected {
 		t.Fatalf("unexpected metrics output:\nexpected:\n%s\n\nactual:\n%s", expected, got)
+	}
+}
+
+func TestExporterRenderClampsInvalidMetrics(t *testing.T) {
+	t.Parallel()
+
+	exporter := metrics.NewExporter()
+	exporter.SetLastError(errWhitespaceError)
+
+	samples := []struct {
+		value     float64
+		timestamp time.Time
+	}{
+		{value: math.NaN(), timestamp: time.Unix(1_700_000_100, 0)},
+		{value: math.Inf(1), timestamp: time.Unix(1_700_000_200, 0)},
+		{value: -0.5, timestamp: time.Unix(1_700_000_300, 0)},
+	}
+
+	for _, sample := range samples {
+		exporter.ObserveOCIP95(sample.value, sample.timestamp)
+	}
+
+	exporter.SetCgroupCPUWeight(0)
+	exporter.SetCgroupCPUMax(12345, 0, true)
+
+	body, err := exporter.Render()
+	if err != nil {
+		t.Fatalf("Render() returned error: %v", err)
+	}
+
+	output := string(body)
+
+	expectations := map[string]string{
+		"oci_p95":                    "oci_p95 0.000000",
+		"oci_last_success_epoch":     "oci_last_success_epoch 1700000300",
+		"cgroup_cpu_weight":          "cgroup_cpu_weight 0",
+		"cgroup_cpu_max_quota":       "cgroup_cpu_max_quota 0",
+		"cgroup_cpu_max_period":      "cgroup_cpu_max_period 0",
+		"cgroup_cpu_max_unlimited":   "cgroup_cpu_max_unlimited 1",
+		"controller_last_error_info": "controller_last_error_info{error=\"unknown\"} 1",
+	}
+
+	for label, expected := range expectations {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected %s to include %q, got %s", label, expected, output)
+		}
 	}
 }
 
