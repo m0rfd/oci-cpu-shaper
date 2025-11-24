@@ -108,11 +108,14 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   metadata resolution, metrics bootstrap, and controller start to keep `cmd/shaper`
   wiring small and directly testable. Updated §3.1 to map the new helpers and added
   focused unit suites per stage to preserve the ≥96% coverage contract (§§3.1, 8, 11, 12).
+- Tightened the estimator default interval to 1 second (from 2 seconds) while
+  keeping `SHAPER_FAST_INTERVAL` overrides intact across the YAML/env/CLI
+  layers. Updated samples and docs to reflect the faster cadence (§§5.2, 9, 12).
 - Raised the Go toolchain to 1.25.4 in `go.mod`, `.tool-versions`, and the container build ARG so CI, local builds, and release
   images track the latest stable release, and refreshed badges/docs to match (§§8, 12, 14).
 - CLI documentation (§9), `runtimeconfig.Default()`, and `adapt.DefaultConfig()` now
   match the Mode A/Mode B manifests exactly (0.22 target start, 0.20–0.32 band, 4 hour
-  relaxed interval, 2 second estimator loop, 0.80/0.68 suppression + pool thresholds,
+  relaxed interval, 1 second estimator loop, 0.80/0.68 suppression + pool thresholds,
   two-worker pool, etc.), keeping the published YAML and binary defaults aligned.
 - Metadata logging now queries IMDS for canonical-region names even when
   `OCI_REGION` overrides are provided, only falling back to the override when

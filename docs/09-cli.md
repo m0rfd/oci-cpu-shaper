@@ -65,7 +65,7 @@ controller:
   suppressThreshold: 0.80
   suppressResume: 0.68
 estimator:
-  interval: 2s
+  interval: 1s
 pool:
   workers: 2
   quantum: 1ms
@@ -83,7 +83,7 @@ oci:
 - The repository publishes these defaults as ready-to-use manifests at
   `configs/mode-a.yaml` and `configs/mode-b.yaml`. Both files copy the controller,
   estimator, pool thresholds, HTTP, and `oci.offline` defaults above (including
-  the tighter 0.20–0.32 band, four-hour relaxed interval, two-second estimator
+  the tighter 0.20–0.32 band, four-hour relaxed interval, one-second estimator
   cadence, and two-worker pool) while omitting tenancy-specific OCIDs so the
   samples remain usable in source control. Operators should extend the manifest
   with their own `compartmentId`, `region`, and optional `instanceId` values
@@ -111,7 +111,7 @@ The CLI honours the following environment variables, matching the naming in §5.
 | `SHAPER_STEP_UP` / `SHAPER_STEP_DOWN` | Target deltas when OCI P95 is below or above the goal band. | `0.01` / `0.005` |
 | `SHAPER_FALLBACK_TARGET` | Fixed target while OCI metrics are unavailable. | `0.22` |
 | `SHAPER_SLOW_INTERVAL` / `SHAPER_SLOW_INTERVAL_RELAXED` | Baseline and relaxed controller cadences. | `1h` / `4h` |
-| `SHAPER_FAST_INTERVAL` | Host CPU sampling cadence for the estimator. | `2s` |
+| `SHAPER_FAST_INTERVAL` | Host CPU sampling cadence for the estimator. | `1s` |
 | `SHAPER_SUPPRESS_THRESHOLD` / `SHAPER_SUPPRESS_RESUME` | Fast-loop suppression thresholds that gate the zero-target mode. Assign `SHAPER_SUPPRESS_THRESHOLD=0` (or any non-positive value) to disable suppression; the resume override is ignored when suppression is off. | `0.80` / `0.68` |
 | `SHAPER_WORKER_COUNT` | Number of duty-cycle workers (`>=1`). | `2` |
 | `SHAPER_POOL_PAUSE_THRESHOLD` / `SHAPER_POOL_RESUME_THRESHOLD` | Host CPU hysteresis that pauses/resumes the worker pool when the estimator detects contention. | `0.80` / `0.68` |
