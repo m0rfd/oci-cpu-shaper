@@ -44,6 +44,7 @@ controller.Run(ctx) -----------------> slow loop ticker (default 1h)
 - `app_controller.go`: wires the staged metadata/metrics/controller bootstrap and exposes lifecycle helpers for starting/stopping the metrics server and controller.
 - `app.go`/`app_run.go`: maintain the signal-aware run loop and compose the bootstrap/controller stages without re-embedding wiring logic.
 - `controller_helpers.go`: converts runtime config into adaptive-controller inputs and keeps controller state machines out of the CLI.
+- `metrics_client_default_*.go`: selects the metrics builder from `pkg/oci/metricsclient` (or the e2e shim) so the CLI only wires builders/offline paths.
 - `metadata_resolver.go`: resolves IMDS/OCI metadata for runtime config and validates controller prerequisites.
 - `logger_factory.go`: constructs zap loggers with the configured level and encoder settings. IMDS HTTP
   behaviors stay in `pkg/imds` while the CLI factory/resolution logic is covered by focused suites (`metadata_imds_factory_test.go`
@@ -54,6 +55,7 @@ controller.Run(ctx) -----------------> slow loop ticker (default 1h)
 
 ## §5 Package Touchpoints
 - `pkg/oci`: Instance-principal Monitoring client issues the MQL percentile query and paginates results, returning the freshest datapoint. (`Client.QueryP95CPU`.)
+- `pkg/oci/metricsclient`: Builds/wraps metrics clients, exposes context helpers for dependency injection, and surfaces the instance-principal wrapper used by the CLI defaults.
 - `pkg/imds`: HTTP client reads region, compartment OCID, and instance ID with retried IMDSv2 requests; CLI falls back to offline overrides when needed.
 - `pkg/adapt`: State machine tracks `normal`, `fallback`, and `suppressed`, records errors for `/healthz`, and surfaces target/mode/state for `/metrics`.
 - `pkg/est`: Publishes host utilisation plus the last sampling error so suppression hysteresis keeps the shaper out of the way when the host is busy.
