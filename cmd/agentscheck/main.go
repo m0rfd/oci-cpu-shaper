@@ -274,13 +274,20 @@ func validateTickReferences(line, root, relDir, agentPath string) ([]issue, erro
 			continue
 		}
 
+		// Try absolute path from repo root first
 		full := filepath.Join(root, target)
 		stat, statErr := os.Stat(full)
+
+		// If absolute path doesn't exist, try relative to AGENTS.md location
+		if errors.Is(statErr, os.ErrNotExist) && relDir != "" {
+			full = filepath.Join(root, relDir, target)
+			stat, statErr = os.Stat(full)
+		}
 
 		if errors.Is(statErr, os.ErrNotExist) {
 			issues = append(issues, issue{
 				path:    relDir,
-				message: fmt.Sprintf("references missing directory `%s/`", match[1]),
+				message: fmt.Sprintf("references missing directory `%s`", match[1]),
 			})
 
 			continue
@@ -293,7 +300,7 @@ func validateTickReferences(line, root, relDir, agentPath string) ([]issue, erro
 		if !stat.IsDir() {
 			issues = append(issues, issue{
 				path:    relDir,
-				message: fmt.Sprintf("references `%s/` but target is not a directory", match[1]),
+				message: fmt.Sprintf("references `%s` but target is not a directory", match[1]),
 			})
 		}
 	}
