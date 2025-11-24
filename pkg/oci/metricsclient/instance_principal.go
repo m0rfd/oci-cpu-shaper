@@ -8,7 +8,7 @@ import (
 )
 
 type p95CPUQuerier interface {
-	QueryP95CPU(ctx context.Context, resourceID string, last7d bool) (float32, error)
+	QueryP95CPU(ctx context.Context, resourceID string) (float32, error)
 }
 
 type instancePrincipalConstructor func(compartmentID, region string, factory *oci.ClientFactory) (p95CPUQuerier, error)
@@ -102,7 +102,7 @@ func (m *instancePrincipalMetricsClient) QueryP95CPU(
 		return 0, fmt.Errorf("query p95 cpu: %w", ErrDelegateNil)
 	}
 
-	value, err := m.client.QueryP95CPU(ctx, resourceID, true)
+	value, err := m.client.QueryP95CPU(ctx, resourceID)
 	if err != nil {
 		return 0, fmt.Errorf("query p95 cpu: %w", err)
 	}

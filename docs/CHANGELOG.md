@@ -101,6 +101,9 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   boundaries and responsibilities, and linked `docs/AGENTS.md` plus
   `cmd/shaper/AGENTS.md` back to the architecture section so wiring guidance
   stays current (§§3, 8, 12).
+- Hard-coded `pkg/oci.Client.QueryP95CPU` to the trailing seven-day window and
+  updated the instance-principal adapters, CLI tool, and docs to rely on that
+  fixed scope so Monitoring queries stay aligned with the reclaim period (§5.2).
 - CLI `--mode` now defaults to enforcing/normal operation instead of `dry-run`,
   updating the help text and docs so operators start with the adaptive
   controller active unless explicitly opting into monitor-only mode (§§5, 9).
