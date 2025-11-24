@@ -28,7 +28,7 @@ Three foundational flags align with §§3.1 and 5.2 of the implementation plan:
 | ---- | ----------- | ------- |
 | `--config` | Path to the primary YAML configuration file. Relative paths resolve from the current working directory. | `/etc/oci-cpu-shaper/config.yaml` |
 | `--log-level` | Structured logging level understood by the Zap logger (`debug`, `info`, `warn`, `error`, `dpanic`, `panic`, `fatal`). | `info` |
-| `--mode` | Controller operating mode. `dry-run` and `enforce` now spin up the adaptive controller with real OCI metrics, estimator sampling, and worker pools; `noop` keeps the historical bypass for smoke tests. | `dry-run` |
+| `--mode` | Controller operating mode. `dry-run` and `enforce` now spin up the adaptive controller with real OCI metrics, estimator sampling, and worker pools; `noop` keeps the historical bypass for smoke tests. | `enforce` |
 | `--shutdown-after` | Optional duration that cancels the run context after the requested window, letting CI smoke tests and diagnostics shut down predictably without external supervisors. | `0s` (disabled) |
 
 Flags remain intentionally minimal so orchestration tools can template them alongside file-based configuration and environment overrides. When `--shutdown-after` is non-zero the CLI installs a context deadline and treats the resulting `context deadline exceeded`/`context canceled` errors as clean shutdowns so smoke tests can rely on exit status `0`.
