@@ -18,9 +18,9 @@ import (
 var errTestBoom = errors.New("test: boom")
 
 type fakeSource struct {
-	snapshots      []Snapshot
-	err            error
-	snapshotIndex  int
+	snapshots     []Snapshot
+	err           error
+	snapshotIndex int
 }
 
 func (f *fakeSource) Snapshot(_ context.Context) (Snapshot, error) {
@@ -298,7 +298,10 @@ func TestFileSourceSnapshotReadsProvidedPath(t *testing.T) {
 func TestSamplerRunInitialSnapshotError(t *testing.T) {
 	t.Parallel()
 
-	sampler := NewSampler(&fakeSource{snapshots: nil, err: errTestBoom, index: 0}, time.Millisecond)
+	sampler := NewSampler(
+		&fakeSource{snapshots: nil, err: errTestBoom, snapshotIndex: 0},
+		time.Millisecond,
+	)
 	sampler.now = func() time.Time { return time.Unix(123, 0) }
 
 	ctx := context.Background()
@@ -327,7 +330,7 @@ func TestSamplerRunRejectsDoubleStart(t *testing.T) {
 	t.Parallel()
 
 	sampler := NewSampler(
-		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, index: 0},
+		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, snapshotIndex: 0},
 		time.Hour,
 	)
 	sampler.now = func() time.Time { return time.Unix(0, 0) }
@@ -509,7 +512,7 @@ func TestNewSamplerDefaultsInterval(t *testing.T) {
 	t.Parallel()
 
 	sampler := NewSampler(
-		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, index: 0},
+		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, snapshotIndex: 0},
 		0,
 	)
 	if sampler.interval != DefaultInterval {
@@ -517,7 +520,7 @@ func TestNewSamplerDefaultsInterval(t *testing.T) {
 	}
 
 	negative := NewSampler(
-		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, index: 0},
+		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, snapshotIndex: 0},
 		-time.Second,
 	)
 	if negative.interval != DefaultInterval {
@@ -565,7 +568,7 @@ func TestSampleLoopStopsOnContextCancel(t *testing.T) {
 	cancel()
 
 	sampler := NewSampler(
-		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, index: 0},
+		&fakeSource{snapshots: []Snapshot{{Idle: 1, Total: 2}}, err: nil, snapshotIndex: 0},
 		time.Millisecond,
 	)
 	sampler.now = func() time.Time { return time.Unix(0, 0) }
