@@ -7,6 +7,11 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  GOTOOLCHAIN: local
+  GOCACHE: ~/.cache/go-build
+  GOMODCACHE: ~/go/pkg/mod
+
 on:
   workflow_dispatch:
   push:
@@ -18,19 +23,49 @@ on:
   merge_group:
 
 jobs:
-  agents:
-    name: agents policy
+  changes:
+    name: Detect workflow and Makefile updates
     runs-on: ubuntu-latest
-    env:
-      GOCACHE: ${{ github.workspace }}/.cache/go
-      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+    outputs:
+      workflows: ${{ steps.filter.outputs.workflows }}
+      makefile: ${{ steps.filter.outputs.makefile }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Set up Go with cache
+      - name: Detect scoped changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            workflows:
+              - '.github/workflows/**'
+            makefile:
+              - 'Makefile'
+
+  agents:
+    name: agents policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
         id: setup-go
-        uses: ./.github/actions/setup-go-with-cache
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache Go build data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Cache Python tools
         uses: actions/cache@v4
@@ -48,16 +83,26 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    env:
-      GOCACHE: ${{ github.workspace }}/.cache/go
-      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Set up Go with cache
+      - name: Set up Go
         id: setup-go
-        uses: ./.github/actions/setup-go-with-cache
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache Go build data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Cache golangci-lint workspace
         uses: actions/cache@v4
@@ -87,12 +132,48 @@ jobs:
             exit 1
           fi
 
+  makefile:
+    name: Makefile formatting
+    needs: changes
+    if: needs.changes.outputs.makefile == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        id: setup-go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache Go build data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-
+
+      - name: Cache Python tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-mbake-1.4.3
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Validate Makefile formatting
+        run: make mbake
+
   actionlint:
     name: actionlint (${{ matrix.workflow }})
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
-    env:
-      GOCACHE: ${{ github.workspace }}/.cache/go
-      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
     strategy:
       matrix:
         workflow:
@@ -105,9 +186,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Set up Go with cache
+      - name: Set up Go
         id: setup-go
-        uses: ./.github/actions/setup-go-with-cache
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache Go build data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Cache Python tools
         uses: actions/cache@v4
@@ -134,9 +228,6 @@ jobs:
   govulncheck:
     name: govulncheck
     runs-on: ubuntu-latest
-    env:
-      GOCACHE: ${{ github.workspace }}/.cache/go
-      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -146,16 +237,17 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: true
 
-      - name: Cache Go build artifacts
+      - name: Cache Go build data
         uses: actions/cache@v4
         with:
           path: |
-            .cache/go
-            .cache/gomod
-          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-cache-${{ hashFiles('**/go.sum') }}
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-cache-
+            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Cache govulncheck database
         uses: actions/cache@v4
@@ -173,16 +265,26 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    env:
-      GOCACHE: ${{ github.workspace }}/.cache/go
-      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Set up Go with cache
+      - name: Set up Go
         id: setup-go
-        uses: ./.github/actions/setup-go-with-cache
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache Go build data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Run test suite
         run: make test
@@ -200,16 +302,26 @@ jobs:
       - govulncheck
       - integration
     runs-on: ubuntu-latest
-    env:
-      GOCACHE: ${{ github.workspace }}/.cache/go
-      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Set up Go with cache
+      - name: Set up Go
         id: setup-go
-        uses: ./.github/actions/setup-go-with-cache
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache Go build data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Download integration coverage
         uses: actions/download-artifact@v6
@@ -263,16 +375,26 @@ jobs:
       - lint
       - unit-test
     runs-on: ubuntu-latest
-    env:
-      GOCACHE: ${{ github.workspace }}/.cache/go
-      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Set up Go with cache
+      - name: Set up Go
         id: setup-go
-        uses: ./.github/actions/setup-go-with-cache
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache Go build data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Run duty-cycle benchmarks
         run: make bench
@@ -390,16 +512,26 @@ jobs:
       contents: read
       actions: write
     runs-on: ubuntu-latest
-    env:
-      GOCACHE: ${{ github.workspace }}/.cache/go
-      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Set up Go with cache
+      - name: Set up Go
         id: setup-go
-        uses: ./.github/actions/setup-go-with-cache
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache Go build data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Verify Docker cgroup version
         run: |

@@ -16,6 +16,9 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  GOTOOLCHAIN: local
+  GOCACHE: ~/.cache/go-build
+  GOMODCACHE: ~/go/pkg/mod
 
 # ---------------------------
 # Job 1: PR build & test only
@@ -26,17 +29,27 @@ jobs:
     name: Verify tag (lint, test, coverage)
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    env:
-      GOCACHE: ${{ github.workspace }}/.cache/go
-      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Go with cache
+      - name: Set up Go
         id: setup-go
-        uses: ./.github/actions/setup-go-with-cache
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache Go build data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Run lint
         run: make lint
@@ -152,6 +165,37 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Set up Go
+        id: setup-go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache Go build data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-
+
+      - name: Build release artifacts
+        run: make dist
+
+      - name: Generate release checksums
+        run: |
+          cd artifacts/dist
+          sha256sum oci-cpu-shaper-linux-* > checksums.txt
+
+      - name: Generate SBOM for release artifacts
+        uses: anchore/sbom-action@v0
+        with:
+          path: artifacts/dist
+          output-file: artifacts/dist/sbom.spdx.json
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -281,6 +325,14 @@ jobs:
         #   # Optionally pin a specific version; otherwise get latest
         #   cosign-release: 'v3.0.2'
 
+      - name: Sign release checksums
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign sign-blob --yes \
+            --output-signature artifacts/dist/checksums.txt.sig \
+            artifacts/dist/checksums.txt
+
       - name: Sign rootless image digest
         env:
           COSIGN_EXPERIMENTAL: "1"
@@ -329,6 +381,17 @@ jobs:
           echo "Trivy found CRITICAL/HIGH vulnerabilities in the rootless image."
           exit 1
 
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: release-binaries-${{ github.ref_name }}
+          path: |
+            artifacts/dist/oci-cpu-shaper-linux-*
+            artifacts/dist/checksums.txt
+            artifacts/dist/checksums.txt.sig
+            artifacts/dist/sbom.spdx.json
+          if-no-files-found: error
+
       # ------ Explicit SBOM artifact (on top of SBOM attestation) ------
 
       - name: Generate SBOM (SPDX JSON) for rootless
@@ -343,3 +406,12 @@ jobs:
         with:
           name: sbom-rootless-${{ github.ref_name }}
           path: sbom-rootless.spdx.json
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/dist/oci-cpu-shaper-linux-*
+            artifacts/dist/checksums.txt
+            artifacts/dist/checksums.txt.sig
+            artifacts/dist/sbom.spdx.json
