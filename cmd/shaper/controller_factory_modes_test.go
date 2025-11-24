@@ -41,7 +41,7 @@ func TestDefaultControllerFactoryReturnsNoopForMode(t *testing.T) {
 	}
 }
 
-func TestDefaultControllerFactoryTrimsModeToDefault(t *testing.T) {
+func TestDefaultControllerFactoryTrimsModeToEnforce(t *testing.T) {
 	t.Parallel()
 
 	cfg := runtimeconfig.Default()

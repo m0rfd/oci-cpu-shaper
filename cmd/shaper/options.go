@@ -51,7 +51,7 @@ func parseArgs(args []string) (options, error) {
 		&opts.mode,
 		"mode",
 		modeEnforce,
-		"Controller mode to use (dry-run, enforce, noop)",
+		"Controller mode to use (enforce, dry-run, noop). Defaults to enforce.",
 	)
 	flagSet.DurationVar(
 		&opts.shutdownAfter,

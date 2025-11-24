@@ -13,7 +13,7 @@ controller:
   suppressThreshold: 0.9
   suppressResume: 0.6
 estimator:
-  interval: 2s
+  interval: 1s
 pool:
   workers: 2
   quantum: 2ms
