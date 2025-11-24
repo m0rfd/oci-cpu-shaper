@@ -6,6 +6,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/oracle/oci-go-sdk/v65/common"
+	"github.com/oracle/oci-go-sdk/v65/monitoring"
 	"oci-cpu-shaper/pkg/oci"
 )
 
@@ -174,5 +176,95 @@ func TestInstancePrincipalMetricsClientSuccess(t *testing.T) {
 
 	if !querier.lastLast7d {
 		t.Fatal("expected last7d flag to be true")
+	}
+}
+
+func TestInstancePrincipalBuilderUsesDefaultConstructor(t *testing.T) {
+	t.Parallel()
+
+	called := 0
+	factory := &oci.ClientFactory{ //nolint:exhaustruct
+		InstancePrincipalProvider: func() (common.ConfigurationProvider, error) {
+			return common.NewRawConfigurationProvider("", "", "", "", "", nil), nil
+		},
+		MonitoringClient: func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
+			called++
+
+			return monitoring.MonitoringClient{
+				BaseClient: common.BaseClient{
+					HTTPClient:  nil,
+					Signer:      nil,
+					Interceptor: nil,
+					Host:        "",
+					UserAgent:   "",
+					BasePath:    "",
+					Configuration: common.CustomClientConfiguration{
+						RetryPolicy:    nil,
+						CircuitBreaker: nil,
+						RealmSpecificServiceEndpointTemplateEnabled: nil,
+						EnableDualStackEndpoints:                    nil,
+						ServiceUsesDualStackByDefault:               nil,
+					},
+				},
+			}, nil
+		},
+	}
+
+	builder := InstancePrincipalBuilder(nil, WithFactory(factory))
+
+	client, err := builder("ocid.compartment", "us-test-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	typed, ok := client.(*instancePrincipalMetricsClient)
+	if !ok {
+		t.Fatalf("expected instancePrincipalMetricsClient, got %T", client)
+	}
+
+	if typed.client == nil {
+		t.Fatal("expected OCI client to be wrapped by default constructor")
+	}
+
+	if called != 1 {
+		t.Fatalf("expected monitoring client constructor to be invoked, got %d", called)
+	}
+}
+
+func TestDefaultInstancePrincipalConstructorError(t *testing.T) {
+	t.Parallel()
+
+	factory := &oci.ClientFactory{ //nolint:exhaustruct
+		InstancePrincipalProvider: func() (common.ConfigurationProvider, error) {
+			return common.NewRawConfigurationProvider("", "", "", "", "", nil), nil
+		},
+		MonitoringClient: func(common.ConfigurationProvider) (monitoring.MonitoringClient, error) {
+			return monitoring.MonitoringClient{
+				BaseClient: common.BaseClient{
+					HTTPClient:  nil,
+					Signer:      nil,
+					Interceptor: nil,
+					Host:        "",
+					UserAgent:   "",
+					BasePath:    "",
+					Configuration: common.CustomClientConfiguration{
+						RetryPolicy:    nil,
+						CircuitBreaker: nil,
+						RealmSpecificServiceEndpointTemplateEnabled: nil,
+						EnableDualStackEndpoints:                    nil,
+						ServiceUsesDualStackByDefault:               nil,
+					},
+				},
+			}, errStubQueryFailure
+		},
+	}
+
+	_, err := defaultInstancePrincipalConstructor("ocid.compartment", "us-test-1", factory)
+	if err == nil {
+		t.Fatal("expected constructor error to propagate")
+	}
+
+	if !errors.Is(err, errStubQueryFailure) {
+		t.Fatalf("expected errStubQueryFailure, got %v", err)
 	}
 }
