@@ -260,6 +260,10 @@ build: verify-go-version
 
 integration: verify-go-version
 	@set -euo pipefail; \
+	if [ "$$(uname -s)" != "Linux" ]; then \
+		echo "integration suite requires Linux (detected $$(uname -s))"; \
+		exit 1; \
+	fi; \
 	if ! command -v docker >/dev/null 2>&1; then \
 		echo "integration suite requires the docker CLI"; \
 		exit 1; \

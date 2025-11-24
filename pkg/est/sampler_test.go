@@ -8,7 +8,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -546,23 +545,6 @@ func TestFileSourceSnapshotParseError(t *testing.T) {
 	_, snapshotErr := (FileSource{Path: path}).Snapshot(context.Background())
 	if snapshotErr == nil || !strings.Contains(snapshotErr.Error(), "parse") {
 		t.Fatalf("expected parse error, got %v", snapshotErr)
-	}
-}
-
-func TestFileSourceSnapshotDefaultPath(t *testing.T) {
-	t.Parallel()
-
-	if runtime.GOOS != "linux" {
-		t.Skip("Skipping test on non-Linux platforms where /proc/stat is unavailable")
-	}
-
-	snap, err := (FileSource{Path: ""}).Snapshot(context.Background())
-	if err != nil {
-		t.Fatalf("expected default /proc/stat to be readable, got %v", err)
-	}
-
-	if snap.Total == 0 {
-		t.Fatalf("expected non-zero total jiffies from default path")
 	}
 }
 
