@@ -25,6 +25,8 @@ jobs:
   verify-tag:
     name: Verify tag (lint, test, coverage)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
