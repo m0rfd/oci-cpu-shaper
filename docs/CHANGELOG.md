@@ -4,6 +4,8 @@
 
 ### Added
 _Note coverage-impacting additions: mention new test suites or tooling that shift the CI ≥96% statement coverage budget (§11)._
+- Overview architecture now diagrams the runtime config pipeline, controller layers, and metrics surfaces, and README repository
+  structure calls out the shared `pkg/runtimeconfig` package so §0, §3.1, and §5.2 references stay aligned.
 - Execution-flow reference (`docs/05-execution-flow.txt`) summarising the CLI,
   adaptive controller loops, and supporting packages with a text diagram so
   operators can trace the §3 runtime wiring without scanning the codebase (§§3,
