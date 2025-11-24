@@ -30,7 +30,7 @@ func TestLoadConfigUsesDefaultsWhenFileMissing(t *testing.T) {
 
 	assertFloatEqual(t, "targetStart", cfg.Controller.TargetStart, defaults.TargetStart)
 	assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9108")
-	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, 2*time.Second)
+	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, time.Second)
 	assertIntEqual(t, "poolWorkers", cfg.Pool.Workers, 2)
 	assertBoolEqual(t, "offline", cfg.OCI.Offline, false)
 	assertStringEqual(t, "region", cfg.OCI.Region, "")

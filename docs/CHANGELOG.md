@@ -112,7 +112,7 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   images track the latest stable release, and refreshed badges/docs to match (§§8, 12, 14).
 - CLI documentation (§9), `runtimeconfig.Default()`, and `adapt.DefaultConfig()` now
   match the Mode A/Mode B manifests exactly (0.22 target start, 0.20–0.32 band, 4 hour
-  relaxed interval, 2 second estimator loop, 0.80/0.68 suppression + pool thresholds,
+  relaxed interval, 1 second estimator loop, 0.80/0.68 suppression + pool thresholds,
   two-worker pool, etc.), keeping the published YAML and binary defaults aligned.
 - Metadata logging now queries IMDS for canonical-region names even when
   `OCI_REGION` overrides are provided, only falling back to the override when
