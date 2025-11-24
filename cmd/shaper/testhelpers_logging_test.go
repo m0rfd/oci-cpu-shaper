@@ -205,3 +205,9 @@ func stubBuildInfo(version, commit, date string) buildinfo.Info {
 		BuildDate: date,
 	}
 }
+
+func newObservedLogger(level zapcore.LevelEnabler) (*zap.Logger, *observer.ObservedLogs) {
+	core, observed := observer.New(level)
+
+	return zap.New(core), observed
+}
