@@ -117,14 +117,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: Install shellcheck and pyflakes
+      - name: Install ShellCheck
+        uses: mfinelli/setup-shellcheck@v1
+        with:
+          shellcheck-version: "0.10.0"
+
+      - name: Install pyflakes
         run: |
           set -o errexit
           set -o nounset
           set -o pipefail
 
-          sudo apt-get update
-          sudo apt-get install --yes shellcheck python3-pip
           python3 -m pip install --user pyflakes==3.2.0
           echo "$HOME/.local/bin" >>"$GITHUB_PATH"
 

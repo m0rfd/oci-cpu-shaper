@@ -17,6 +17,9 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+permissions:
+  contents: read
+
 # ---------------------------
 # Job 1: PR build & test only
 # ---------------------------
@@ -26,6 +29,8 @@ jobs:
     name: Verify tag (lint, test, coverage)
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
@@ -53,11 +58,71 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     permissions:
       contents: read
-      security-events: write
+    env:
+      GOCACHE: ${{ github.workspace }}/.cache/go
+      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+      GOLANGCI_LINT_CACHE: ${{ github.workspace }}/.cache/golangci
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+      TRIVY_SEVERITY: CRITICAL,HIGH
+      TRIVY_VULN_TYPES: os,library
+      TRIVY_IGNORE_UNFIXED: true
+      TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db
+      TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Set up Go with cache
+        id: setup-go
+        uses: ./.github/actions/setup-go-with-cache
+
+      - name: Cache golangci-lint workspace
+        uses: actions/cache@v4
+        with:
+          path: .cache/golangci
+          key: ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/.golangci.yml', '**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-
+
+      - name: Cache Python tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-mbake-1.4.3
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Run lint
+        run: make lint
+
+      - name: Run tests
+        run: make test
+
+      - name: Run coverage
+        env:
+          MIN_COVERAGE: "96"
+          COVERAGE_PROFILE: coverage.out
+          COVERAGE_SUMMARY: coverage.txt
+        run: |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          make coverage \
+            MIN_COVERAGE="$MIN_COVERAGE" \
+            COVERAGE_PROFILE="$COVERAGE_PROFILE" \
+            COVERAGE_SUMMARY="$COVERAGE_SUMMARY"
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: pr-coverage-report
+          path: |
+            coverage.out
+            coverage.txt
+          if-no-files-found: error
 
       - name: Compute build metadata
         id: build_meta
@@ -111,23 +176,26 @@ jobs:
       # Trivy scan on PR (local image) + SARIF upload
       - name: Scan PR image with Trivy (SARIF)
         id: trivy_scan_pr
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.33.1
         continue-on-error: true
         with:
           image-ref: pr-local/${{ github.repository }}:${{ github.sha }}
           format: 'sarif'
           output: 'trivy-results-pr.sarif'
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
-          ignore-unfixed: true
+          vuln-type: ${{ env.TRIVY_VULN_TYPES }}
+          severity: ${{ env.TRIVY_SEVERITY }}
+          ignore-unfixed: ${{ env.TRIVY_IGNORE_UNFIXED }}
           exit-code: '1'
-      
-      - name: Upload Trivy SARIF (PR)
+          cache: true
+          db-repository: ${{ env.TRIVY_DB_REPOSITORY }}
+          java-db-repository: ${{ env.TRIVY_JAVA_DB_REPOSITORY }}
+
+      - name: Upload Trivy SARIF artifact (PR)
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: actions/upload-artifact@v5
         with:
-          sarif_file: trivy-results-pr.sarif
-          category: trivy-pr-rootless
+          name: trivy-results-pr
+          path: trivy-results-pr.sarif
       
       - name: Fail PR if Trivy found CRITICAL/HIGH vulns
         if: steps.trivy_scan_pr.outcome == 'failure'
@@ -148,6 +216,15 @@ jobs:
       contents: read
       packages: write          # GHCR push (release job)
       id-token: write          # Cosign keyless (release job)
+      security-events: write   # Upload SARIF to code scanning
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+      TRIVY_SEVERITY: CRITICAL,HIGH
+      TRIVY_VULN_TYPES: os,library
+      TRIVY_IGNORE_UNFIXED: true
+      TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db
+      TRIVY_JAVA_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-java-db
 
     steps:
       - name: Checkout
@@ -277,9 +354,8 @@ jobs:
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v4.0.0
-        # with:
-        #   # Optionally pin a specific version; otherwise get latest
-        #   cosign-release: 'v3.0.2'
+        with:
+          cosign-release: 'v2.4.0'
 
       - name: Sign rootless image digest
         env:
@@ -305,16 +381,19 @@ jobs:
 
       - name: Scan rootless image with Trivy (SARIF)
         id: trivy_scan_rootless
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.33.1
         continue-on-error: true
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
           format: 'sarif'
           output: 'trivy-results-rootless.sarif'
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
-          ignore-unfixed: true
+          vuln-type: ${{ env.TRIVY_VULN_TYPES }}
+          severity: ${{ env.TRIVY_SEVERITY }}
+          ignore-unfixed: ${{ env.TRIVY_IGNORE_UNFIXED }}
           exit-code: '1'   # non-zero when CRITICAL/HIGH found
+          cache: true
+          db-repository: ${{ env.TRIVY_DB_REPOSITORY }}
+          java-db-repository: ${{ env.TRIVY_JAVA_DB_REPOSITORY }}
 
       - name: Upload Trivy SARIF to GitHub Security tab
         if: always()
@@ -332,11 +411,14 @@ jobs:
       # ------ Explicit SBOM artifact (on top of SBOM attestation) ------
 
       - name: Generate SBOM (SPDX JSON) for rootless
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
           format: 'spdx-json'
           output: 'sbom-rootless.spdx.json'
+          cache: true
+          db-repository: ${{ env.TRIVY_DB_REPOSITORY }}
+          java-db-repository: ${{ env.TRIVY_JAVA_DB_REPOSITORY }}
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v5
