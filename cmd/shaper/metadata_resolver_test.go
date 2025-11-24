@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
 var (
@@ -71,6 +73,74 @@ func TestPreferMetadataValueReportsErrors(t *testing.T) {
 			t.Fatalf("expected missing error, got %v", err)
 		}
 	})
+}
+
+func TestPrepareRunMetadataMergesResolvedValues(t *testing.T) {
+	t.Parallel()
+
+	cfg := runtimeconfig.Default()
+	cfg.OCI.CompartmentID = " \t"
+	cfg.OCI.Region = ""
+
+	client := &stubIMDSClient{ //nolint:exhaustruct
+		compartmentID: testCompartmentOverride,
+		region:        stubRegion,
+	}
+
+	updated, metadata, err := prepareRunMetadata(t.Context(), cfg, client, modeDryRun)
+	if err != nil {
+		t.Fatalf("prepareRunMetadata returned error: %v", err)
+	}
+
+	if metadata.CompartmentID != testCompartmentOverride {
+		t.Fatalf("expected compartment override to be resolved, got %q", metadata.CompartmentID)
+	}
+
+	if metadata.Region != stubRegion {
+		t.Fatalf("expected region to be resolved, got %q", metadata.Region)
+	}
+
+	if updated.OCI.CompartmentID != testCompartmentOverride {
+		t.Fatalf("expected config compartment to be updated, got %q", updated.OCI.CompartmentID)
+	}
+
+	if updated.OCI.Region != stubRegion {
+		t.Fatalf("expected config region to be updated, got %q", updated.OCI.Region)
+	}
+}
+
+func TestPrepareRunMetadataSkipsNoopMode(t *testing.T) {
+	t.Parallel()
+
+	cfg := runtimeconfig.Default()
+	client := new(stubIMDSClient)
+
+	updated, metadata, err := prepareRunMetadata(t.Context(), cfg, client, modeNoop)
+	if err != nil {
+		t.Fatalf("prepareRunMetadata returned error: %v", err)
+	}
+
+	var expected ociMetadata
+	if metadata != expected {
+		t.Fatalf("expected empty metadata, got %+v", metadata)
+	}
+
+	if updated.OCI != cfg.OCI {
+		t.Fatalf("expected OCI config to remain unchanged, got %+v", updated.OCI)
+	}
+}
+
+func TestPrepareRunMetadataPropagatesResolutionErrors(t *testing.T) {
+	t.Parallel()
+
+	cfg := runtimeconfig.Default()
+	cfg.OCI.CompartmentID = testCompartmentOverride
+	client := new(stubIMDSClient)
+
+	_, _, err := prepareRunMetadata(t.Context(), cfg, client, modeEnforce)
+	if err == nil || !errors.Is(err, errControllerRegionRequired) {
+		t.Fatalf("expected errControllerRegionRequired, got %v", err)
+	}
 }
 
 func TestPreferCanonicalRegionValueOrder(t *testing.T) {
