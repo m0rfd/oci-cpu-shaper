@@ -45,7 +45,7 @@ GO_BIN_PATH := $(HOME)/go/bin
 endif
 
 ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
-GOVULNCHECK_CACHE_DIR := $(ROOT_DIR)/.cache/govulncheck
+GOVULNCHECK_CACHE_DIR = $(ROOT_DIR)/.cache/govulncheck
 GOCACHE_DIR := $(ROOT_DIR)/.cache/go
 GOLANGCI_LINT_CACHE_DIR := $(ROOT_DIR)/.cache/golangci
 
