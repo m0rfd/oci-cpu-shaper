@@ -51,7 +51,7 @@ docker compose -f docker-compose.rendered.yaml up -d
 
 - `cmd/shaper/` – CLI entry point split across `app.go`/`app_run.go` for signal-safe wiring, controller factories in `controller_helpers.go`, flag parsing in `options.go`, runtime metadata logging in `logging_metadata.go`, and metrics wiring in `metrics_handlers.go`/`metrics_server.go`.
 - `pkg/runtimeconfig/` – Shared runtime configuration defaults (`defaults.go`), YAML/env loaders (`loader.go`, `merge.go`, `env.go`), validation (`validate.go`), and helpers that translate manifests into adaptive-controller structs consumed by the CLI.
-- `pkg/adapt/` – Adaptive controller and mode handling kept in `controller_loop.go`, `controller_step.go`, `controller_state.go`, `state.go`, `suppression.go`, `config.go`, and the dry-run adapter in `noop_controller.go`.
+- `pkg/adapt/` – Adaptive controller and mode handling kept in `controller_loop.go`, `controller_step.go`, `controller_state.go`, `suppression.go`, `config.go`, and the dry-run adapter in `noop_controller.go`.
 - `pkg/shape/` – Worker pool, pause thresholds, and busy-wait helpers implemented in `pool.go`, `worker.go`, `pause.go`, and `busywait.go` (plus the rootful-only stubs/tests).
 - `pkg/oci/` – OCI Monitoring client wiring (`client.go`), metric queries (`query.go`), SDK adapter (`sdk_client.go`), and offline fixtures (`static.go`).
 - `pkg/imds/` – Instance Metadata Service client split into constructor wiring (`client_config.go`), typed operations (`operations.go`), and HTTP/retry helpers (`transport.go`).
