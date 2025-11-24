@@ -5,5 +5,5 @@ package main
 import "oci-cpu-shaper/pkg/oci/metricsclient"
 
 func defaultMetricsClientBuilder() metricsclient.Builder {
-	return metricsclient.InstancePrincipalBuilder()
+	return newInstancePrincipalBuilder()
 }
