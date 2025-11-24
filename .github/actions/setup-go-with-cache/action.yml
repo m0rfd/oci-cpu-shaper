@@ -1,0 +1,39 @@
+name: Setup Go with shared cache
+description: Reusable Go setup helper that configures actions/setup-go and shared build/module caches.
+
+inputs:
+  go-version-file:
+    description: Path to the file with the Go version.
+    required: false
+    default: go.mod
+  cache-dependency-path:
+    description: Files used for Go cache dependency keys.
+    required: false
+    default: |
+      go.sum
+
+outputs:
+  go-version:
+    description: Go version selected by actions/setup-go
+    value: ${{ steps.setup-go.outputs.go-version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      id: setup-go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: ${{ inputs.go-version-file }}
+        cache: true
+        cache-dependency-path: ${{ inputs.cache-dependency-path }}
+
+    - name: Cache Go build and module downloads
+      uses: actions/cache@v4
+      with:
+        path: |
+          .cache/go
+          .cache/gomod
+        key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-cache-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-cache-
