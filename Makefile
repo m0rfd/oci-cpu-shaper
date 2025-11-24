@@ -73,15 +73,16 @@ ensure-golangci-lint:
 	BIN="$(GOLANGCI_LINT_BIN)"; \
 	CURRENT_VERSION=""; \
 	if [ -x "$$BIN" ]; then \
-		CURRENT_VERSION="$$($$BIN version --short 2>/dev/null || true)"; \
+		CURRENT_VERSION="v$$($$BIN version --short 2>/dev/null || true)"; \
 	fi; \
 	if [ "$$CURRENT_VERSION" != "$(GOLANGCI_LINT_VERSION)" ]; then \
-		echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)"; \
-		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(GO_BIN_PATH) $(GOLANGCI_LINT_VERSION); \
+		echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)..."; \
+		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(GO_BIN_PATH) $(GOLANGCI_LINT_VERSION) > /dev/null 2>&1; \
 	fi
 
 lint: verify-go-version ensure-golangci-lint mbake
 	@mkdir -p "$(GOLANGCI_LINT_CACHE_DIR)"
+	@echo "Running golangci-lint..."
 	@GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE_DIR)" $(GOLANGCI_LINT) run
 
 help:
