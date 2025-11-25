@@ -9,13 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"oci-cpu-shaper/internal/buildinfo"
 	"oci-cpu-shaper/pkg/adapt"
 	"oci-cpu-shaper/pkg/imds"
 	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
-
-	"go.uber.org/zap"
-	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestRunReturnsRuntimeErrorWhenMetricsServerFails(t *testing.T) {
