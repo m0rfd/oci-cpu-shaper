@@ -223,6 +223,12 @@ func (r *controllerRecorderLogger) SetInterval(interval time.Duration) {
 	r.lastInterval = interval
 }
 
+func (r *controllerRecorderLogger) SetRelaxedSuccesses(count int) {
+	if r.delegate != nil {
+		r.delegate.SetRelaxedSuccesses(count)
+	}
+}
+
 func (r *controllerRecorderLogger) SetLastError(err error) {
 	if r.delegate != nil {
 		r.delegate.SetLastError(err)

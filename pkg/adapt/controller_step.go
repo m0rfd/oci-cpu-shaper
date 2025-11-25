@@ -101,6 +101,11 @@ func (c *AdaptiveController) nextIntervalLocked(p95 float64) time.Duration {
 		c.relaxedSuccesses = 0
 	}
 
+	// Export relaxedSuccesses to metrics for observability
+	if c.recorder != nil {
+		c.recorder.SetRelaxedSuccesses(c.relaxedSuccesses)
+	}
+
 	if c.relaxedSuccesses >= c.cfg.RelaxedConfirmations {
 		return c.cfg.RelaxedInterval
 	}

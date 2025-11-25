@@ -37,21 +37,22 @@ type byteBuffer interface {
 type Exporter struct {
 	mu sync.RWMutex
 
-	shaperTarget    float64
-	shaperMode      string
-	shaperEnforcing float64
-	shaperState     string
-	ociP95          float64
-	ociLastSuccess  time.Time
-	dutyCycleMillis float64
-	workerCount     float64
-	hostCPUPercent  float64
-	intervalSeconds float64
-	lastError       string
-	cgroupWeight    float64
-	cgroupMaxQuota  float64
-	cgroupMaxPeriod float64
-	cgroupMaxLimit  float64
+	shaperTarget     float64
+	shaperMode       string
+	shaperEnforcing  float64
+	shaperState      string
+	ociP95           float64
+	ociLastSuccess   time.Time
+	dutyCycleMillis  float64
+	workerCount      float64
+	hostCPUPercent   float64
+	intervalSeconds  float64
+	lastError        string
+	relaxedSuccesses float64
+	cgroupWeight     float64
+	cgroupMaxQuota   float64
+	cgroupMaxPeriod  float64
+	cgroupMaxLimit   float64
 
 	bufferFactory func() byteBuffer
 }
@@ -238,6 +239,18 @@ func (e *Exporter) ObserveHostCPU(utilisation float64) {
 	e.mu.Unlock()
 }
 
+// SetRelaxedSuccesses records the current relaxed confirmation counter value.
+func (e *Exporter) SetRelaxedSuccesses(count int) {
+	value := float64(count)
+	if value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		value = 0
+	}
+
+	e.mu.Lock()
+	e.relaxedSuccesses = value
+	e.mu.Unlock()
+}
+
 // ServeHTTP implements http.Handler for the metrics exporter.
 func (e *Exporter) ServeHTTP(writer http.ResponseWriter, _ *http.Request) {
 	data, err := e.Render()
@@ -304,6 +317,10 @@ func (e *Exporter) WriteTo(dst io.Writer) (int64, error) {
 		"# HELP controller_last_error_info Last controller error message (value set to 1 for the active error).\n",
 		"# TYPE controller_last_error_info gauge\n",
 		fmt.Sprintf("controller_last_error_info{error=%s} 1\n", strconv.Quote(snapshot.lastError)),
+		"# HELP controller_relaxed_successes Number of consecutive samples with P95 above threshold ",
+		"(resets when switching to relaxed interval).\n",
+		"# TYPE controller_relaxed_successes gauge\n",
+		fmt.Sprintf("controller_relaxed_successes %.0f\n", snapshot.relaxedSuccesses),
 		"# HELP oci_p95 Last observed OCI CPU P95 ratio.\n",
 		"# TYPE oci_p95 gauge\n",
 		fmt.Sprintf("oci_p95 %.6f\n", snapshot.ociP95),
@@ -360,6 +377,7 @@ type exporterSnapshot struct {
 	hostCPUPercent      float64
 	intervalSeconds     float64
 	lastError           string
+	relaxedSuccesses    float64
 	cgroupWeight        float64
 	cgroupMaxQuota      float64
 	cgroupMaxPeriod     float64
@@ -392,6 +410,7 @@ func (e *Exporter) snapshot() exporterSnapshot {
 		hostCPUPercent:      e.hostCPUPercent,
 		intervalSeconds:     e.intervalSeconds,
 		lastError:           errorLabel,
+		relaxedSuccesses:    e.relaxedSuccesses,
 		cgroupWeight:        e.cgroupWeight,
 		cgroupMaxQuota:      e.cgroupMaxQuota,
 		cgroupMaxPeriod:     e.cgroupMaxPeriod,
