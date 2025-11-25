@@ -52,24 +52,12 @@ jobs:
       - name: Verify AGENTS scopes
         run: make agents
 
-  lint-tools:
-    name: lint tooling
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Set up lint tools
-        uses: ./.github/actions/setup-lint-tools
-
   lint:
     name: golangci-lint
     timeout-minutes: 5
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    needs:
-      - lint-tools
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
@@ -123,8 +111,6 @@ jobs:
     name: actionlint (${{ matrix.workflow }})
     timeout-minutes: 5
     runs-on: ubuntu-latest
-    needs:
-      - lint-tools
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
