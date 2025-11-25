@@ -56,45 +56,11 @@ jobs:
     name: lint tooling
     runs-on: ubuntu-latest
     steps:
-      - name: Restore lint tool cache
-        id: lint-tool-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.local
-            ~/.cache/pip
-          key: ${{ runner.os }}-lint-tools-shellcheck-${{ env.SHELLCHECK_VERSION }}-pyflakes-${{ env.PYFLAKES_VERSION }}
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-      - name: Install lint tools
-        if: steps.lint-tool-cache.outputs.cache-hit != 'true'
-        env:
-          SHELLCHECK_VERSION: ${{ env.SHELLCHECK_VERSION }}
-          PYFLAKES_VERSION: ${{ env.PYFLAKES_VERSION }}
-        run: |
-          set -o errexit
-          set -o nounset
-          set -o pipefail
-
-          mkdir -p "$HOME/.local/bin"
-          curl -sSLo /tmp/shellcheck.tar.xz "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
-          tar -C /tmp -xJf /tmp/shellcheck.tar.xz
-          cp "/tmp/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" "$HOME/.local/bin/shellcheck"
-          chmod +x "$HOME/.local/bin/shellcheck"
-
-          python3 -m pip install --upgrade --user pip
-          python3 -m pip install --user "pyflakes==${PYFLAKES_VERSION}"
-
-      - name: Add lint tools to PATH
-        run: echo "$HOME/.local/bin" >>"$GITHUB_PATH"
-
-      - name: Verify lint tool versions
-        run: |
-          set -o errexit
-          set -o nounset
-          set -o pipefail
-
-          shellcheck --version
-          pyflakes --version
+      - name: Set up lint tools
+        uses: ./.github/actions/setup-lint-tools
 
   lint:
     name: golangci-lint
@@ -108,6 +74,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - name: Record golangci-lint version
+        run: echo "GOLANGCI_LINT_VERSION=$(make -s print-golangci-lint-version)" >>"$GITHUB_ENV"
 
       - name: Set up Go with cache
         id: setup-go
@@ -133,9 +102,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: bin/golangci-lint
-          key: ${{ runner.os }}-golangci-lint-${{ hashFiles('Makefile') }}
+          key: ${{ runner.os }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ hashFiles('Makefile') }}
           restore-keys: |
-            ${{ runner.os }}-golangci-lint-
+            ${{ runner.os }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-
 
       - name: Run golangci-lint
         run: make lint
@@ -180,45 +149,8 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
 
-      - name: Cache actionlint binary
-        id: actionlint-cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.GOBIN }}/actionlint
-          key: ${{ runner.os }}-actionlint-${{ env.ACTIONLINT_VERSION }}
-          restore-keys: |
-            ${{ runner.os }}-actionlint-
-
-      - name: Restore lint tool cache
-        id: lint-tool-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.local
-            ~/.cache/pip
-          key: ${{ runner.os }}-lint-tools-shellcheck-${{ env.SHELLCHECK_VERSION }}-pyflakes-${{ env.PYFLAKES_VERSION }}
-
-      - name: Add lint tools to PATH
-        run: echo "$HOME/.local/bin" >>"$GITHUB_PATH"
-
-      - name: Install lint tools (cache miss)
-        if: steps.lint-tool-cache.outputs.cache-hit != 'true'
-        env:
-          SHELLCHECK_VERSION: ${{ env.SHELLCHECK_VERSION }}
-          PYFLAKES_VERSION: ${{ env.PYFLAKES_VERSION }}
-        run: |
-          set -o errexit
-          set -o nounset
-          set -o pipefail
-
-          mkdir -p "$HOME/.local/bin"
-          curl -sSLo /tmp/shellcheck.tar.xz "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
-          tar -C /tmp -xJf /tmp/shellcheck.tar.xz
-          cp "/tmp/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" "$HOME/.local/bin/shellcheck"
-          chmod +x "$HOME/.local/bin/shellcheck"
-
-          python3 -m pip install --upgrade --user pip
-          python3 -m pip install --user "pyflakes==${PYFLAKES_VERSION}"
+      - name: Set up lint tools
+        uses: ./.github/actions/setup-lint-tools
 
       - name: Run actionlint
         run: make actionlint ACTIONLINT_PATHS=".github/workflows/${{ matrix.workflow }}"

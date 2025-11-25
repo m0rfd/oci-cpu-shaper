@@ -71,11 +71,13 @@ MBAKE_BIN ?= $(HOME)/.local/bin/mbake
 MBAKE ?= $(MBAKE_BIN)
 MBAKE_FORMAT_PATHS ?= Makefile
 
-.PHONY: actionlint agents bench build check clean coverage e2e ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake setup test tools verify-go-version
-
+.PHONY: actionlint agents bench build check clean coverage e2e ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tools verify-go-version
 HELP_TARGETS := lint lint-makefile lint-workflows test coverage build check govulncheck integration e2e agents actionlint help clean
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-mbake
+
+print-golangci-lint-version:
+	@printf "%s\n" "$(GOLANGCI_LINT_VERSION)"
 
 ensure-golangci-lint:
 	@set -euo pipefail; \
@@ -136,7 +138,7 @@ help:
 			test) desc="Run unit tests (excludes integration/e2e)";; \ \
 			coverage) desc="Run coverage with minimum threshold enforcement";; \ \
 			build) desc="Compile all modules with cache isolation";; \ \
-			check) desc="Run lint, test, and agent checks";; \ \
+			check) desc="Run lint, coverage, tests, and agent checks";; \ \
 			govulncheck) desc="Scan dependencies with govulncheck";; \ \
 			integration) desc="Execute integration suite (requires Docker + cgroup v2)";; \ \
 			e2e) desc="Execute end-to-end suite";; \ \
@@ -279,7 +281,7 @@ govulncheck: verify-go-version
         GOCACHE="$(GOCACHE_DIR)" GOVULNCHECK_CACHE="$(GOVULNCHECK_CACHE_DIR)" \
         $(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
-check: lint lint-makefile lint-workflows test agents
+check: lint lint-makefile lint-workflows test coverage agents
 
 actionlint: ensure-actionlint
 	@set -euo pipefail; \
