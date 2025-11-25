@@ -2,17 +2,17 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
+	"oci-cpu-shaper/internal/metricsserver"
 	"oci-cpu-shaper/pkg/oci"
 	"oci-cpu-shaper/pkg/oci/metricsclient"
 	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
 var (
-	errMetricsContextRequired = errors.New("metrics server: context is required")
-	errMetricsServerDisabled  = errors.New("metrics server: disabled")
+	errMetricsContextRequired = metricsserver.ErrContextRequired
+	errMetricsServerDisabled  = metricsserver.ErrServerDisabled
 )
 
 //nolint:ireturn // helper returns MetricsClient interface for dependency substitution.

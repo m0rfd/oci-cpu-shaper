@@ -27,6 +27,8 @@ func defaultMetricsClientBuilder() metricsclient.Builder {
 			return client, nil
 		}
 
-		return newInstancePrincipalBuilder()(compartmentID, region)
+		builder := newInstancePrincipalBuilder.load()()
+
+		return builder(compartmentID, region)
 	}
 }

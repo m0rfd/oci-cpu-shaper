@@ -1,4 +1,8 @@
 controller:
+  interval: 15s
+  relaxedInterval: 1m
+  relaxedThreshold: 0.30
+  relaxedConfirmations: 2
   targetStart: 0.22
   targetMin: 0.20
   targetMax: 0.32
@@ -7,10 +11,6 @@ controller:
   fallbackTarget: 0.22
   goalLow: 0.21
   goalHigh: 0.27
-  interval: 15s
-  relaxedInterval: 1m
-  relaxedThreshold: 0.30
-  relaxedConfirmations: 2
   suppressThreshold: 0.80
   suppressResume: 0.68
   suppressRunnableThreshold: 1.20
