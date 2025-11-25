@@ -3,7 +3,9 @@
 ## Unreleased
 
 ### Added
+
 _Note coverage-impacting additions: mention new test suites or tooling that shift the CI ≥96% statement coverage budget (§11)._
+
 - Overview architecture now diagrams the runtime config pipeline, controller layers, and metrics surfaces, and README repository
   structure calls out the shared `pkg/runtimeconfig` package so §0, §3.1, and §5.2 references stay aligned.
 - Execution-flow reference (`docs/05-execution-flow.txt`) summarising the CLI,
@@ -102,16 +104,18 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - `/metrics` exporter and Prometheus integration surfaced through the CLI, including emitted series, sample scrape output, and Compose/HTTP_ADDR wiring documented across §§4–9.
 
 ### Changed
-_Record coverage reductions or mitigations so reviewers can audit the CI ≥96% threshold impact (§11)._ 
+
+_Record coverage reductions or mitigations so reviewers can audit the CI ≥96% threshold impact (§11)._
+
 - Refreshed `docs/05-execution-flow.txt` to document the CLI entrypoint file
   boundaries and responsibilities, and linked `docs/AGENTS.md` plus
   `cmd/shaper/AGENTS.md` back to the architecture section so wiring guidance
   stays current (§§3, 8, 12).
-- Repurposed the `shaper_mode` metric to publish controller states and added a
-  labelled `shaper_enforcement_mode` series for CLI enforcement selections,
-  updating the exporter, Grafana dashboard, and monitoring docs/tests so
-  Prometheus queries continue to track state transitions accurately (§§3.2, 5,
-  7, 9, 11).
+- Introduced `shaper_state` metric to publish controller states while preserving
+  `shaper_mode` for CLI enforcement selections, updating the exporter, Grafana
+  dashboard, and monitoring docs/tests so Prometheus queries track state
+  transitions accurately without breaking existing dashboards (§§3.2, 5, 7, 9,
+  11).
 - Hard-coded `pkg/oci.Client.QueryP95CPU` to the trailing seven-day window and
   updated the instance-principal adapters, CLI tool, and docs to rely on that
   fixed scope so Monitoring queries stay aligned with the reclaim period (§5.2).

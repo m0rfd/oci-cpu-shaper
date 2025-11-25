@@ -188,9 +188,9 @@ func TestRunExposesMetricsOffline(t *testing.T) {
 		t,
 		output,
 		[]string{
-			"shaper_enforcement_mode{mode=\"enforce\"} 1",
+			"shaper_mode{mode=\"enforce\"} 1",
 			"shaper_enforcing 1",
-			"shaper_mode{state=\"normal\"} 1",
+			"shaper_state{state=\"normal\"} 1",
 			"shaper_target_ratio 0.330000",
 			"worker_count 4",
 			"duty_cycle_ms 2.000",

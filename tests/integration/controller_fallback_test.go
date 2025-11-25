@@ -80,7 +80,7 @@ func TestControllerFallbackRecoversAfterMonitoringGap(t *testing.T) {
 		t.Fatalf("render metrics: %v", err)
 	}
 
-	assertMetricContains(t, metrics, fmt.Sprintf("shaper_mode{state=\"%s\"} 1", controller.State()))
+	assertMetricContains(t, metrics, fmt.Sprintf("shaper_state{state=\"%s\"} 1", controller.State()))
 	assertNonZeroMetric(t, metrics, "oci_last_success_epoch")
 	assertMetricContains(t, metrics, fmt.Sprintf("oci_p95 %.6f", controller.LastP95()))
 	assertMetricContains(t, metrics, "controller_interval_seconds 0.200000")

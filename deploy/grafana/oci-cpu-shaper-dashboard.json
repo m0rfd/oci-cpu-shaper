@@ -215,7 +215,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "shaper_mode{instance=~\"$instance\"}",
+          "expr": "shaper_state{instance=~\"$instance\"}",
           "legendFormat": "{{state}}",
           "range": true,
           "refId": "A"
