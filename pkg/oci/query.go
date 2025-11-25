@@ -3,6 +3,8 @@ package oci
 import (
 	"context"
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -11,13 +13,17 @@ import (
 )
 
 const (
-	monitoringNamespace     = "oci_computeagent"
+	monitoringNamespace = "oci_computeagent"
+	// OCI Monitoring does not support `.window()` for SummarizeMetricsData, so we fetch one-minute
+	// 95th percentile CPU utilization samples over the 7-day range and compute the percentile across
+	// the full window locally.
 	metricQueryTemplate     = "CpuUtilization[1m]{resourceId = \"%s\"}.percentile(0.95)"
 	metricName              = "CpuUtilization"
 	maxOneMinuteWindowHours = 7 * 24
+	percentileTarget        = 0.95
 )
 
-// QueryP95CPU returns the most recent P95 CpuUtilization datapoint for the supplied compute instance.
+// QueryP95CPU returns the trailing seven-day P95 CpuUtilization percentile for the supplied compute instance.
 // The query spans the trailing seven days at one-minute resolution to match the reclaim horizon and
 // the Monitoring API's resolution limit. ErrNoMetricsData is returned when the API yields no
 // datapoints.
@@ -81,17 +87,15 @@ func buildSummarizeRequest(
 	return request
 }
 
+// collectLatestDatapoint pages through the SummarizeMetricsData responses and computes
+// the requested percentile across the full window. It returns false when the API yields
+// no datapoints.
 func (c *Client) collectLatestDatapoint(
 	ctx context.Context,
 	request monitoring.SummarizeMetricsDataRequest,
 ) (float32, bool, error) {
-	var (
-		pageToken       *string
-		latestValue     float32
-		latestTimestamp time.Time
-	)
-
-	found := false
+	pageToken := (*string)(nil)
+	values := make([]float64, 0)
 
 	for {
 		response, nextPage, err := c.metrics.SummarizeMetricsData(ctx, request, pageToken)
@@ -99,12 +103,7 @@ func (c *Client) collectLatestDatapoint(
 			return 0, false, fmt.Errorf("summarize metrics: %w", err)
 		}
 
-		latestTimestamp, latestValue, found = foldMetricStreams(
-			response.Items,
-			latestTimestamp,
-			latestValue,
-			found,
-		)
+		values = appendMetricValues(values, response.Items)
 
 		pageToken = normalizePageToken(nextPage)
 		if pageToken == nil {
@@ -112,35 +111,40 @@ func (c *Client) collectLatestDatapoint(
 		}
 	}
 
-	if !found {
+	if len(values) == 0 {
 		return 0, false, nil
 	}
 
-	return latestValue, true, nil
+	percentile := percentile(values, percentileTarget)
+
+	return float32(percentile), true, nil
 }
 
-func foldMetricStreams(
-	streams []monitoring.MetricData,
-	latestTimestamp time.Time,
-	latestValue float32,
-	found bool,
-) (time.Time, float32, bool) {
+func appendMetricValues(values []float64, streams []monitoring.MetricData) []float64 {
 	for _, stream := range streams {
 		for _, datapoint := range stream.AggregatedDatapoints {
 			if datapoint.Value == nil || datapoint.Timestamp == nil {
 				continue
 			}
 
-			timestamp := datapoint.Timestamp.Time
-			if !found || timestamp.After(latestTimestamp) {
-				latestTimestamp = timestamp
-				latestValue = float32(*datapoint.Value)
-				found = true
-			}
+			values = append(values, *datapoint.Value)
 		}
 	}
 
-	return latestTimestamp, latestValue, found
+	return values
+}
+
+func percentile(values []float64, target float64) float64 {
+	sort.Float64s(values)
+
+	rank := max(int(math.Ceil(target*float64(len(values)))), 1)
+
+	index := rank - 1
+	if index >= len(values) {
+		index = len(values) - 1
+	}
+
+	return values[index]
 }
 
 func normalizePageToken(token *string) *string {
