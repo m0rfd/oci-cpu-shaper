@@ -76,6 +76,18 @@ func TestValidateConfigRejectsNonPositiveRelaxedConfirmations(t *testing.T) {
 	}
 }
 
+func TestValidateConfigRejectsExcessiveRelaxedConfirmations(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.RelaxedConfirmations = 101 // Above maximum of 100
+
+	err := ValidateConfig(cfg)
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig for excessive relaxed confirmations, got %v", err)
+	}
+}
+
 func TestValidateConfigRejectsDescendingGoals(t *testing.T) {
 	t.Parallel()
 

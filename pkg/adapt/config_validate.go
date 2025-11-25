@@ -94,11 +94,22 @@ func validateStepSizes(cfg Config) error {
 }
 
 func validateRelaxedConfirmations(cfg Config) error {
+	const maxRelaxedConfirmations = 100
+
 	if cfg.RelaxedConfirmations <= 0 {
 		return fmt.Errorf(
 			"%w: controller.relaxedConfirmations (%d) must be greater than zero",
 			ErrInvalidConfig,
 			cfg.RelaxedConfirmations,
+		)
+	}
+
+	if cfg.RelaxedConfirmations > maxRelaxedConfirmations {
+		return fmt.Errorf(
+			"%w: controller.relaxedConfirmations (%d) must not exceed %d (would delay relaxed interval excessively)",
+			ErrInvalidConfig,
+			cfg.RelaxedConfirmations,
+			maxRelaxedConfirmations,
 		)
 	}
 

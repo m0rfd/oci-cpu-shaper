@@ -172,3 +172,73 @@ func TestApplySuppressionTargetsLockedMaintainsZeroWhenSuppressed(t *testing.T) 
 		)
 	}
 }
+
+func TestRelaxedSuccessesGetter(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	metrics := newFakeMetrics([]metricResult{{value: 0.30, err: nil}})
+	shaper := newFakeShaper()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	// Initially should be 0
+	if controller.RelaxedSuccesses() != 0 {
+		t.Fatalf("expected initial relaxedSuccesses = 0, got %d", controller.RelaxedSuccesses())
+	}
+
+	// After one high sample, should be 1
+	stepper, ok := any(controller).(controllerStepper)
+	if !ok {
+		t.Fatal("controller does not expose stepper interface")
+	}
+
+	_ = stepper.step(context.Background())
+
+	if controller.RelaxedSuccesses() != 1 {
+		t.Fatalf(
+			"expected relaxedSuccesses = 1 after first high sample, got %d",
+			controller.RelaxedSuccesses(),
+		)
+	}
+}
+
+func TestRelaxedSuccessesResetOnDrop(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.RelaxedThreshold = 0.26
+
+	metrics := newFakeMetrics([]metricResult{
+		{value: 0.30, err: nil}, // High
+		{value: 0.24, err: nil}, // Drop below threshold
+	})
+	shaper := newFakeShaper()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	stepper, ok := any(controller).(controllerStepper)
+	if !ok {
+		t.Fatal("controller does not expose stepper interface")
+	}
+
+	// First step: counter should increment
+	_ = stepper.step(context.Background())
+
+	if controller.RelaxedSuccesses() != 1 {
+		t.Fatalf("expected relaxedSuccesses = 1, got %d", controller.RelaxedSuccesses())
+	}
+
+	// Second step: counter should reset to 0
+	_ = stepper.step(context.Background())
+
+	if controller.RelaxedSuccesses() != 0 {
+		t.Fatalf("expected relaxedSuccesses = 0 after drop, got %d", controller.RelaxedSuccesses())
+	}
+}
