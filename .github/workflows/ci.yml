@@ -68,9 +68,12 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
+    needs:
+      - lint-tools
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+      GOBIN: ${{ github.workspace }}/bin
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -82,6 +85,9 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
 
+      - name: Set up lint tools
+        uses: ./.github/actions/setup-lint-tools
+
       - name: Cache golangci-lint workspace
         uses: actions/cache@v4
         with:
@@ -90,26 +96,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-
 
-      - name: Cache Python tools
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-mbake-1.4.3
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
       - name: Cache golangci-lint binary
         uses: actions/cache@v4
         with:
-          path: bin/golangci-lint
+          path: ${{ env.GOBIN }}/golangci-lint
           key: ${{ runner.os }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ hashFiles('Makefile') }}
           restore-keys: |
             ${{ runner.os }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-
 
       - name: Run golangci-lint
         run: make lint
-        env:
-          GOBIN: ${{ github.workspace }}/bin
 
       - name: Check Makefile formatting
         run: make lint-makefile
