@@ -114,13 +114,14 @@ We support two documented modes. Rootless is first-class but not exclusive.
 ### 5.2 Config (env or flags). Defaults chosen to avoid manual tuning
 
 Defaults now track the live controller values in `pkg/adapt/config_defaults.go` and flow through `pkg/runtimeconfig/defaults.go`, leaning on a slightly more aggressive-but-safe
-band that stays above the OCI reclaim floor while closing faster when idle and documents the full goal window used by the controller:
+band that stays above the OCI reclaim floor while closing faster when idle and documents the full goal window, suppression hysteresis (utilisation and runnable), and fallback target used by the controller:
 
 * `SHAPER_TARGET_START=0.22`
 * `SHAPER_TARGET_MIN=0.20`
 * `SHAPER_TARGET_MAX=0.32`
 * `SHAPER_STEP_UP=0.01`
 * `SHAPER_STEP_DOWN=0.005`
+* `SHAPER_FALLBACK_TARGET=0.22`
 * `SHAPER_GOAL_LOW=0.21`
 * `SHAPER_GOAL_HIGH=0.27`
 * `SHAPER_FAST_INTERVAL=1s`
@@ -129,7 +130,8 @@ band that stays above the OCI reclaim floor while closing faster when idle and d
 * `SHAPER_RELAXED_THRESHOLD=0.26`
 * `SHAPER_SUPPRESS_THRESHOLD=0.80`
 * `SHAPER_SUPPRESS_RESUME=0.68`
-* `SHAPER_FALLBACK_TARGET=0.22`
+* `SHAPER_SUPPRESS_RUNNABLE_THRESHOLD=1.20`
+* `SHAPER_SUPPRESS_RUNNABLE_RESUME=0.96`
 * `HTTP_ADDR=:9108`
 * No region/OCID input needed; IMDSv2 supplies them.
 
@@ -253,14 +255,16 @@ while true:
       timer = SHAPER_SLOW_INTERVAL
   else:
       mode=normal
-      if p95 < 0.23: current_target = min(target+STEP_UP, TARGET_MAX)
-      if p95 > 0.30: current_target = max(target-STEP_DOWN, TARGET_MIN)
+      if p95 < 0.21: current_target = min(target+0.01, TARGET_MAX)
+      if p95 > 0.27: current_target = max(target-0.005, TARGET_MIN)
       if p95 >= 0.26 consistently: timer = SHAPER_SLOW_INTERVAL_RELAXED
       else: timer = SHAPER_SLOW_INTERVAL
   sleep(timer)
 ```
 
 **MQL facts used:** `percentile()` is a supported statistic; 1-minute interval returns up to 7 days. ([Oracle Docs][7])
+
+The slow-loop thresholds stay aligned with the 21–27% goal band and 26% relaxed trigger documented in the defaults above.
 
 ---
 

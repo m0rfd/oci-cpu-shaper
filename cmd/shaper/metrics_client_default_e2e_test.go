@@ -66,8 +66,7 @@ func TestDefaultMetricsClientBuilderE2EPropagatesMonitoringErrors(t *testing.T) 
 func TestDefaultMetricsClientBuilderE2EFallsBackToInstancePrincipal(t *testing.T) {
 	stub := newStubMetricsClient()
 
-	oldBuilder := newInstancePrincipalBuilder
-	newInstancePrincipalBuilder = func(opts ...metricsclient.Option) metricsclient.Builder {
+	oldBuilder := newInstancePrincipalBuilder.swap(func(opts ...metricsclient.Option) metricsclient.Builder {
 		t.Helper()
 
 		return func(compartmentID, region string) (metricsclient.MetricsClient, error) {
@@ -81,9 +80,9 @@ func TestDefaultMetricsClientBuilderE2EFallsBackToInstancePrincipal(t *testing.T
 
 			return stub, nil
 		}
-	}
+	})
 	t.Cleanup(func() {
-		newInstancePrincipalBuilder = oldBuilder
+		newInstancePrincipalBuilder.swap(oldBuilder)
 	})
 
 	os.Unsetenv(e2eclient.MonitoringEndpointEnv)

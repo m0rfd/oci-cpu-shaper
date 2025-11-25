@@ -35,19 +35,34 @@ func setPauseThresholds(pool *Pool, pause, resume float64) {
 	pool.resumeThresholdBits.Store(math.Float64bits(resume))
 }
 
-func observeHostLoad(pool *Pool, utilisation float64) {
-	if math.IsNaN(utilisation) || math.IsInf(utilisation, 0) {
+func setRunnableGuard(pool *Pool, threshold float64) {
+	if math.IsNaN(threshold) || math.IsInf(threshold, 0) || threshold < 0 {
+		threshold = 0
+	}
+
+	pool.runnableGuardBits.Store(math.Float64bits(threshold))
+}
+
+func observeHostLoad(pool *Pool, utilisation, runnable float64) {
+	var ok bool
+
+	utilisation, ok = normaliseUtilisation(utilisation)
+	if !ok {
 		return
 	}
 
-	if utilisation < 0 {
-		utilisation = 0
-	} else if utilisation > 1 {
-		utilisation = 1
+	runnable = normaliseRunnable(runnable)
+
+	if runnableGuardHit(pool, runnable) {
+		pool.paused.Store(1)
+
+		return
 	}
 
 	pause := math.Float64frombits(pool.pauseThresholdBits.Load())
 	if pause <= 0 {
+		pool.paused.Store(0)
+
 		return
 	}
 
@@ -65,4 +80,38 @@ func observeHostLoad(pool *Pool, utilisation float64) {
 
 func isPaused(pool *Pool) bool {
 	return pool.paused.Load() == 1
+}
+
+func runnableGuardHit(pool *Pool, runnable float64) bool {
+	guard := math.Float64frombits(pool.runnableGuardBits.Load())
+
+	return guard > 0 && runnable >= guard
+}
+
+func normaliseUtilisation(utilisation float64) (float64, bool) {
+	if math.IsNaN(utilisation) || math.IsInf(utilisation, 0) {
+		return 0, false
+	}
+
+	if utilisation < 0 {
+		return 0, true
+	}
+
+	if utilisation > 1 {
+		return 1, true
+	}
+
+	return utilisation, true
+}
+
+func normaliseRunnable(runnable float64) float64 {
+	if math.IsNaN(runnable) || math.IsInf(runnable, 0) {
+		return 0
+	}
+
+	if runnable < 0 {
+		return 0
+	}
+
+	return runnable
 }

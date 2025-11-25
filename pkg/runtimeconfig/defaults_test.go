@@ -61,6 +61,12 @@ func TestDefaultConfigAlignsWithAdaptDefaults(t *testing.T) {
 
 	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, defaults.SuppressThreshold)
 	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, defaults.SuppressResume)
+	assertFloatEqual(
+		t,
+		"poolRunnableGuard",
+		cfg.Pool.RunnableGuard,
+		defaults.SuppressRunnableThreshold,
+	)
 	assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9108")
 }
 
