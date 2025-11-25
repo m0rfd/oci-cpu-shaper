@@ -369,6 +369,56 @@ func TestStartMetricsEndpointWrapsStartError(t *testing.T) {
 	}
 }
 
+func TestStartMetricsEndpointCancelsDerivedContextOnStartError(t *testing.T) {
+	t.Parallel()
+
+	handler := http.NewServeMux()
+	handler.Handle("/metrics", http.NotFoundHandler())
+
+	canceled := make(chan struct{})
+
+	deps := defaultRunDeps()
+	deps.startMetricsServer = func(
+		ctx context.Context,
+		_ *zap.Logger,
+		_ string,
+		_ http.Handler,
+	) (metricsShutdownFunc, error) {
+		go func() {
+			<-ctx.Done()
+			close(canceled)
+		}()
+
+		return nil, errMetricsStartFailure
+	}
+
+	shutdown, cancel, err := startMetricsEndpoint(
+		context.Background(),
+		deps,
+		zap.NewNop(),
+		testMetricsBind,
+		handler,
+	)
+
+	if shutdown != nil || cancel != nil {
+		t.Fatalf(
+			"expected nil shutdown and cancel when start fails, got %v and %v",
+			shutdown,
+			cancel,
+		)
+	}
+
+	if !errors.Is(err, errMetricsStartFailure) {
+		t.Fatalf("expected start error to propagate, got %v", err)
+	}
+
+	select {
+	case <-canceled:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected derived metrics context to be canceled after start failure")
+	}
+}
+
 func TestStartMetricsEndpointWrapsContextError(t *testing.T) {
 	t.Parallel()
 
