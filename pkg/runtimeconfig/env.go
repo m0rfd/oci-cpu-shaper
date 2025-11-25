@@ -8,28 +8,30 @@ import (
 )
 
 const (
-	envTargetStart         = "SHAPER_TARGET_START"
-	envTargetMin           = "SHAPER_TARGET_MIN"
-	envTargetMax           = "SHAPER_TARGET_MAX"
-	envStepUp              = "SHAPER_STEP_UP"
-	envStepDown            = "SHAPER_STEP_DOWN"
-	envSlowInterval        = "SHAPER_SLOW_INTERVAL"
-	envRelaxedInterval     = "SHAPER_SLOW_INTERVAL_RELAXED"
-	envFastInterval        = "SHAPER_FAST_INTERVAL"
-	envPoolWorkers         = "SHAPER_WORKER_COUNT"
-	envHTTPBind            = "HTTP_ADDR"
-	envCompartmentID       = "OCI_COMPARTMENT_ID"
-	envOCIRegion           = "OCI_REGION"
-	envInstanceID          = "OCI_INSTANCE_ID"
-	envOCIOffline          = "OCI_OFFLINE"
-	envFallbackTarget      = "SHAPER_FALLBACK_TARGET"
-	envRelaxedThreshold    = "SHAPER_RELAXED_THRESHOLD"
-	envGoalLow             = "SHAPER_GOAL_LOW"
-	envGoalHigh            = "SHAPER_GOAL_HIGH"
-	envSuppressThreshold   = "SHAPER_SUPPRESS_THRESHOLD"
-	envSuppressResume      = "SHAPER_SUPPRESS_RESUME"
-	envPoolPauseThreshold  = "SHAPER_POOL_PAUSE_THRESHOLD"
-	envPoolResumeThreshold = "SHAPER_POOL_RESUME_THRESHOLD"
+	envTargetStart               = "SHAPER_TARGET_START"
+	envTargetMin                 = "SHAPER_TARGET_MIN"
+	envTargetMax                 = "SHAPER_TARGET_MAX"
+	envStepUp                    = "SHAPER_STEP_UP"
+	envStepDown                  = "SHAPER_STEP_DOWN"
+	envSlowInterval              = "SHAPER_SLOW_INTERVAL"
+	envRelaxedInterval           = "SHAPER_SLOW_INTERVAL_RELAXED"
+	envFastInterval              = "SHAPER_FAST_INTERVAL"
+	envPoolWorkers               = "SHAPER_WORKER_COUNT"
+	envHTTPBind                  = "HTTP_ADDR"
+	envCompartmentID             = "OCI_COMPARTMENT_ID"
+	envOCIRegion                 = "OCI_REGION"
+	envInstanceID                = "OCI_INSTANCE_ID"
+	envOCIOffline                = "OCI_OFFLINE"
+	envFallbackTarget            = "SHAPER_FALLBACK_TARGET"
+	envRelaxedThreshold          = "SHAPER_RELAXED_THRESHOLD"
+	envGoalLow                   = "SHAPER_GOAL_LOW"
+	envGoalHigh                  = "SHAPER_GOAL_HIGH"
+	envSuppressThreshold         = "SHAPER_SUPPRESS_THRESHOLD"
+	envSuppressResume            = "SHAPER_SUPPRESS_RESUME"
+	envSuppressRunnableThreshold = "SHAPER_SUPPRESS_RUNNABLE_THRESHOLD"
+	envSuppressRunnableResume    = "SHAPER_SUPPRESS_RUNNABLE_RESUME"
+	envPoolPauseThreshold        = "SHAPER_POOL_PAUSE_THRESHOLD"
+	envPoolResumeThreshold       = "SHAPER_POOL_RESUME_THRESHOLD"
 )
 
 var lookupEnv = os.LookupEnv //nolint:gochecknoglobals // overridden in tests
@@ -49,6 +51,14 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Controller.SuppressThreshold,
 	)
 	cfg.Controller.SuppressResume = envFloat(envSuppressResume, cfg.Controller.SuppressResume)
+	cfg.Controller.SuppressRunnableThreshold = envFloat(
+		envSuppressRunnableThreshold,
+		cfg.Controller.SuppressRunnableThreshold,
+	)
+	cfg.Controller.SuppressRunnableResume = envFloat(
+		envSuppressRunnableResume,
+		cfg.Controller.SuppressRunnableResume,
+	)
 	cfg.Controller.Interval = envDuration(envSlowInterval, cfg.Controller.Interval)
 	cfg.Controller.RelaxedInterval = envDuration(envRelaxedInterval, cfg.Controller.RelaxedInterval)
 

@@ -66,6 +66,8 @@ controller:
   relaxedThreshold: 0.26
   suppressThreshold: 0.80
   suppressResume: 0.68
+  suppressRunnableThreshold: 1.20
+  suppressRunnableResume: 0.96
 estimator:
   interval: 1s
 pool:
@@ -90,7 +92,7 @@ oci:
   samples remain usable in source control. Operators should extend the manifest
   with their own `compartmentId`, `region`, and optional `instanceId` values
   before entering enforce mode.
-- `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed four-hour interval when OCI P95 sits at or above 0.26. The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) now reflect the 0.80/0.68 hysteresis that decides when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools. Set `controller.suppressThreshold` to `0` (or any non-positive value) to disable host-load suppression entirely; the resume threshold is ignored in that case.
+- `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed four-hour interval when OCI P95 sits at or above 0.26. The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) now reflect the 0.80/0.68 hysteresis that decides when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools, while `suppressRunnableThreshold`/`suppressRunnableResume` clamp the loop immediately when runnable tasks exceed ~1.2 per CPU and only resume once the run queue cools. Set `controller.suppressThreshold` to `0` (or any non-positive value) to disable utilisation-based suppression entirely; the resume threshold is ignored in that case.
 - The loader now enforces the documented ratios and cadences: `targetMin` must remain below `targetMax`, every slow-loop target and goal must fall within that band, and the `interval`, `relaxedInterval`, `stepUp`, `stepDown`, `pool.quantum`, and `pool.workers` values must be positive. Invalid manifests abort startup with an exit status of `2` so operators can fix the config before the controller touches system state (§§3.1, 5.2).
 - Configuration processing now flows through four dedicated stages, all implemented in `pkg/runtimeconfig`: an immutable defaults builder, a YAML merge helper, environment overrides, and validators. Each stage is unit-tested individually so overrides and safety rails stay predictable, and env vars always win over file-sourced values without mutating the stored defaults (§5.2).
 - Validation now enforces that every slow-loop target or goal remains below both suppression thresholds, so manifests that would immediately re-trigger the fast loop are rejected with an exit status of `2` and a descriptive error message (§§3.1, 5.2).
@@ -115,7 +117,8 @@ The CLI honours the following environment variables, matching the naming in §5.
 | `SHAPER_SLOW_INTERVAL` / `SHAPER_SLOW_INTERVAL_RELAXED` | Baseline and relaxed controller cadences. | `1h` / `4h` |
 | `SHAPER_RELAXED_THRESHOLD` | P95 ratio that switches the controller to the relaxed cadence. | `0.26` |
 | `SHAPER_FAST_INTERVAL` | Host CPU sampling cadence for the estimator. | `1s` |
-| `SHAPER_SUPPRESS_THRESHOLD` / `SHAPER_SUPPRESS_RESUME` | Fast-loop suppression thresholds that gate the zero-target mode. Assign `SHAPER_SUPPRESS_THRESHOLD=0` (or any non-positive value) to disable suppression; the resume override is ignored when suppression is off. | `0.80` / `0.68` |
+| `SHAPER_SUPPRESS_THRESHOLD` / `SHAPER_SUPPRESS_RESUME` | Utilisation-based fast-loop suppression thresholds that gate the zero-target mode. Assign `SHAPER_SUPPRESS_THRESHOLD=0` (or any non-positive value) to disable utilisation suppression; the resume override is ignored when that path is off. | `0.80` / `0.68` |
+| `SHAPER_SUPPRESS_RUNNABLE_THRESHOLD` / `SHAPER_SUPPRESS_RUNNABLE_RESUME` | Runnable-per-CPU band that pauses the controller immediately when the run queue spikes. Assign either to `0` to disable runnable-based suppression independently of utilisation thresholds. | `1.20` / `0.96` |
 | `SHAPER_WORKER_COUNT` | Number of duty-cycle workers (`>=1`). | `2` |
 | `SHAPER_POOL_PAUSE_THRESHOLD` / `SHAPER_POOL_RESUME_THRESHOLD` | Host CPU hysteresis that pauses/resumes the worker pool when the estimator detects contention. | `0.80` / `0.68` |
 | `HTTP_ADDR` | Prometheus listener bind address. | `:9108` |

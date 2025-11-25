@@ -30,6 +30,7 @@ func TestAdaptiveControllerRunLifecycle(t *testing.T) {
 			{
 				Timestamp:    time.Unix(0, 0),
 				Utilisation:  0.5,
+				Runnable:     0,
 				BusyJiffies:  0,
 				TotalJiffies: 0,
 				Err:          nil,
@@ -97,6 +98,7 @@ func TestConsumeEstimatorStopsOnClose(t *testing.T) {
 	observations <- est.Observation{
 		Timestamp:    time.Unix(0, 0),
 		Utilisation:  0.5,
+		Runnable:     0,
 		BusyJiffies:  0,
 		TotalJiffies: 0,
 		Err:          nil,

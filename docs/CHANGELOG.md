@@ -16,6 +16,12 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
   readings to the pool, and docs (§§3.1, 9) describe the new configuration and
   behaviour. Updated tests cover pause transitions to keep the ≥96% coverage floor (§§3,
   5, 9, 11).
+- Fast-loop suppression now ingests runnable-per-CPU signals from `/proc/stat` and
+  pauses immediately when the run queue spikes. New controller knobs
+  (`suppressRunnableThreshold`/`suppressRunnableResume`,
+  `SHAPER_SUPPRESS_RUNNABLE_THRESHOLD`/`SHAPER_SUPPRESS_RUNNABLE_RESUME`) and docs (§§3.1,
+  5.2, 9) cover the defaults, while unit tests validate runnable-triggered suppression
+  and the estimator’s runnable parsing to preserve the ≥96% coverage floor (§11).
 - Cgroup telemetry helper that reads `/proc/self/cgroup`, parses the
   colocated `cpu.weight`/`cpu.max` files, and publishes the detected values via
   new `cgroup_cpu_weight`/`cgroup_cpu_max_*` metrics plus a `cgroup` block in
