@@ -10,7 +10,7 @@ The shaper relies on cgroup v2 CPU controllers to yield capacity to tenant workl
 - Keep weights consistent across deployments; large swings make tuning difficult and may trigger reclaim due to unpredictable duty cycles.
 - Validate runtime mappings after upgrades because past releases of Docker and containerd shipped incorrect v1-to-v2 conversions.[^docker-weight]
 
-The controller observes host load through `/proc/stat` and immediately drops to zero work when contention is detected, so even a modest weight keeps the system responsive. The fast loop maintains a rolling average of host utilisation and enters a suppressed state once the value crosses `controller.suppressThreshold` (default `0.85`). While suppressed, the worker pool target is forced to `0` until the average cools below `controller.suppressResume` (default `0.70`), providing hysteresis that prevents flapping when utilisation hovers near the threshold.
+The controller observes host load through `/proc/stat` and immediately drops to zero work when contention is detected, so even a modest weight keeps the system responsive. The fast loop maintains a rolling average of host utilisation and enters a suppressed state once the value crosses `controller.suppressThreshold` (default `0.80`). While suppressed, the worker pool target is forced to `0` until the average cools below `controller.suppressResume` (default `0.68`), providing hysteresis that prevents flapping when utilisation hovers near the threshold. Runnable-per-CPU spikes trigger the same pause when they exceed `controller.suppressRunnableThreshold` (default `1.20`) and resume once the run queue drops below `controller.suppressRunnableResume` (default `0.96`).
 
 ## 4.2 Optional ceilings via `cpu.max`
 
