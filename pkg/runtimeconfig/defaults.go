@@ -37,9 +37,6 @@ func Default() Config {
 	cfg.Estimator.Interval = defaultEstimatorInterval
 
 	cfg.Pool.Workers = defaultPoolWorkers
-	if cfg.Pool.Workers <= 0 {
-		cfg.Pool.Workers = 1
-	}
 
 	cfg.Pool.Quantum = shape.DefaultQuantum
 	cfg.Pool.PauseThreshold = defaults.SuppressThreshold
