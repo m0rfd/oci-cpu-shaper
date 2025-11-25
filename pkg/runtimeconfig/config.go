@@ -33,6 +33,7 @@ type ControllerConfig struct {
 	SuppressResume            float64
 	SuppressRunnableThreshold float64
 	SuppressRunnableResume    float64
+	SuppressSmoothingSamples  int
 }
 
 // EstimatorConfig controls the fast estimator loop.
@@ -87,6 +88,7 @@ type controllerFileConfig struct {
 	SuppressResume            *float64       `yaml:"suppressResume"`
 	SuppressRunnableThreshold *float64       `yaml:"suppressRunnableThreshold"`
 	SuppressRunnableResume    *float64       `yaml:"suppressRunnableResume"`
+	SuppressSmoothingSamples  *int           `yaml:"suppressSmoothingSamples"`
 }
 
 type estimatorFileConfig struct {

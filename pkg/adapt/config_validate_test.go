@@ -145,3 +145,22 @@ func TestValidateConfigAllowsDisabledRunnableSuppression(t *testing.T) {
 		t.Fatalf("ValidateConfig returned error for disabled runnable suppression: %v", err)
 	}
 }
+
+func TestValidateConfigRejectsInvalidSmoothing(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.SuppressSmoothingSamples = -1
+
+	err := ValidateConfig(cfg)
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig for negative smoothing, got %v", err)
+	}
+
+	cfg.SuppressSmoothingSamples = 101
+
+	err = ValidateConfig(cfg)
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig for excessive smoothing, got %v", err)
+	}
+}

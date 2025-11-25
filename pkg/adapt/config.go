@@ -30,6 +30,11 @@ type Config struct {
 	SuppressResume            float64
 	SuppressRunnableThreshold float64
 	SuppressRunnableResume    float64
+	// SuppressSmoothingSamples controls how aggressively host utilisation samples
+	// are smoothed before evaluating suppression. Values <= 1 disable smoothing
+	// and apply the latest sample immediately, while higher counts retain the
+	// rolling average behaviour used to dampen oscillations.
+	SuppressSmoothingSamples int
 }
 
 var (

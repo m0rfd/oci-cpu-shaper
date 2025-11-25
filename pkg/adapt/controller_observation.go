@@ -52,7 +52,7 @@ func (c *AdaptiveController) handleObservation(observation est.Observation) {
 		return
 	}
 
-	c.updateHostLoadLocked(utilisation)
+	c.updateHostLoadLocked(utilisation, guarded)
 	c.hostRunnable = runnable
 	previouslySuppressed := c.transitionSuppressionLocked(guarded)
 	c.applySuppressionTargetsLocked(previouslySuppressed)

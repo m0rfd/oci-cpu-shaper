@@ -132,6 +132,7 @@ band that stays above the OCI reclaim floor while closing faster when idle and d
 * `SHAPER_SUPPRESS_RESUME=0.68`
 * `SHAPER_SUPPRESS_RUNNABLE_THRESHOLD=1.20`
 * `SHAPER_SUPPRESS_RUNNABLE_RESUME=0.96`
+* `SHAPER_SUPPRESS_SMOOTHING_SAMPLES=5`
 * `HTTP_ADDR=:9108`
 * No region/OCID input needed; IMDSv2 supplies them.
 

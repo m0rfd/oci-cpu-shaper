@@ -42,6 +42,10 @@ func coerceConfig(cfg Config) (Config, string) {
 		cfg.SuppressRunnableResume,
 		defaults.SuppressRunnableResume,
 	)
+	cfg.SuppressSmoothingSamples = ensureIntAllowZero(
+		cfg.SuppressSmoothingSamples,
+		defaults.SuppressSmoothingSamples,
+	)
 
 	cfg.SuppressThreshold = clamp(cfg.SuppressThreshold, 0, 1)
 
@@ -104,4 +108,12 @@ func ensureInt(value, fallback int) int {
 	}
 
 	return value
+}
+
+func ensureIntAllowZero(value, fallback int) int {
+	if value == 0 {
+		return 0
+	}
+
+	return ensureInt(value, fallback)
 }
