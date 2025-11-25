@@ -130,6 +130,7 @@ jobs:
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
       GOBIN: ${{ github.workspace }}/bin
     strategy:
+      fail-fast: false
       matrix:
         workflow:
           - ci.yml
