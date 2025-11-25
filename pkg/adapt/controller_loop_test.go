@@ -17,7 +17,10 @@ import (
 func TestAdaptiveControllerRunLifecycle(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.24, err: nil}, {value: 0.26, err: nil}})
+	metrics := newFakeMetrics([]metricResult{
+		{value: 0.24, timestamp: time.Unix(1_700_000_100, 0), err: nil},
+		{value: 0.26, timestamp: time.Unix(1_700_000_160, 0), err: nil},
+	})
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 	cfg.Interval = 5 * time.Millisecond
@@ -78,7 +81,9 @@ func TestAdaptiveControllerRunLifecycle(t *testing.T) {
 func TestAdaptiveControllerRunStepsImmediately(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.24, err: nil}})
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.24, timestamp: time.Unix(1_700_000_220, 0), err: nil}},
+	)
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 	cfg.Interval = 250 * time.Millisecond
@@ -123,7 +128,9 @@ func TestAdaptiveControllerRunStepsImmediately(t *testing.T) {
 func TestConsumeEstimatorStopsOnClose(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_000_240, 0), err: nil}},
+	)
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 
@@ -165,7 +172,9 @@ func TestConsumeEstimatorStopsOnClose(t *testing.T) {
 func TestAdaptiveControllerRunHandlesNilEstimatorChannel(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_000_300, 0), err: nil}},
+	)
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 
@@ -205,7 +214,9 @@ func (nilChannelEstimator) Run(context.Context) <-chan est.Observation { return 
 func TestConsumeEstimatorStopsWhenEstimatorClosesImmediately(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_000_360, 0), err: nil}},
+	)
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 
@@ -244,7 +255,9 @@ func TestAdaptiveControllerRunEmitsMetricsSignals(t *testing.T) {
 	t.Parallel()
 
 	recorder := newStubMetricsRecorder()
-	metrics := newFakeMetrics([]metricResult{{value: 0.20, err: nil}})
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.20, timestamp: time.Unix(1_700_000_420, 0), err: nil}},
+	)
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 	cfg.Mode = "  enforce  "

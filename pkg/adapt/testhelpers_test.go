@@ -23,8 +23,9 @@ var (
 const enforceMode = "enforce"
 
 type metricResult struct {
-	value float64
-	err   error
+	value     float64
+	timestamp time.Time
+	err       error
 }
 
 type fakeMetrics struct {
@@ -37,17 +38,25 @@ func newFakeMetrics(results []metricResult) *fakeMetrics {
 	copied := make([]metricResult, len(results))
 	copy(copied, results)
 
+	baseTimestamp := time.Unix(1_700_000_000, 0)
+
+	for index := range copied {
+		if copied[index].timestamp.IsZero() {
+			copied[index].timestamp = baseTimestamp.Add(time.Duration(index) * time.Minute)
+		}
+	}
+
 	return &fakeMetrics{results: copied, callIndex: 0, mu: sync.Mutex{}}
 }
 
-func (f *fakeMetrics) QueryP95CPU(ctx context.Context, _ string) (float64, error) {
+func (f *fakeMetrics) QueryP95CPU(ctx context.Context, _ string) (float64, time.Time, error) {
 	if len(f.results) == 0 {
-		return 0, errNoResultsConfigured
+		return 0, time.Time{}, errNoResultsConfigured
 	}
 
 	err := ctx.Err()
 	if err != nil {
-		return 0, fmt.Errorf("query p95 context: %w", err)
+		return 0, time.Time{}, fmt.Errorf("query p95 context: %w", err)
 	}
 
 	f.mu.Lock()
@@ -56,13 +65,13 @@ func (f *fakeMetrics) QueryP95CPU(ctx context.Context, _ string) (float64, error
 	if f.callIndex >= len(f.results) {
 		last := f.results[len(f.results)-1]
 
-		return last.value, last.err
+		return last.value, last.timestamp, last.err
 	}
 
 	result := f.results[f.callIndex]
 	f.callIndex++
 
-	return result.value, result.err
+	return result.value, result.timestamp, result.err
 }
 
 func (f *fakeMetrics) CallCount() int {

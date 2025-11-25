@@ -229,14 +229,19 @@ func TestCollectLatestDatapointSkipsWhitespaceNextPageHeaders(t *testing.T) {
 
 	request := buildSummarizeRequest(compartmentID, instanceID, now.Add(-time.Hour), now)
 
-	value, found, err := client.collectLatestDatapoint(context.Background(), request)
+	value, fetchedAt, found, err := client.collectLatestDatapoint(context.Background(), request)
 	requireNoError(t, err, "collect datapoint")
 
 	if !found {
 		t.Fatalf("expected datapoint to be found")
 	}
 
-	requireEqual(t, value, float32(20.0), "window percentile")
+	requireEqual(t, value, float64(20.0), "window percentile")
+
+	expectedTimestamp := now.Add(-5 * time.Minute)
+	if !fetchedAt.Equal(expectedTimestamp) {
+		t.Fatalf("expected latest timestamp %v, got %v", expectedTimestamp, fetchedAt)
+	}
 
 	if *requestCount != 1 {
 		t.Fatalf("expected one page to be fetched, got %d", *requestCount)

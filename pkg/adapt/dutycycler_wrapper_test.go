@@ -15,7 +15,7 @@ import (
 func TestAdaptiveControllerDryRunRecordsTargets(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.20, err: nil}})
+	metrics := newFakeMetrics([]metricResult{{value: 0.20, err: nil}}) //nolint:exhaustruct
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 	cfg.Mode = dryRunModeLabel
@@ -66,7 +66,7 @@ func TestAdaptiveControllerDryRunRecordsTargets(t *testing.T) {
 func TestAdaptiveControllerEnforceModeMutatesDutyCycler(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.20, err: nil}})
+	metrics := newFakeMetrics([]metricResult{{value: 0.20, err: nil}}) //nolint:exhaustruct
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 	cfg.Mode = enforceMode

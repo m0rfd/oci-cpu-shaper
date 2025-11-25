@@ -42,7 +42,7 @@ func TestCreateMetricsClientOfflineUsesStaticSeed(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	value, err := client.QueryP95CPU(context.Background(), "ocid.instance")
+	value, _, err := client.QueryP95CPU(context.Background(), "ocid.instance")
 	if err != nil {
 		t.Fatalf("unexpected query error: %v", err)
 	}

@@ -67,7 +67,7 @@ func TestControllerRelaxedIntervalSingleConfirmation(t *testing.T) {
 		name: "single-high-switches-to-relaxed",
 		cfg:  &cfg,
 		results: []metricResult{
-			{value: cfg.RelaxedThreshold, err: nil},
+			{value: cfg.RelaxedThreshold, timestamp: time.Unix(1_700_000_600, 0), err: nil},
 		},
 		expectations: []stepExpectation{
 			{
@@ -91,8 +91,8 @@ func TestControllerRelaxedIntervalRequiresConsecutiveConfirmations(t *testing.T)
 		name: "first-high-keeps-normal-interval",
 		cfg:  &cfg,
 		results: []metricResult{
-			{value: cfg.RelaxedThreshold, err: nil},
-			{value: cfg.RelaxedThreshold, err: nil},
+			{value: cfg.RelaxedThreshold, timestamp: time.Unix(1_700_000_660, 0), err: nil},
+			{value: cfg.RelaxedThreshold, timestamp: time.Unix(1_700_000_720, 0), err: nil},
 		},
 		expectations: []stepExpectation{
 			{
@@ -111,6 +111,7 @@ func TestControllerRelaxedIntervalRequiresConsecutiveConfirmations(t *testing.T)
 	runControllerScenario(t, scenario)
 }
 
+//nolint:funlen // Enumerates controller transitions across multiple scenarios for coverage.
 func controllerStateScenarios(
 	defaults Config,
 	fastInterval time.Duration,
@@ -125,9 +126,9 @@ func controllerStateScenarios(
 			name: "success then fallback recovery",
 			cfg:  nil,
 			results: []metricResult{
-				{value: 0.20, err: nil},
-				{value: 0, err: errOCIDown},
-				{value: 0.29, err: nil},
+				{value: 0.20, timestamp: time.Unix(1_700_000_780, 0), err: nil},
+				{value: 0, timestamp: time.Unix(1_700_000_840, 0), err: errOCIDown},
+				{value: 0.29, timestamp: time.Unix(1_700_000_900, 0), err: nil},
 			},
 			expectations: []stepExpectation{
 				{state: StateNormal, target: targetAfterStepUp, nextInterval: fastInterval},
@@ -139,8 +140,8 @@ func controllerStateScenarios(
 			name: "clamps within bounds",
 			cfg:  nil,
 			results: []metricResult{
-				{value: 0.10, err: nil},
-				{value: 0.50, err: nil},
+				{value: 0.10, timestamp: time.Unix(1_700_000_960, 0), err: nil},
+				{value: 0.50, timestamp: time.Unix(1_700_001_020, 0), err: nil},
 			},
 			expectations: []stepExpectation{
 				{state: StateNormal, target: targetAfterStepUp, nextInterval: fastInterval},
@@ -151,10 +152,22 @@ func controllerStateScenarios(
 			name: "relaxed interval after consecutive highs",
 			cfg:  nil,
 			results: []metricResult{
-				{value: defaults.RelaxedThreshold, err: nil},
-				{value: defaults.GoalLow - 0.01, err: nil},
-				{value: defaults.RelaxedThreshold, err: nil},
-				{value: defaults.RelaxedThreshold, err: nil},
+				{
+					value:     defaults.RelaxedThreshold,
+					timestamp: time.Unix(1_700_001_080, 0),
+					err:       nil,
+				},
+				{value: defaults.GoalLow - 0.01, timestamp: time.Unix(1_700_001_140, 0), err: nil},
+				{
+					value:     defaults.RelaxedThreshold,
+					timestamp: time.Unix(1_700_001_200, 0),
+					err:       nil,
+				},
+				{
+					value:     defaults.RelaxedThreshold,
+					timestamp: time.Unix(1_700_001_260, 0),
+					err:       nil,
+				},
 			},
 			expectations: []stepExpectation{
 				{state: StateNormal, target: defaults.TargetStart, nextInterval: fastInterval},
@@ -212,13 +225,13 @@ func buildHighUtilisationScenario(defaults Config) controllerScenario {
 		name: "baseline ocpu burst",
 		cfg:  nil,
 		results: []metricResult{
-			{value: 0.15, err: nil},
-			{value: 0.32, err: nil},
-			{value: 0.34, err: nil},
-			{value: 0.36, err: nil},
-			{value: 0.38, err: nil},
-			{value: 0.40, err: nil},
-			{value: 0.45, err: nil},
+			{value: 0.15, timestamp: time.Unix(1_700_001_320, 0), err: nil},
+			{value: 0.32, timestamp: time.Unix(1_700_001_380, 0), err: nil},
+			{value: 0.34, timestamp: time.Unix(1_700_001_440, 0), err: nil},
+			{value: 0.36, timestamp: time.Unix(1_700_001_500, 0), err: nil},
+			{value: 0.38, timestamp: time.Unix(1_700_001_560, 0), err: nil},
+			{value: 0.40, timestamp: time.Unix(1_700_001_620, 0), err: nil},
+			{value: 0.45, timestamp: time.Unix(1_700_001_680, 0), err: nil},
 		},
 		expectations: nil,
 	}
@@ -265,9 +278,9 @@ func TestRelaxedIntervalWaitsForStabilityAfterSuppression(t *testing.T) {
 	cfg.RelaxedInterval = time.Hour
 
 	metrics := newFakeMetrics([]metricResult{
-		{value: cfg.RelaxedThreshold, err: nil},
-		{value: cfg.RelaxedThreshold + 0.01, err: nil},
-		{value: cfg.RelaxedThreshold + 0.02, err: nil},
+		{value: cfg.RelaxedThreshold, timestamp: time.Unix(1_700_001_740, 0), err: nil},
+		{value: cfg.RelaxedThreshold + 0.01, timestamp: time.Unix(1_700_001_800, 0), err: nil},
+		{value: cfg.RelaxedThreshold + 0.02, timestamp: time.Unix(1_700_001_860, 0), err: nil},
 	})
 
 	controller, err := NewAdaptiveController(cfg, metrics, nil, newFakeShaper(), nil)
@@ -372,8 +385,8 @@ func TestAdaptiveControllerRecordsIntervalAfterRelaxationConfirmation(t *testing
 		t,
 		cfg,
 		[]metricResult{
-			{value: cfg.RelaxedThreshold, err: nil},
-			{value: cfg.RelaxedThreshold + 0.01, err: nil},
+			{value: cfg.RelaxedThreshold, timestamp: time.Unix(1_700_001_920, 0), err: nil},
+			{value: cfg.RelaxedThreshold + 0.01, timestamp: time.Unix(1_700_001_980, 0), err: nil},
 		},
 		[]time.Duration{cfg.Interval, cfg.RelaxedInterval},
 		StateNormal,
@@ -390,7 +403,9 @@ func TestAdaptiveControllerRecordsIntervalForHealthyWorkload(t *testing.T) {
 	runIntervalRecordingScenario(
 		t,
 		cfg,
-		[]metricResult{{value: cfg.RelaxedThreshold - 0.05, err: nil}},
+		[]metricResult{
+			{value: cfg.RelaxedThreshold - 0.05, timestamp: time.Unix(1_700_002_040, 0), err: nil},
+		},
 		[]time.Duration{cfg.Interval},
 		StateNormal,
 	)
@@ -435,4 +450,31 @@ func runIntervalRecordingScenario(
 	}
 
 	requireEqual(t, "state", controller.State(), wantState)
+}
+
+func TestAdaptiveControllerRecordsOCITimestamp(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	timestamp := time.Unix(1_700_123_456, 0)
+
+	recorder := newStubMetricsRecorder()
+	metrics := newFakeMetrics([]metricResult{{value: cfg.GoalLow, timestamp: timestamp, err: nil}})
+	shaper := newFakeShaper()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, recorder)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	stepper, ok := any(controller).(controllerStepper)
+	if !ok {
+		t.Fatalf("controller does not expose stepper interface")
+	}
+
+	_ = stepper.step(context.Background())
+
+	if !recorder.ociTime.Equal(timestamp) {
+		t.Fatalf("expected recorder to capture timestamp %v, got %v", timestamp, recorder.ociTime)
+	}
 }

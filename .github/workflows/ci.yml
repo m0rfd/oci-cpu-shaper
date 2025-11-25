@@ -10,6 +10,7 @@ concurrency:
 env:
   SHELLCHECK_VERSION: "0.10.0"
   PYFLAKES_VERSION: "3.2.0"
+  ACTIONLINT_VERSION: "v1.7.9"
 
 defaults:
   run:
@@ -131,6 +132,7 @@ jobs:
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+      GOBIN: ${{ github.workspace }}/bin
     strategy:
       matrix:
         workflow:

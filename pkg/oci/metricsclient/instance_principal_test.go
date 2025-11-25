@@ -79,7 +79,7 @@ func TestInstancePrincipalMetricsClientNilReceiver(t *testing.T) {
 
 	var client *instancePrincipalMetricsClient
 
-	_, err := client.QueryP95CPU(context.Background(), "ocid.instance")
+	_, _, err := client.QueryP95CPU(context.Background(), "ocid.instance")
 	if err == nil {
 		t.Fatal("expected error for nil receiver")
 	}
@@ -94,7 +94,7 @@ func TestInstancePrincipalMetricsClientNilDelegate(t *testing.T) {
 
 	client := &instancePrincipalMetricsClient{client: nil}
 
-	_, err := client.QueryP95CPU(context.Background(), "ocid.instance")
+	_, _, err := client.QueryP95CPU(context.Background(), "ocid.instance")
 	if err == nil {
 		t.Fatal("expected error for nil delegate")
 	}
@@ -110,7 +110,7 @@ func TestInstancePrincipalMetricsClientDelegateError(t *testing.T) {
 	querier := newStubP95Querier(0, errStubQueryFailure)
 	client := &instancePrincipalMetricsClient{client: querier}
 
-	_, err := client.QueryP95CPU(context.Background(), "ocid.instance")
+	_, _, err := client.QueryP95CPU(context.Background(), "ocid.instance")
 	if err == nil {
 		t.Fatal("expected delegated error")
 	}
@@ -153,9 +153,13 @@ func TestInstancePrincipalMetricsClientSuccess(t *testing.T) {
 	querier := newStubP95Querier(7.5, nil)
 	client := &instancePrincipalMetricsClient{client: querier}
 
-	value, err := client.QueryP95CPU(context.Background(), "ocid.instance")
+	value, fetchedAt, err := client.QueryP95CPU(context.Background(), "ocid.instance")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !fetchedAt.IsZero() {
+		t.Fatalf("expected zero timestamp, got %v", fetchedAt)
 	}
 
 	if value != float64(querier.value) {

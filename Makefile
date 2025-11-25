@@ -4,6 +4,8 @@ MAKEFLAGS += --warn-undefined-variables --no-builtin-rules
 
 GO_MACHINE_ARCH := $(shell uname -m)
 GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
+GO_SHA256_linux_amd64 ?= 9fa5ffeda4170de60f67f3aa0f824e426421ba724c21e133c1e35d6159ca1bec
+GO_SHA256_linux_arm64 ?= a68e86d4b72c2c2fecf7dfed667680b6c2a071221bbdb6913cf83ce3f80d9ff0
 
 GO ?= go
 GO_REQUIRED_VERSION ?= 1.25.4
@@ -439,15 +441,22 @@ ensure-go:
 		echo "Go not found and platform ($$ID) is not Ubuntu; aborting install"; \
 		exit 1; \
 	fi; \
-	TARBALL="go$(GO_REQUIRED_VERSION).linux-$(GO_DL_ARCH).tar.gz"; \
-	URL="https://go.dev/dl/$$TARBALL"; \
-	echo "Installing Go $(GO_REQUIRED_VERSION) from $$URL"; \
-	TMP_TARBALL="$$(mktemp)"; \
-	curl -fsSL "$$URL" -o "$$TMP_TARBALL"; \
-	rm -rf /usr/local/go; \
-	tar -C /usr/local -xzf "$$TMP_TARBALL"; \
-	rm -f "$$TMP_TARBALL"; \
-	echo "Go $(GO_REQUIRED_VERSION) installed at /usr/local/go";
+        TARBALL="go$(GO_REQUIRED_VERSION).linux-$(GO_DL_ARCH).tar.gz"; \
+        case "$(GO_DL_ARCH)" in \
+                amd64) CHECKSUM="$(GO_SHA256_linux_amd64)" ;; \
+                arm64) CHECKSUM="$(GO_SHA256_linux_arm64)" ;; \
+                *) echo "Unsupported Go arch: $(GO_DL_ARCH)"; exit 1 ;; \
+        esac; \
+        URL="https://go.dev/dl/$$TARBALL"; \
+        echo "Installing Go $(GO_REQUIRED_VERSION) from $$URL"; \
+        TMP_DIR="$$(mktemp -d)"; \
+        trap "rm -rf \"$$TMP_DIR\"" EXIT; \
+        TMP_TARBALL="$$TMP_DIR/$$TARBALL"; \
+        curl -fsSL "$$URL" -o "$$TMP_TARBALL"; \
+        printf "%s  %s\n" "$$CHECKSUM" "$$TMP_TARBALL" | sha256sum -c -; \
+        rm -rf /usr/local/go; \
+        tar -C /usr/local -xzf "$$TMP_TARBALL"; \
+        echo "Go $(GO_REQUIRED_VERSION) installed at /usr/local/go";
 
 go-mod-download: verify-go-version
 	@set -euo pipefail; \
