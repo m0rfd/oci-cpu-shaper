@@ -1,7 +1,6 @@
 {
     "recommendations": [
-        "openai.chatgpt",
-        "github.vscode-github-actions",
-        "golang.go"
+        "golang.go",
+        "ethan-reesor.vscode-go-test-adapter"
     ]
 }
