@@ -103,6 +103,7 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 
 ### Changed
 _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% threshold impact (§11)._
+- Documented the controller interval selection (normal, relaxed, fallback) plus the relaxed confirmation hysteresis and refreshed the metrics/`/healthz` field names in §§4–5 so the docs mirror the current defaults and telemetry exports.
 - Relaxed controller cadence now waits for two consecutive above-threshold P95 samples before switching to the four-hour loop.
   New `controller.relaxedConfirmations`/`SHAPER_RELAXED_CONFIRMATIONS` knobs carry a default of `2`, update the sample configs,
   and ship unit coverage for the hysteresis counter so the ≥96% statement floor remains intact (§§3.1, 5.2, 9, 11).
