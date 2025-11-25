@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -357,17 +358,15 @@ func TestHTTPClientFetchCanceledDuringRetryWait(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	errCh := make(chan error, 1)
-
-	go func() {
-		_, err := client.Region(ctx)
-		errCh <- err
-	}()
+	errCh := startRegionRequest(ctx, t, client)
 
 	<-attemptCh
-	cancel()
 
-	err := <-errCh
+	cancelTimer := time.AfterFunc(5*time.Millisecond, cancel)
+	defer cancelTimer.Stop()
+	defer cancel()
+
+	err := waitForRegionError(t, errCh, "Region() after canceling retry wait")
 	if err == nil {
 		t.Fatal("Region() expected error, got nil")
 	}
@@ -433,4 +432,108 @@ func TestHTTPClientFetchContextCanceledDuringBackoff(t *testing.T) {
 	}
 
 	requireEqual(t, "attempts", attempts.Load(), int32(1))
+}
+
+func TestHTTPClientCancelWhileWaitingToRetry(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+
+	attemptCh := make(chan struct{}, 1)
+
+	server := newRetryableStatusServer(t, &attempts, attemptCh)
+
+	httpClient := server.Client()
+	httpClient.Timeout = time.Second
+
+	client := imds.NewClient(
+		httpClient,
+		imds.WithBaseURL(server.URL+"/opc/v2"),
+		imds.WithMaxAttempts(2),
+		imds.WithBackoff(250*time.Millisecond),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	errCh := startRegionRequest(ctx, t, client)
+
+	select {
+	case <-attemptCh:
+	case <-time.After(time.Second):
+		t.Fatal("Region() did not issue initial request")
+	}
+
+	time.Sleep(75 * time.Millisecond)
+	cancel()
+
+	err := waitForRegionError(t, errCh, "Region() while waiting to retry")
+	if err == nil {
+		t.Fatal("Region() expected error, got nil")
+	}
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Region() error = %v, want wrapped context cancellation", err)
+	}
+
+	if !strings.Contains(err.Error(), "context done while waiting to retry") {
+		t.Fatalf("Region() error = %v, want wait cancellation", err)
+	}
+
+	requireEqual(t, "attempts", attempts.Load(), int32(1))
+}
+
+func newRetryableStatusServer(
+	t *testing.T,
+	attempts *atomic.Int32,
+	attemptCh chan struct{},
+) *httptest.Server {
+	t.Helper()
+
+	server := newIPv4TestServer(
+		t,
+		http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+			requireIMDSAuthHeader(t, req)
+
+			if attempts.Add(1) > 1 {
+				t.Fatalf("unexpected retry attempt: %d", attempts.Load())
+			}
+
+			select {
+			case attemptCh <- struct{}{}:
+			default:
+			}
+
+			writer.WriteHeader(http.StatusServiceUnavailable)
+		}),
+	)
+	t.Cleanup(server.Close)
+
+	return server
+}
+
+func waitForRegionError(t *testing.T, errCh <-chan error, context string) error {
+	t.Helper()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-time.After(time.Second):
+		t.Fatalf("%s did not return", context)
+
+		return nil
+	}
+}
+
+func startRegionRequest(ctx context.Context, t *testing.T, client *imds.HTTPClient) chan error {
+	t.Helper()
+
+	errCh := make(chan error, 1)
+
+	go func() {
+		_, err := client.Region(ctx)
+		errCh <- err
+	}()
+
+	return errCh
 }

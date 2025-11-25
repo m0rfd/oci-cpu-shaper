@@ -13,6 +13,8 @@ import (
 var (
 	errMonitoringUnavailable = errors.New("monitoring unavailable")
 	errEstimatorFailure      = errors.New("estimator error")
+	errWhitespaceLastError   = errors.New("   ")
+	errUnknownLastError      = errors.New(controllerUnknownValue)
 )
 
 func TestNewRecorderLoggerHandlesNilInputs(t *testing.T) {
@@ -245,6 +247,45 @@ func TestControllerRecorderLoggerSetLastErrorLogsTransitions(t *testing.T) {
 	third := entries[2]
 	if third.Message != controllerErrorClearedMessage {
 		t.Fatalf("expected final log to clear error, got %q", third.Message)
+	}
+}
+
+func TestControllerRecorderLoggerSetLastErrorNormalizesWhitespace(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+	recorder := newRecorderLogger(logger, metricshttp.NewExporter())
+
+	recorder.SetLastError(errWhitespaceLastError)
+
+	entries := observed.All()
+	if len(entries) != 1 {
+		t.Fatalf("expected single log for whitespace error, got %d", len(entries))
+	}
+
+	entry := entries[0]
+	if entry.Message != controllerErrorObservedMessage {
+		t.Fatalf("unexpected log message %q", entry.Message)
+	}
+
+	if got := fieldString(entry.Context, "error"); got != controllerUnknownValue {
+		t.Fatalf("expected whitespace error to normalize to unknown, got %q", got)
+	}
+
+	impl, ok := recorder.(*controllerRecorderLogger)
+	if !ok {
+		t.Fatal("expected recorder to be controllerRecorderLogger")
+	}
+
+	if impl.lastError != controllerUnknownValue {
+		t.Fatalf("expected normalized error to be tracked, got %q", impl.lastError)
+	}
+
+	recorder.SetLastError(errUnknownLastError)
+
+	if got := observed.All(); len(got) != 1 {
+		t.Fatalf("expected normalized error to prevent duplicate logs, got %d entries", len(got))
 	}
 }
 

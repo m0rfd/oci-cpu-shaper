@@ -48,10 +48,35 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-golangci-lint-
 
+      - name: Cache Python tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-pyflakes-3.2.0
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install actionlint dependencies
+        run: |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck python3-pip
+          python3 -m pip install --user pyflakes==3.2.0
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+
       - name: Run lint
         run: make lint
         env:
           GOBIN: ${{ github.workspace }}/bin
+
+      - name: Run actionlint for release workflow
+        run: make actionlint ACTIONLINT_PATHS=".github/workflows/release.yml"
+
+      - name: Check Makefile formatting
+        run: make lint-makefile
 
       - name: Run tests
         run: make test
@@ -286,6 +311,7 @@ jobs:
           cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-builder,mode=max
 
       # ------ Cosign signing (keyless) ------
+
       - name: Install cosign
         uses: sigstore/cosign-installer@v4.0.0
         # with:
@@ -354,3 +380,16 @@ jobs:
         with:
           name: sbom-rootless-${{ github.ref_name }}
           path: sbom-rootless.spdx.json
+
+      - name: Generate SBOM (SPDX JSON) for rootful
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-rootful
+          format: 'spdx-json'
+          output: 'sbom-rootful.spdx.json'
+
+      - name: Upload SBOM artifact for rootful
+        uses: actions/upload-artifact@v5
+        with:
+          name: sbom-rootful-${{ github.ref_name }}
+          path: sbom-rootful.spdx.json
