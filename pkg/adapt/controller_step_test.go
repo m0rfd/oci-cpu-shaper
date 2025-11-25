@@ -304,7 +304,7 @@ func runIntervalRecordingScenario(
 	cfg Config,
 	results []metricResult,
 	wantIntervals []time.Duration,
-	wantState State,
+	wantState State, //nolint:unparam // Parameter kept for future test extensibility.
 ) {
 	t.Helper()
 

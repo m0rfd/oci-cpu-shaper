@@ -14,17 +14,20 @@ type Config struct {
 
 // ControllerConfig describes the adaptive controller thresholds.
 type ControllerConfig struct {
-	TargetStart               float64
-	TargetMin                 float64
-	TargetMax                 float64
-	StepUp                    float64
-	StepDown                  float64
-	FallbackTarget            float64
-	GoalLow                   float64
-	GoalHigh                  float64
-	Interval                  time.Duration
-	RelaxedInterval           time.Duration
-	RelaxedThreshold          float64
+	TargetStart      float64
+	TargetMin        float64
+	TargetMax        float64
+	StepUp           float64
+	StepDown         float64
+	FallbackTarget   float64
+	GoalLow          float64
+	GoalHigh         float64
+	Interval         time.Duration
+	RelaxedInterval  time.Duration
+	RelaxedThreshold float64
+	// RelaxedConfirmations specifies the number of consecutive samples
+	// with P95 >= RelaxedThreshold required before switching to RelaxedInterval.
+	// Prevents flapping during transient spikes. Must be > 0. Default: 2.
 	RelaxedConfirmations      int
 	SuppressThreshold         float64
 	SuppressResume            float64
