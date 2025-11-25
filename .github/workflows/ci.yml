@@ -11,6 +11,10 @@ env:
   SHELLCHECK_VERSION: "0.10.0"
   PYFLAKES_VERSION: "3.2.0"
 
+defaults:
+  run:
+    shell: bash
+
 on:
   workflow_dispatch:
   push:
@@ -93,6 +97,7 @@ jobs:
 
   lint:
     name: golangci-lint
+    timeout-minutes: 5
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -150,6 +155,7 @@ jobs:
 
   actionlint:
     name: actionlint (${{ matrix.workflow }})
+    timeout-minutes: 5
     runs-on: ubuntu-latest
     needs:
       - lint-tools
@@ -208,6 +214,7 @@ jobs:
 
   govulncheck:
     name: govulncheck
+    timeout-minutes: 5
     runs-on: ubuntu-latest
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
@@ -216,21 +223,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Set up Go
+      - name: Set up Go with cache
         id: setup-go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-
-      - name: Cache Go build artifacts
-        uses: actions/cache@v4
-        with:
-          path: |
-            .cache/go
-            .cache/gomod
-          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-cache-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-cache-
+        uses: ./.github/actions/setup-go-with-cache
 
       - name: Cache govulncheck database
         uses: actions/cache@v4
@@ -245,6 +240,7 @@ jobs:
 
   unit-test:
     name: go test
+    timeout-minutes: 5
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -264,6 +260,7 @@ jobs:
 
   build:
     name: go build
+    timeout-minutes: 5
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -292,7 +289,6 @@ jobs:
       - unit-test
       - lint
       - govulncheck
-      - integration
     runs-on: ubuntu-latest
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
@@ -305,9 +301,9 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
 
-      - name: Download integration coverage
-        if: needs.integration.result == 'success'
+      - name: Download integration coverage (if available)
         id: download-integration-coverage
+        continue-on-error: true
         uses: actions/download-artifact@v6
         with:
           name: integration-coverage
@@ -320,7 +316,7 @@ jobs:
           set -o nounset
           set -o pipefail
 
-          if [ -f artifacts/integration-coverage.out ]; then
+          if [ "${{ steps.download-integration-coverage.outcome }}" = "success" ] && [ -f artifacts/integration-coverage.out ]; then
             echo "available=1" >> "$GITHUB_OUTPUT"
           else
             echo "available=0" >> "$GITHUB_OUTPUT"
