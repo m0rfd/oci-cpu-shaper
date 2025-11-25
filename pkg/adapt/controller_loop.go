@@ -22,7 +22,16 @@ func (c *AdaptiveController) Run(ctx context.Context) error {
 		go c.consumeEstimator(ctx, estimatorCh)
 	}
 
-	ticker := time.NewTicker(c.interval)
+	nextInterval := c.step(ctx)
+	if nextInterval <= 0 {
+		nextInterval = c.cfg.Interval
+	}
+
+	c.mu.Lock()
+	c.interval = nextInterval
+	c.mu.Unlock()
+
+	ticker := time.NewTicker(nextInterval)
 	defer ticker.Stop()
 
 	for {

@@ -75,6 +75,51 @@ func TestAdaptiveControllerRunLifecycle(t *testing.T) {
 	}
 }
 
+func TestAdaptiveControllerRunStepsImmediately(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics([]metricResult{{value: 0.24, err: nil}})
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+	cfg.Interval = 250 * time.Millisecond
+	cfg.RelaxedInterval = 500 * time.Millisecond
+	cfg.Mode = "enforce"
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+
+	go func() {
+		done <- controller.Run(ctx)
+	}()
+
+	waitFor(func() bool {
+		return metrics.CallCount() > 0
+	}, 100*time.Millisecond)
+
+	if metrics.CallCount() == 0 {
+		t.Fatalf("expected controller to step immediately on startup")
+	}
+
+	if metrics.CallCount() > 1 {
+		t.Fatalf("expected only the initial step before cancellation, got %d", metrics.CallCount())
+	}
+
+	cancel()
+
+	runErr := <-done
+
+	if !errors.Is(runErr, context.Canceled) {
+		t.Fatalf("Run error: %v", runErr)
+	}
+}
+
 func TestConsumeEstimatorStopsOnClose(t *testing.T) {
 	t.Parallel()
 
