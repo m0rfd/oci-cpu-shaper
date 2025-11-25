@@ -2,6 +2,9 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 MAKEFLAGS += --warn-undefined-variables --no-builtin-rules
 
+GO_MACHINE_ARCH := $(shell uname -m)
+GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
+
 GO ?= go
 GO_REQUIRED_VERSION ?= 1.25.4
 MIN_COVERAGE ?= 96.0
@@ -68,8 +71,6 @@ MBAKE_FORMAT_PATHS ?= Makefile
 
 .PHONY: actionlint agents bench build check clean coverage e2e ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake setup test tools verify-go-version
 
-GO_MACHINE_ARCH := $(shell uname -m)
-GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
 HELP_TARGETS := lint lint-makefile test coverage build check govulncheck integration e2e agents actionlint help clean
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-mbake
