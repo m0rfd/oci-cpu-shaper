@@ -78,6 +78,10 @@ jobs:
       - name: Run golangci-lint
         run: make lint
 
+      - name: Check Makefile formatting
+        run: make lint-makefile
+
+
       - name: Ensure golangci-lint did not leave uncommitted fixes
         run: |
           if ! git diff --quiet; then

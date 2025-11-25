@@ -59,11 +59,11 @@ MBAKE_BIN ?= $(HOME)/.local/bin/mbake
 MBAKE ?= $(MBAKE_BIN)
 MBAKE_FORMAT_PATHS ?= Makefile
 
-.PHONY: actionlint agents bench build check clean coverage e2e ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake go-mod-download govulncheck help install-git-hooks integration lint lint-fix lint-workflows maintenance mbake setup test tools verify-go-version
+.PHONY: actionlint agents bench build check clean coverage e2e ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-fix lint-makefile lint-workflows maintenance mbake setup test tools verify-go-version
 
 GO_MACHINE_ARCH := $(shell uname -m)
 GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
-HELP_TARGETS := lint test coverage build check govulncheck integration e2e agents actionlint help clean
+HELP_TARGETS := lint lint-makefile test coverage build check govulncheck integration e2e agents actionlint help clean
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-mbake
 
@@ -80,13 +80,21 @@ ensure-golangci-lint:
 		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(GO_BIN_PATH) $(GOLANGCI_LINT_VERSION) > /dev/null 2>&1; \
 	fi
 
-lint: verify-go-version ensure-golangci-lint mbake
+lint: verify-go-version ensure-golangci-lint
 	@mkdir -p "$(GOLANGCI_LINT_CACHE_DIR)"
 	@echo "Running golangci-lint..."
 	@GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE_DIR)" $(GOLANGCI_LINT) run
 
+lint-makefile: ensure-mbake
+	@echo "Running mbake validate..."
+	@$(MBAKE) validate $(MBAKE_FORMAT_PATHS)
+	@echo "Running mbake check..."
+	@$(MBAKE) format --check $(MBAKE_FORMAT_PATHS)
+
 lint-fix: verify-go-version ensure-golangci-lint mbake
 	@mkdir -p "$(GOLANGCI_LINT_CACHE_DIR)"
+	@echo "Running mbake format..."
+	@$(MBAKE) format $(MBAKE_FORMAT_PATHS)
 	@echo "Running golangci-lint with fix..."
 	@GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE_DIR)" $(GOLANGCI_LINT) run --fix
 
@@ -95,6 +103,7 @@ help:
 	@for target in $(HELP_TARGETS); do \ \
 		case $$target in \ \
 			lint) desc="Run golangci-lint";; \ \
+			lint-makefile) desc="Run mbake validate and check";; \ \
 			lint-fix) desc="Run golangci-lint with autofix";; \ \
 			test) desc="Run unit tests (excludes integration/e2e)";; \ \
 			coverage) desc="Run coverage with minimum threshold enforcement";; \ \
@@ -139,6 +148,8 @@ ensure-mbake:
 
 mbake: ensure-mbake
 	@$(MBAKE) format $(MBAKE_FORMAT_PATHS)
+
+format: mbake
 
 test: verify-go-version
 	@if [ -z "$(strip $(UNIT_TEST_PKGS))" ]; then \
@@ -240,7 +251,7 @@ govulncheck: verify-go-version
         GOCACHE="$(GOCACHE_DIR)" GOVULNCHECK_CACHE="$(GOVULNCHECK_CACHE_DIR)" \
         $(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
-check: lint test agents
+check: lint lint-makefile test agents
 
 actionlint: ensure-actionlint
 	@set -euo pipefail; \
@@ -431,14 +442,7 @@ install-git-hooks:
 		exit 0; \
 	fi; \
 	hook_path=".git/hooks/pre-commit"; \
-	cat > "$$hook_path" <<-'EOF'
-	#!/bin/bash
-	set -euo pipefail
-	if command -v make >/dev/null 2>&1; then
-	  make lint
-	else
-	  echo "make not available; skipping lint hook" >&2
-	fi
-	EOF
+	hook_path=".git/hooks/pre-commit"; \
+	printf '#!/bin/bash\nset -euo pipefail\nif command -v mbake >/dev/null 2>&1; then\n  mbake format Makefile\nfi\nif command -v make >/dev/null 2>&1; then\n  make lint\nelse\n  echo "make not available; skipping lint hook" >&2\nfi\n' > "$$hook_path"; \
 	chmod +x "$$hook_path"; \
-	echo "Installed pre-commit hook to run 'make lint'. Use 'make lint-fix' to autofix issues."
+	echo "Installed pre-commit hook to run 'mbake format' and 'make lint'. Use 'make lint-fix' to autofix issues."
