@@ -114,6 +114,9 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   metadata resolution, metrics bootstrap, and controller start to keep `cmd/shaper`
   wiring small and directly testable. Updated §3.1 to map the new helpers and added
   focused unit suites per stage to preserve the ≥96% coverage contract (§§3.1, 8, 11, 12).
+- Tightened the estimator default interval to 1 second (from 2 seconds) while
+  keeping `SHAPER_FAST_INTERVAL` overrides intact across the YAML/env/CLI
+  layers. Updated samples and docs to reflect the faster cadence (§§5.2, 9, 12).
 - CLI `--mode` now defaults to `enforce` to match the documented production posture; startup logs,
   `/metrics`/`/healthz` exports, and the Quick Start/CLI docs note the default along with the
   `dry-run`/`noop` opt-ins (§§5, 9, 10, 11).
