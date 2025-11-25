@@ -55,6 +55,12 @@ func TestLoadConfigUsesDefaultsWhenFileMissing(t *testing.T) {
 	)
 	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, defaults.SuppressThreshold)
 	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, defaults.SuppressResume)
+	assertIntEqual(
+		t,
+		"relaxedConfirmations",
+		cfg.Controller.RelaxedConfirmations,
+		defaults.RelaxedConfirmations,
+	)
 }
 
 func TestLoadConfigSamplesLoad(t *testing.T) {
@@ -110,27 +116,36 @@ func TestLoadConfigAppliesFileOverrides(t *testing.T) {
 	assertFloatEqual(t, "suppressRunnableResume", cfg.Controller.SuppressRunnableResume, 0.8)
 	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, 0.88)
 	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, 0.44)
+	assertIntEqual(t, "relaxedConfirmations", cfg.Controller.RelaxedConfirmations, 3)
 }
 
+//nolint:paralleltest // uses t.Setenv for multiple overrides
 func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
-	t.Setenv(envTargetStart, "0.30")
-	t.Setenv(envTargetMin, "0.20")
-	t.Setenv(envStepUp, "0.05")
-	t.Setenv(envSlowInterval, "2h")
-	t.Setenv(envRelaxedInterval, "12h")
-	t.Setenv(envFastInterval, "250ms")
-	t.Setenv(envPoolWorkers, "4")
-	t.Setenv(envPoolPauseThreshold, "0.81")
-	t.Setenv(envPoolResumeThreshold, "0.49")
-	t.Setenv(envHTTPBind, " :9300 ")
-	t.Setenv(envCompartmentID, " "+testCompartmentOverride+" ")
-	t.Setenv(envInstanceID, " ocid1.instance.oc1..override ")
-	t.Setenv(envOCIRegion, " "+testRegionOverride+" ")
-	t.Setenv(envOCIOffline, "true")
-	t.Setenv(envSuppressThreshold, "0.88")
-	t.Setenv(envSuppressResume, "0.51")
-	t.Setenv(envSuppressRunnableThreshold, "1.3")
-	t.Setenv(envSuppressRunnableResume, "0.7")
+	overrides := map[string]string{
+		envTargetStart:               "0.30",
+		envTargetMin:                 "0.20",
+		envStepUp:                    "0.05",
+		envSlowInterval:              "2h",
+		envRelaxedInterval:           "12h",
+		envRelaxedConfirmations:      "5",
+		envFastInterval:              "250ms",
+		envPoolWorkers:               "4",
+		envPoolPauseThreshold:        "0.81",
+		envPoolResumeThreshold:       "0.49",
+		envHTTPBind:                  " :9300 ",
+		envCompartmentID:             " " + testCompartmentOverride + " ",
+		envInstanceID:                " ocid1.instance.oc1..override ",
+		envOCIRegion:                 " " + testRegionOverride + " ",
+		envOCIOffline:                "true",
+		envSuppressThreshold:         "0.88",
+		envSuppressResume:            "0.51",
+		envSuppressRunnableThreshold: "1.3",
+		envSuppressRunnableResume:    "0.7",
+	}
+
+	for key, value := range overrides {
+		t.Setenv(key, value)
+	}
 
 	cfg, err := Load("")
 	if err != nil {
@@ -142,6 +157,7 @@ func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
 	assertFloatEqual(t, "stepUp", cfg.Controller.StepUp, 0.05)
 	assertDurationEqual(t, "interval", cfg.Controller.Interval, 2*time.Hour)
 	assertDurationEqual(t, "relaxedInterval", cfg.Controller.RelaxedInterval, 12*time.Hour)
+	assertIntEqual(t, "relaxedConfirmations", cfg.Controller.RelaxedConfirmations, 5)
 	assertFloatEqual(t, "suppressThreshold", cfg.Controller.SuppressThreshold, 0.88)
 	assertFloatEqual(t, "suppressResume", cfg.Controller.SuppressResume, 0.51)
 	assertFloatEqual(

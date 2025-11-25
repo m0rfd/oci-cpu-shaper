@@ -25,6 +25,11 @@ func validateControllerConfig(cfg Config) error {
 		return err
 	}
 
+	err = validateRelaxedConfirmations(cfg)
+	if err != nil {
+		return err
+	}
+
 	err = validateGoalBounds(cfg)
 	if err != nil {
 		return err
@@ -83,6 +88,18 @@ func validateStepSizes(cfg Config) error {
 				step.value,
 			)
 		}
+	}
+
+	return nil
+}
+
+func validateRelaxedConfirmations(cfg Config) error {
+	if cfg.RelaxedConfirmations <= 0 {
+		return fmt.Errorf(
+			"%w: controller.relaxedConfirmations (%d) must be greater than zero",
+			ErrInvalidConfig,
+			cfg.RelaxedConfirmations,
+		)
 	}
 
 	return nil

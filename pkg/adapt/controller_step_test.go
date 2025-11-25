@@ -13,6 +13,7 @@ import (
 
 type controllerScenario struct {
 	name         string
+	cfg          *Config
 	results      []metricResult
 	expectations []stepExpectation
 }
@@ -38,9 +39,37 @@ func TestControllerStateTransitions(t *testing.T) {
 	fallbackRecoveryTarget := clampTarget(fallbackTarget - defaults.StepDown)
 	clampedDecrease := clampTarget(targetAfterStepUp - defaults.StepDown)
 
-	scenarios := []controllerScenario{
+	scenarios := controllerStateScenarios(
+		defaults,
+		fastInterval,
+		relaxedInterval,
+		targetAfterStepUp,
+		fallbackTarget,
+		fallbackRecoveryTarget,
+		clampedDecrease,
+	)
+
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			t.Parallel()
+			runControllerScenario(t, scenario)
+		})
+	}
+}
+
+func controllerStateScenarios(
+	defaults Config,
+	fastInterval time.Duration,
+	relaxedInterval time.Duration,
+	targetAfterStepUp float64,
+	fallbackTarget float64,
+	fallbackRecoveryTarget float64,
+	clampedDecrease float64,
+) []controllerScenario {
+	return []controllerScenario{
 		{
 			name: "success then fallback recovery",
+			cfg:  nil,
 			results: []metricResult{
 				{value: 0.20, err: nil},
 				{value: 0, err: errOCIDown},
@@ -49,27 +78,37 @@ func TestControllerStateTransitions(t *testing.T) {
 			expectations: []stepExpectation{
 				{state: StateNormal, target: targetAfterStepUp, nextInterval: fastInterval},
 				{state: StateFallback, target: fallbackTarget, nextInterval: fastInterval},
-				{state: StateNormal, target: fallbackRecoveryTarget, nextInterval: relaxedInterval},
+				{state: StateNormal, target: fallbackRecoveryTarget, nextInterval: fastInterval},
 			},
 		},
 		{
 			name: "clamps within bounds",
+			cfg:  nil,
 			results: []metricResult{
 				{value: 0.10, err: nil},
 				{value: 0.50, err: nil},
 			},
 			expectations: []stepExpectation{
 				{state: StateNormal, target: targetAfterStepUp, nextInterval: fastInterval},
-				{state: StateNormal, target: clampedDecrease, nextInterval: relaxedInterval},
+				{state: StateNormal, target: clampedDecrease, nextInterval: fastInterval},
 			},
 		},
-	}
-
-	for _, scenario := range scenarios {
-		t.Run(scenario.name, func(t *testing.T) {
-			t.Parallel()
-			runControllerScenario(t, scenario)
-		})
+		{
+			name: "relaxed interval after consecutive highs",
+			cfg:  nil,
+			results: []metricResult{
+				{value: defaults.RelaxedThreshold, err: nil},
+				{value: defaults.GoalLow - 0.01, err: nil},
+				{value: defaults.RelaxedThreshold, err: nil},
+				{value: defaults.RelaxedThreshold, err: nil},
+			},
+			expectations: []stepExpectation{
+				{state: StateNormal, target: defaults.TargetStart, nextInterval: fastInterval},
+				{state: StateNormal, target: targetAfterStepUp, nextInterval: fastInterval},
+				{state: StateNormal, target: targetAfterStepUp, nextInterval: fastInterval},
+				{state: StateNormal, target: targetAfterStepUp, nextInterval: relaxedInterval},
+			},
+		},
 	}
 }
 
@@ -98,6 +137,7 @@ func TestControllerCpuUtilisationAcrossOCPUs(t *testing.T) {
 
 			scenario := controllerScenario{
 				name:         shapeCase.name,
+				cfg:          nil,
 				results:      results,
 				expectations: expectations,
 			}
@@ -112,8 +152,11 @@ func buildHighUtilisationScenario(defaults Config) controllerScenario {
 		return clamp(value, defaults.TargetMin, defaults.TargetMax)
 	}
 
+	relaxedConfirmations := defaults.RelaxedConfirmations
+
 	scenario := controllerScenario{
 		name: "baseline ocpu burst",
+		cfg:  nil,
 		results: []metricResult{
 			{value: 0.15, err: nil},
 			{value: 0.32, err: nil},
@@ -134,10 +177,18 @@ func buildHighUtilisationScenario(defaults Config) controllerScenario {
 	}
 
 	expectations := make([]stepExpectation, len(decayingTargets))
+
+	var consecutiveRelaxed int
+
 	for index, target := range decayingTargets {
 		interval := defaults.Interval
 		if scenario.results[index].value >= defaults.RelaxedThreshold {
-			interval = defaults.RelaxedInterval
+			consecutiveRelaxed++
+			if consecutiveRelaxed >= relaxedConfirmations {
+				interval = defaults.RelaxedInterval
+			}
+		} else {
+			consecutiveRelaxed = 0
 		}
 
 		expectations[index] = stepExpectation{
@@ -157,7 +208,11 @@ func runControllerScenario(t *testing.T, scenario controllerScenario) {
 
 	metrics := newFakeMetrics(scenario.results)
 	shaper := newFakeShaper()
+
 	cfg := DefaultConfig()
+	if scenario.cfg != nil {
+		cfg = *scenario.cfg
+	}
 
 	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
 	if err != nil {
@@ -209,57 +264,78 @@ func runControllerScenario(t *testing.T, scenario controllerScenario) {
 	}
 }
 
-func TestAdaptiveControllerRecordsIntervalAcrossP95Branches(t *testing.T) {
+func TestAdaptiveControllerRecordsIntervalAfterRelaxationConfirmation(t *testing.T) {
 	t.Parallel()
 
 	cfg := DefaultConfig()
 	cfg.Interval = time.Minute
 	cfg.RelaxedInterval = time.Hour
 
-	tests := []struct {
-		name         string
-		p95          float64
-		wantInterval time.Duration
-		wantState    State
-	}{
-		{
-			name:         "hot-workload-uses-relaxed-interval",
-			p95:          cfg.RelaxedThreshold,
-			wantInterval: cfg.RelaxedInterval,
-			wantState:    StateNormal,
+	runIntervalRecordingScenario(
+		t,
+		cfg,
+		[]metricResult{
+			{value: cfg.RelaxedThreshold, err: nil},
+			{value: cfg.RelaxedThreshold + 0.01, err: nil},
 		},
-		{
-			name:         "healthy-workload-keeps-fast-interval",
-			p95:          cfg.RelaxedThreshold - 0.05,
-			wantInterval: cfg.Interval,
-			wantState:    StateNormal,
-		},
+		[]time.Duration{cfg.Interval, cfg.RelaxedInterval},
+		StateNormal,
+	)
+}
+
+func TestAdaptiveControllerRecordsIntervalForHealthyWorkload(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Interval = time.Minute
+	cfg.RelaxedInterval = time.Hour
+
+	runIntervalRecordingScenario(
+		t,
+		cfg,
+		[]metricResult{{value: cfg.RelaxedThreshold - 0.05, err: nil}},
+		[]time.Duration{cfg.Interval},
+		StateNormal,
+	)
+}
+
+func runIntervalRecordingScenario(
+	t *testing.T,
+	cfg Config,
+	results []metricResult,
+	wantIntervals []time.Duration,
+	wantState State,
+) {
+	t.Helper()
+
+	recorder := newStubMetricsRecorder()
+	metrics := newFakeMetrics(results)
+	shaper := newFakeShaper()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, recorder)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
 	}
 
-	for _, testCase := range tests {
-		// range variable copy
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-
-			recorder := newStubMetricsRecorder()
-			metrics := newFakeMetrics([]metricResult{{value: testCase.p95, err: nil}})
-			shaper := newFakeShaper()
-
-			controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, recorder)
-			if err != nil {
-				t.Fatalf("NewAdaptiveController: %v", err)
-			}
-
-			stepper, ok := any(controller).(controllerStepper)
-			if !ok {
-				t.Fatalf("controller does not expose stepper interface")
-			}
-
-			interval := stepper.step(context.Background())
-
-			requireEqual(t, "step interval", interval, testCase.wantInterval)
-			requireEqual(t, "recorded interval", recorder.interval, testCase.wantInterval)
-			requireEqual(t, "state", controller.State(), testCase.wantState)
-		})
+	stepper, ok := any(controller).(controllerStepper)
+	if !ok {
+		t.Fatalf("controller does not expose stepper interface")
 	}
+
+	for index, wantInterval := range wantIntervals {
+		interval := stepper.step(context.Background())
+
+		requireEqual(t, "step interval", interval, wantInterval)
+
+		if recorder.interval != wantInterval {
+			t.Fatalf(
+				"step %d recorded interval: got %v want %v",
+				index,
+				recorder.interval,
+				wantInterval,
+			)
+		}
+	}
+
+	requireEqual(t, "state", controller.State(), wantState)
 }

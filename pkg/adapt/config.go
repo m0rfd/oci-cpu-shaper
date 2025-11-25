@@ -20,6 +20,7 @@ type Config struct {
 	Interval                  time.Duration
 	RelaxedInterval           time.Duration
 	RelaxedThreshold          float64
+	RelaxedConfirmations      int
 	SuppressThreshold         float64
 	SuppressResume            float64
 	SuppressRunnableThreshold float64

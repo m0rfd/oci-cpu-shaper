@@ -2,6 +2,7 @@ controller:
   interval: 15s
   relaxedInterval: 1m
   relaxedThreshold: 0.30
+  relaxedConfirmations: 2
   fallbackTarget: 0.22
 estimator:
   interval: 5s

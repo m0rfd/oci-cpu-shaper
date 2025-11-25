@@ -15,19 +15,20 @@ type AdaptiveController struct {
 	estimator Estimator
 	recorder  MetricsRecorder
 
-	mu           sync.Mutex
-	state        State
-	slowState    State
-	suppressed   bool
-	target       float64
-	desired      float64
-	lastP95      float64
-	lastErr      error
-	lastEstErr   error
-	hostLoad     float64
-	hostRunnable float64
-	interval     time.Duration
-	mode         string
+	mu               sync.Mutex
+	state            State
+	slowState        State
+	suppressed       bool
+	target           float64
+	desired          float64
+	lastP95          float64
+	lastErr          error
+	lastEstErr       error
+	hostLoad         float64
+	hostRunnable     float64
+	interval         time.Duration
+	mode             string
+	relaxedSuccesses int
 }
 
 var _ Controller = (*AdaptiveController)(nil)

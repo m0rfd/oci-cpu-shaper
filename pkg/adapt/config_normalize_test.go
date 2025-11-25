@@ -65,6 +65,30 @@ func TestEnsureFloatAllowZeroRespectsZero(t *testing.T) {
 	}
 }
 
+func TestEnsureIntUsesFallbackForZero(t *testing.T) {
+	t.Parallel()
+
+	if got := ensureInt(0, 3); got != 3 {
+		t.Fatalf("expected fallback for zero confirmations, got %d", got)
+	}
+}
+
+func TestEnsureIntKeepsPositive(t *testing.T) {
+	t.Parallel()
+
+	if got := ensureInt(4, 2); got != 4 {
+		t.Fatalf("expected positive confirmation count to be preserved, got %d", got)
+	}
+}
+
+func TestEnsureIntKeepsNegative(t *testing.T) {
+	t.Parallel()
+
+	if got := ensureInt(-1, 2); got != -1 {
+		t.Fatalf("expected negative confirmation count to be preserved for validation, got %d", got)
+	}
+}
+
 func TestNormalizeConfigAdjustsSuppressResume(t *testing.T) {
 	t.Parallel()
 
@@ -87,6 +111,26 @@ func TestNormalizeConfigAdjustsSuppressResume(t *testing.T) {
 			"expected suppress resume %.2f, got %.2f",
 			expectedResume,
 			normalized.SuppressResume,
+		)
+	}
+}
+
+func TestNormalizeConfigDefaultsRelaxedConfirmations(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.RelaxedConfirmations = 0
+
+	normalized, _, err := normalizeConfig(cfg)
+	if err != nil {
+		t.Fatalf("normalizeConfig returned error: %v", err)
+	}
+
+	if normalized.RelaxedConfirmations != defaultRelaxedConfirmations {
+		t.Fatalf(
+			"expected relaxed confirmations to fall back to default %d, got %d",
+			defaultRelaxedConfirmations,
+			normalized.RelaxedConfirmations,
 		)
 	}
 }

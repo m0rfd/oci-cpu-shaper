@@ -29,6 +29,8 @@ func (c *AdaptiveController) handleStepErrorLocked(err error) time.Duration {
 	fallback := clamp(c.cfg.FallbackTarget, c.cfg.TargetMin, c.cfg.TargetMax)
 
 	c.desired = fallback
+
+	c.relaxedSuccesses = 0
 	if !c.suppressed {
 		c.applyTargetLocked(fallback)
 	}
@@ -83,14 +85,25 @@ func (c *AdaptiveController) handleStepSuccessLocked(
 
 	c.updateEffectiveStateLocked()
 
-	nextInterval := c.cfg.Interval
-	if p95 >= c.cfg.RelaxedThreshold {
-		nextInterval = c.cfg.RelaxedInterval
-	}
+	nextInterval := c.nextIntervalLocked(p95)
 
 	if c.recorder != nil {
 		c.recorder.SetInterval(nextInterval)
 	}
 
 	return nextInterval
+}
+
+func (c *AdaptiveController) nextIntervalLocked(p95 float64) time.Duration {
+	if p95 >= c.cfg.RelaxedThreshold {
+		c.relaxedSuccesses++
+	} else {
+		c.relaxedSuccesses = 0
+	}
+
+	if c.relaxedSuccesses >= c.cfg.RelaxedConfirmations {
+		return c.cfg.RelaxedInterval
+	}
+
+	return c.cfg.Interval
 }

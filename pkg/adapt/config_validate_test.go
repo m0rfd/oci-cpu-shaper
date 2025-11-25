@@ -64,6 +64,18 @@ func TestValidateConfigRejectsNonPositiveSteps(t *testing.T) {
 	}
 }
 
+func TestValidateConfigRejectsNonPositiveRelaxedConfirmations(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.RelaxedConfirmations = -1
+
+	err := ValidateConfig(cfg)
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig for non-positive relaxed confirmations, got %v", err)
+	}
+}
+
 func TestValidateConfigRejectsDescendingGoals(t *testing.T) {
 	t.Parallel()
 

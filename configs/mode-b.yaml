@@ -11,6 +11,7 @@ controller:
   interval: 1h
   relaxedInterval: 4h
   relaxedThreshold: 0.26
+  relaxedConfirmations: 2
   suppressThreshold: 0.80
   suppressResume: 0.68
   suppressRunnableThreshold: 1.20

@@ -48,6 +48,7 @@ func mergeControllerConfig(dst *ControllerConfig, src controllerFileConfig) {
 	assignDuration(&dst.Interval, src.Interval)
 	assignDuration(&dst.RelaxedInterval, src.RelaxedInterval)
 	assignFloat(&dst.RelaxedThreshold, src.RelaxedThreshold)
+	assignInt(&dst.RelaxedConfirmations, src.RelaxedConfirmations)
 	assignFloat(&dst.SuppressThreshold, src.SuppressThreshold)
 	assignFloat(&dst.SuppressResume, src.SuppressResume)
 	assignFloat(&dst.SuppressRunnableThreshold, src.SuppressRunnableThreshold)

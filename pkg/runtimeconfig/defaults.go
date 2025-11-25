@@ -29,6 +29,7 @@ func Default() Config {
 	cfg.Controller.Interval = defaults.Interval
 	cfg.Controller.RelaxedInterval = defaults.RelaxedInterval
 	cfg.Controller.RelaxedThreshold = defaults.RelaxedThreshold
+	cfg.Controller.RelaxedConfirmations = defaults.RelaxedConfirmations
 	cfg.Controller.SuppressThreshold = defaults.SuppressThreshold
 	cfg.Controller.SuppressResume = defaults.SuppressResume
 	cfg.Controller.SuppressRunnableThreshold = defaults.SuppressRunnableThreshold
@@ -63,6 +64,7 @@ func (cfg Config) ToAdaptConfig() adapt.Config {
 		Interval:                  cfg.Controller.Interval,
 		RelaxedInterval:           cfg.Controller.RelaxedInterval,
 		RelaxedThreshold:          cfg.Controller.RelaxedThreshold,
+		RelaxedConfirmations:      cfg.Controller.RelaxedConfirmations,
 		SuppressThreshold:         cfg.Controller.SuppressThreshold,
 		SuppressResume:            cfg.Controller.SuppressResume,
 		SuppressRunnableThreshold: cfg.Controller.SuppressRunnableThreshold,

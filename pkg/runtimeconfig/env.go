@@ -16,6 +16,7 @@ const (
 	envSlowInterval              = "SHAPER_SLOW_INTERVAL"
 	envRelaxedInterval           = "SHAPER_SLOW_INTERVAL_RELAXED"
 	envFastInterval              = "SHAPER_FAST_INTERVAL"
+	envRelaxedConfirmations      = "SHAPER_RELAXED_CONFIRMATIONS"
 	envPoolWorkers               = "SHAPER_WORKER_COUNT"
 	envHTTPBind                  = "HTTP_ADDR"
 	envCompartmentID             = "OCI_COMPARTMENT_ID"
@@ -46,6 +47,10 @@ func applyEnvOverrides(cfg *Config) {
 	cfg.Controller.GoalLow = envFloat(envGoalLow, cfg.Controller.GoalLow)
 	cfg.Controller.GoalHigh = envFloat(envGoalHigh, cfg.Controller.GoalHigh)
 	cfg.Controller.RelaxedThreshold = envFloat(envRelaxedThreshold, cfg.Controller.RelaxedThreshold)
+	cfg.Controller.RelaxedConfirmations = envInt(
+		envRelaxedConfirmations,
+		cfg.Controller.RelaxedConfirmations,
+	)
 	cfg.Controller.SuppressThreshold = envFloat(
 		envSuppressThreshold,
 		cfg.Controller.SuppressThreshold,

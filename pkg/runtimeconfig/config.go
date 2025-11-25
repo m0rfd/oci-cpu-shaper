@@ -25,6 +25,7 @@ type ControllerConfig struct {
 	Interval                  time.Duration
 	RelaxedInterval           time.Duration
 	RelaxedThreshold          float64
+	RelaxedConfirmations      int
 	SuppressThreshold         float64
 	SuppressResume            float64
 	SuppressRunnableThreshold float64
@@ -77,6 +78,7 @@ type controllerFileConfig struct {
 	Interval                  *time.Duration `yaml:"interval"`
 	RelaxedInterval           *time.Duration `yaml:"relaxedInterval"`
 	RelaxedThreshold          *float64       `yaml:"relaxedThreshold"`
+	RelaxedConfirmations      *int           `yaml:"relaxedConfirmations"`
 	SuppressThreshold         *float64       `yaml:"suppressThreshold"`
 	SuppressResume            *float64       `yaml:"suppressResume"`
 	SuppressRunnableThreshold *float64       `yaml:"suppressRunnableThreshold"`

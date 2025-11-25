@@ -57,6 +57,14 @@ func validateLoopIntervals(controller ControllerConfig, estimator EstimatorConfi
 		}
 	}
 
+	return ensurePositiveInt("controller.relaxedConfirmations", controller.RelaxedConfirmations)
+}
+
+func ensurePositiveInt(name string, value int) error {
+	if value <= 0 {
+		return invalidConfigError("%s (%d) must be greater than zero", name, value)
+	}
+
 	return nil
 }
 
