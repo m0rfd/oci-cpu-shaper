@@ -113,8 +113,7 @@ We support two documented modes. Rootless is first-class but not exclusive.
 
 ### 5.2 Config (env or flags). Defaults chosen to avoid manual tuning
 
-Defaults now track the live controller values in `pkg/adapt/config_defaults.go` and flow through `pkg/runtimeconfig/defaults.go`, leaning on a slightly more aggressive-but-safe
-band that stays above the OCI reclaim floor while closing faster when idle and documents the full goal window, suppression hysteresis (utilisation and runnable), and fallback target used by the controller:
+Defaults now track the live controller values in `pkg/adapt/config_defaults.go` and flow through `pkg/runtimeconfig/defaults.go`. The current band intentionally stays a notch above the OCI Always Free reclaim floor (20% P95) while nudging the host toward 23–27% P95 with a fast-but-safe cadence and explicit hysteresis on both utilisation and run queue spikes. These are the values deployed today and mirrored across the configs and CLI docs:
 
 * `SHAPER_TARGET_START=0.22`
 * `SHAPER_TARGET_MIN=0.20`

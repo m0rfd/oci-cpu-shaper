@@ -2,7 +2,7 @@
 
 ## Scope: `docs/`
 - Mirror current behavior: revise affected docs and `docs/CHANGELOG.md` per §12 whenever features/configs shift.
-- When documenting defaults, cross-check `pkg/adapt/config_defaults.go` and `pkg/runtimeconfig/defaults.go`, ensuring tables/examples mirror the authoritative values there.
+- When documenting defaults, cross-check `pkg/adapt/config_defaults.go` and `pkg/runtimeconfig/defaults.go`, ensuring tables/examples mirror the authoritative values there (current deployed band: start 0.22, min/max 0.20/0.32, suppression 0.80/0.68, runnable 1.20/0.96, smoothing 5) and align with `configs/*.yaml` plus `docs/09-cli.md`/`docs/initial-implementation-plan.md`.
 - Capture QA rules: mention ≥96% coverage (`make coverage`) and the required test updates when you describe workflows.
 - Keep headings tight and aligned with plan section numbers (e.g., §§4–7) for quick cross-reference.
 - Preserve OCI/kernel citations; add new references using Markdown reference links.
