@@ -115,6 +115,30 @@ func TestNormalizeConfigAdjustsSuppressResume(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfigMapsLegacyNormalMode(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Mode = legacyEnforceModeLabel
+
+	normalized, mode, err := normalizeConfig(cfg)
+	if err != nil {
+		t.Fatalf("normalizeConfig returned error: %v", err)
+	}
+
+	if mode != enforceModeLabel {
+		t.Fatalf("expected legacy mode to normalize to %q, got %q", enforceModeLabel, mode)
+	}
+
+	if normalized.Mode != enforceModeLabel {
+		t.Fatalf(
+			"expected normalized config mode to be %q, got %q",
+			enforceModeLabel,
+			normalized.Mode,
+		)
+	}
+}
+
 func TestNormalizeConfigDefaultsRelaxedConfirmations(t *testing.T) {
 	t.Parallel()
 

@@ -66,12 +66,19 @@ func coerceConfig(cfg Config) (Config, string) {
 		cfg.SuppressRunnableResume = cfg.SuppressRunnableThreshold * suppressResumeScale
 	}
 
-	mode := strings.TrimSpace(cfg.Mode)
-	if mode == "" {
-		mode = defaultModeLabel
-	}
+	mode := normalizeModeLabel(cfg.Mode)
+	cfg.Mode = mode
 
 	return cfg, mode
+}
+
+func normalizeModeLabel(mode string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(mode))
+	if trimmed == "" || trimmed == legacyEnforceModeLabel {
+		return enforceModeLabel
+	}
+
+	return trimmed
 }
 
 func ensureDuration(value, fallback time.Duration) time.Duration {
