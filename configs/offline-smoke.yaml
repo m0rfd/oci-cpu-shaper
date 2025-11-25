@@ -15,6 +15,7 @@ controller:
   suppressResume: 0.68
   suppressRunnableThreshold: 1.20
   suppressRunnableResume: 0.96
+  suppressSmoothingSamples: 5
 estimator:
   interval: 1s
 pool:

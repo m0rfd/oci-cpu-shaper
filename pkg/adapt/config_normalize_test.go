@@ -89,6 +89,14 @@ func TestEnsureIntKeepsNegative(t *testing.T) {
 	}
 }
 
+func TestEnsureIntAllowZeroPreservesZero(t *testing.T) {
+	t.Parallel()
+
+	if got := ensureIntAllowZero(0, 5); got != 0 {
+		t.Fatalf("expected zero smoothing samples to be preserved, got %d", got)
+	}
+}
+
 func TestNormalizeConfigAdjustsSuppressResume(t *testing.T) {
 	t.Parallel()
 

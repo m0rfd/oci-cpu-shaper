@@ -53,6 +53,7 @@ func mergeControllerConfig(dst *ControllerConfig, src controllerFileConfig) {
 	assignFloat(&dst.SuppressResume, src.SuppressResume)
 	assignFloat(&dst.SuppressRunnableThreshold, src.SuppressRunnableThreshold)
 	assignFloat(&dst.SuppressRunnableResume, src.SuppressRunnableResume)
+	assignInt(&dst.SuppressSmoothingSamples, src.SuppressSmoothingSamples)
 }
 
 func mergeEstimatorConfig(dst *EstimatorConfig, src estimatorFileConfig) {

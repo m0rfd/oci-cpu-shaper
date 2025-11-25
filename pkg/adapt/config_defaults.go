@@ -23,6 +23,7 @@ const (
 	defaultSuppressResume         = 0.68
 	defaultRunnableSuppressThresh = 1.20
 	defaultRunnableSuppressResume = 0.96
+	defaultSuppressSmoothing      = 5
 	suppressResumeScale           = 0.8
 )
 
@@ -48,6 +49,7 @@ func DefaultConfig() Config {
 		SuppressResume:            defaultSuppressResume,
 		SuppressRunnableThreshold: defaultRunnableSuppressThresh,
 		SuppressRunnableResume:    defaultRunnableSuppressResume,
+		SuppressSmoothingSamples:  defaultSuppressSmoothing,
 	}
 }
 

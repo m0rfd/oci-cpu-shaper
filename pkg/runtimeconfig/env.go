@@ -31,6 +31,7 @@ const (
 	envSuppressResume            = "SHAPER_SUPPRESS_RESUME"
 	envSuppressRunnableThreshold = "SHAPER_SUPPRESS_RUNNABLE_THRESHOLD"
 	envSuppressRunnableResume    = "SHAPER_SUPPRESS_RUNNABLE_RESUME"
+	envSuppressSmoothingSamples  = "SHAPER_SUPPRESS_SMOOTHING_SAMPLES"
 	envPoolPauseThreshold        = "SHAPER_POOL_PAUSE_THRESHOLD"
 	envPoolResumeThreshold       = "SHAPER_POOL_RESUME_THRESHOLD"
 	envPoolRunnableGuard         = "SHAPER_POOL_RUNNABLE_GUARD"
@@ -64,6 +65,10 @@ func applyEnvOverrides(cfg *Config) {
 	cfg.Controller.SuppressRunnableResume = envFloat(
 		envSuppressRunnableResume,
 		cfg.Controller.SuppressRunnableResume,
+	)
+	cfg.Controller.SuppressSmoothingSamples = envIntAllowZero(
+		envSuppressSmoothingSamples,
+		cfg.Controller.SuppressSmoothingSamples,
 	)
 	cfg.Controller.Interval = envDuration(envSlowInterval, cfg.Controller.Interval)
 	cfg.Controller.RelaxedInterval = envDuration(envRelaxedInterval, cfg.Controller.RelaxedInterval)
@@ -124,6 +129,25 @@ func envInt(key string, fallback int) int {
 
 	parsed, err := strconv.Atoi(trimmed)
 	if err != nil || parsed <= 0 {
+		return fallback
+	}
+
+	return parsed
+}
+
+func envIntAllowZero(key string, fallback int) int {
+	value, ok := lookupEnv(key)
+	if !ok {
+		return fallback
+	}
+
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.Atoi(trimmed)
+	if err != nil || parsed < 0 {
 		return fallback
 	}
 
