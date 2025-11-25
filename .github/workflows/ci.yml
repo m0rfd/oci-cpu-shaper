@@ -7,6 +7,10 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  SHELLCHECK_VERSION: "0.10.0"
+  PYFLAKES_VERSION: "3.2.0"
+
 on:
   workflow_dispatch:
   push:
@@ -36,12 +40,56 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-pyflakes-3.2.0
+          key: ${{ runner.os }}-pip-pyflakes-${{ env.PYFLAKES_VERSION }}
           restore-keys: |
             ${{ runner.os }}-pip-
 
       - name: Verify AGENTS scopes
         run: make agents
+
+  lint-tools:
+    name: lint tooling
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restore lint tool cache
+        id: lint-tool-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local
+            ~/.cache/pip
+          key: ${{ runner.os }}-lint-tools-shellcheck-${{ env.SHELLCHECK_VERSION }}-pyflakes-${{ env.PYFLAKES_VERSION }}
+
+      - name: Install lint tools
+        if: steps.lint-tool-cache.outputs.cache-hit != 'true'
+        env:
+          SHELLCHECK_VERSION: ${{ env.SHELLCHECK_VERSION }}
+          PYFLAKES_VERSION: ${{ env.PYFLAKES_VERSION }}
+        run: |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          mkdir -p "$HOME/.local/bin"
+          curl -sSLo /tmp/shellcheck.tar.xz "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          tar -C /tmp -xJf /tmp/shellcheck.tar.xz
+          cp "/tmp/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" "$HOME/.local/bin/shellcheck"
+          chmod +x "$HOME/.local/bin/shellcheck"
+
+          python3 -m pip install --upgrade --user pip
+          python3 -m pip install --user "pyflakes==${PYFLAKES_VERSION}"
+
+      - name: Add lint tools to PATH
+        run: echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+
+      - name: Verify lint tool versions
+        run: |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          shellcheck --version
+          pyflakes --version
 
   lint:
     name: golangci-lint
@@ -94,6 +142,8 @@ jobs:
   actionlint:
     name: actionlint (${{ matrix.workflow }})
     runs-on: ubuntu-latest
+    needs:
+      - lint-tools
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
@@ -113,24 +163,36 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
 
-      - name: Cache Python tools
+      - name: Restore lint tool cache
+        id: lint-tool-cache
         uses: actions/cache@v4
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-pyflakes-3.2.0
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          path: |
+            ~/.local
+            ~/.cache/pip
+          key: ${{ runner.os }}-lint-tools-shellcheck-${{ env.SHELLCHECK_VERSION }}-pyflakes-${{ env.PYFLAKES_VERSION }}
 
-      - name: Install shellcheck and pyflakes
+      - name: Add lint tools to PATH
+        run: echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+
+      - name: Install lint tools (cache miss)
+        if: steps.lint-tool-cache.outputs.cache-hit != 'true'
+        env:
+          SHELLCHECK_VERSION: ${{ env.SHELLCHECK_VERSION }}
+          PYFLAKES_VERSION: ${{ env.PYFLAKES_VERSION }}
         run: |
           set -o errexit
           set -o nounset
           set -o pipefail
 
-          sudo apt-get update
-          sudo apt-get install --yes shellcheck python3-pip
-          python3 -m pip install --user pyflakes==3.2.0
-          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+          mkdir -p "$HOME/.local/bin"
+          curl -sSLo /tmp/shellcheck.tar.xz "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          tar -C /tmp -xJf /tmp/shellcheck.tar.xz
+          cp "/tmp/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" "$HOME/.local/bin/shellcheck"
+          chmod +x "$HOME/.local/bin/shellcheck"
+
+          python3 -m pip install --upgrade --user pip
+          python3 -m pip install --user "pyflakes==${PYFLAKES_VERSION}"
 
       - name: Run actionlint
         run: make actionlint ACTIONLINT_PATHS=".github/workflows/${{ matrix.workflow }}"
