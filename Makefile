@@ -229,8 +229,8 @@ else \
                         tail -n +2 "$$integration_profile" >> $(COVERAGE_PROFILE); \
                         if [ "$$reuse_integration" != "1" ]; then \
 				rm -f "$$integration_profile"; \
-			fi; \
-		fi; \
+	fi; \
+	fi; \
 		if [ -n "$(strip $(E2E_PKGS))" ]; then \
 			e2e_profile="coverage-e2e.out"; \
 			if GOCACHE="$(GOCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $(E2E_PKGS); then \
@@ -239,7 +239,7 @@ else \
 				echo "Skipping e2e coverage due to test failures"; \
 			fi; \
 			rm -f "$$e2e_profile"; \
-		fi; \
+	fi; \
 		$(GO) tool cover -func=$(COVERAGE_PROFILE) | tee $(COVERAGE_SUMMARY); \
 		TOTAL=$$(awk '/^total:/ {total=$$NF} END {print total}' $(COVERAGE_SUMMARY)); \
 		if [ -n "$$TOTAL" ]; then \
@@ -251,7 +251,7 @@ else \
 			fi; \
 		else \
 			echo "Coverage summary unavailable"; \
-		fi; \
+	fi; \
 	fi
 
 agents: verify-go-version
@@ -470,6 +470,47 @@ install-git-hooks:
 		exit 0; \
 	fi; \
 	hook_path=".git/hooks/pre-commit"; \
-	printf '#!/bin/bash\nset -euo pipefail\n\n# Check Makefile formatting\nif command -v mbake >/dev/null 2>&1; then\n  echo "Running mbake check..."\n  if ! mbake format --check Makefile; then\n    echo "Makefile formatting failed. Attempting autofix..."\n    mbake format Makefile\n    echo "Makefile formatted. Auto-staging changes..."\n    git add Makefile\n  fi\nfi\n\n# Check Go linting\nif command -v make >/dev/null 2>&1; then\n  echo "Running make lint-fix..."\n  if make lint-fix; then\n    # Check if any files were modified by lint-fix and stage them\n    # We use git diff --name-only to find modified files that are already tracked\n    modified_files=$$(git diff --name-only)\n    if [ -n "$$modified_files" ]; then\n      echo "Autofix applied changes. Auto-staging..."\n      echo "$$modified_files" | xargs git add\n    fi\n  else\n    echo "Linting failed and could not be autofixed. Please check issues manually." >&2\n    exit 1\n  fi\nelse\n  echo "make not available; skipping lint hook" >&2\nfi\n' > "$$hook_path"; \
+	printf '%s\n' \
+  '#!/bin/bash' \
+  'set -euo pipefail' \
+  '' \
+  'repo_root="$$(git rev-parse --show-toplevel)"' \
+  'if ! git diff --quiet --ignore-submodules --; then' \
+  '  echo "Unstaged changes detected; please commit or stash them before running the hook." >&2' \
+  '  exit 1' \
+  'fi' \
+  '' \
+  'export GOCACHE="$${repo_root}/.cache/go"' \
+  'export GOLANGCI_LINT_CACHE="$${repo_root}/.cache/golangci"' \
+  'mkdir -p "$$GOCACHE" "$$GOLANGCI_LINT_CACHE"' \
+  '' \
+  'pre_diff="$$(git diff --name-only --ignore-submodules --)"' \
+  '' \
+  'if command -v mbake >/dev/null 2>&1; then' \
+  '  echo "Running mbake check..."' \
+  '  if ! mbake format --check Makefile; then' \
+  '    echo "Makefile formatting failed. Attempting autofix..."' \
+  '    mbake format Makefile' \
+  '  fi' \
+  'fi' \
+  '' \
+  'if command -v make >/dev/null 2>&1; then' \
+  '  echo "Running make lint-fix..."' \
+  '  if ! make lint-fix; then' \
+  '    echo "Linting failed and could not be autofixed. Please check issues manually." >&2' \
+  '    exit 1' \
+  '  fi' \
+  'else' \
+  '  echo "make not available; skipping lint hook" >&2' \
+  'fi' \
+  '' \
+  'post_diff="$$(git diff --name-only --ignore-submodules --)"' \
+  '' \
+  'new_files="$$(comm -13 <(printf "%s\\n" "$$pre_diff" | sort -u | sed ''\''/^$$/d''\'') <(printf "%s\\n" "$$post_diff" | sort -u | sed ''\''/^$$/d''\''))"' \
+  'if [ -n "$$new_files" ]; then' \
+  '  echo "Autofix applied changes. Auto-staging..."' \
+  '  echo "$$new_files" | xargs git add' \
+  'fi' \
+	> "$$hook_path"; \
 	chmod +x "$$hook_path"; \
 	echo "Installed pre-commit hook with auto-staging autofix."
