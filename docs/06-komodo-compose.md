@@ -5,7 +5,10 @@ The multi-stage [`Dockerfile`](../Dockerfile) publishes two distroless targets:
 `rootless` wraps `gcr.io/distroless/static:nonroot` while `rootful` uses the root-enabled
 `gcr.io/distroless/static:latest` image. Build metadata is injected with the `VERSION`,
 `GIT_COMMIT`, and `BUILD_DATE` build arguments, ensuring `internal/buildinfo` reports accurate
-values inside the container.
+values inside the container. A dedicated `dockerfiles/healthcheck.dockerfile` builds the
+lightweight `oci-cpu-shaper-healthcheck` probe so the distroless images can run a self-contained
+`HEALTHCHECK` without shell glue. The main `Dockerfile` copies that helper alongside the primary
+binary so `/healthz` can be polled from inside the sandbox.
 
 ```bash
 docker buildx build \
@@ -23,6 +26,12 @@ docker buildx build \
   --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   -t oci-cpu-shaper:rootful \
   -f Dockerfile .
+
+docker buildx build \
+  --file dockerfiles/healthcheck.dockerfile \
+  --build-arg GO_VERSION=1.25.4 \
+  --output type=image,name=oci-cpu-shaper-healthcheck:latest \
+  .
 ```
 
 ## §6.2 Rootless Mode A stack
@@ -58,6 +67,12 @@ TLS-terminating sidecars. With the configs copied into the image, the stack can
 start immediately using `/etc/oci-cpu-shaper/configs/mode-a.yaml`; mount a
 custom manifest over that path if tenancy-specific tuning is required.
 
+The rootless manifest also wires a Docker `healthcheck` that runs the
+`oci-cpu-shaper-healthcheck` helper inside the container. The helper hits the
+local `/healthz` endpoint with a five-second timeout, treating `normal` and
+`suppressed` controller states as healthy and failing fast when the endpoint is
+unreachable or returns persistent Monitoring errors (§5.3, §9.6).
+
 To enforce the optional CPU cap, set `SHAPER_CPUS` in `mode-a.env.example` (for example, `SHAPER_CPUS=0.30`) and remove the `#`
 in front of the `cpus:` line or mirror the stanza in an override file. Run `docker compose --file deploy/compose/mode-a.rootless.yaml config`
 to confirm the rendered service now includes a `cpus:` entry before rolling the stack to production.
@@ -88,7 +103,10 @@ required to let the kernel honour the request; when the capability is missing
 the controller logs `worker failed to enter sched_idle` at `warn` level and
 continues without downgrading the scheduler policy. The helper ignores
 `EPERM` rejections so operators that intentionally omit the capability keep a
-noise-free log while experimentation remains safe on hosts that do grant it.
+noise-free log while experimentation remains safe on hosts that do grant it. A
+matching healthcheck runs the `oci-cpu-shaper-healthcheck` probe inside the
+container, querying `/healthz` with the same five-second timeout to ensure the
+Monitoring client and estimator remain healthy (§5.3, §9.6).
 
 Bring the Mode B stack up with:
 

@@ -4,6 +4,11 @@
 
 ### Added
 _Note coverage-impacting additions: mention new test suites or tooling that shift the CI ≥96% statement coverage budget (§11)._
+- Distroless health probe (`cmd/healthcheck`) compiled into the images and packaged via
+  `dockerfiles/healthcheck.dockerfile`, plus `HEALTHCHECK` stanzas in the rootless/rootful
+  Docker targets and Compose manifests. The helper polls `/healthz` with a five-second timeout,
+  treats `normal`/`suppressed` states as healthy, and fails fast on Monitoring errors; unit tests
+  cover the client and CLI wiring to keep the ≥96% coverage floor intact (§§5.3, 6.1, 6.2, 6.3, 9.6).
 - Overview architecture now diagrams the runtime config pipeline, controller layers, and metrics surfaces, and README repository
   structure calls out the shared `pkg/runtimeconfig` package so §0, §3.1, and §5.2 references stay aligned.
 - Execution-flow reference (`docs/05-execution-flow.txt`) summarising the CLI,
