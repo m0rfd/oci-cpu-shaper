@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"go.uber.org/zap"
 	"oci-cpu-shaper/pkg/adapt"
@@ -63,15 +62,21 @@ func buildAdaptiveController(
 		return nil, nil, err
 	}
 
-	compartmentID := strings.TrimSpace(cfg.OCI.CompartmentID)
-	if compartmentID == "" && !offline {
-		return nil, nil, errControllerCompartmentRequired
+	metadata, err := resolveCompartmentAndRegion(ctx, cfg, imdsClient)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	region := strings.TrimSpace(cfg.OCI.Region)
-	if region == "" && !offline {
-		return nil, nil, errControllerRegionRequired
+	if metadata.CompartmentID != "" {
+		cfg.OCI.CompartmentID = metadata.CompartmentID
 	}
+
+	if metadata.Region != "" {
+		cfg.OCI.Region = metadata.Region
+	}
+
+	compartmentID := metadata.CompartmentID
+	region := metadata.Region
 
 	metricsClient, err := createMetricsClient(ctx, cfg, offline, compartmentID, region)
 	if err != nil {

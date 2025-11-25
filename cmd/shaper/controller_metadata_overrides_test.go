@@ -86,6 +86,128 @@ func TestBuildAdaptiveControllerOfflineSkipsExternalDependencies(t *testing.T) {
 	}
 }
 
+func TestBuildAdaptiveControllerUsesIMDSMetadataDefaults(t *testing.T) {
+	t.Parallel()
+
+	stubMetrics := newStubMetricsClient()
+	ctx := contextWithAssertingMetricsFactory(t, stubMetrics, stubCompartmentID, stubRegion)
+
+	cfg := runtimeconfig.Default()
+	cfg.OCI.CompartmentID = ""
+	cfg.OCI.Region = ""
+	cfg.OCI.InstanceID = ""
+	cfg.Pool.Workers = 1
+
+	imdsClient := newLoggingStubIMDS(
+		stubRegion,
+		nil,
+		stubRegion,
+		nil,
+		"ocid1.instance.oc1..imds",
+		nil,
+		stubCompartmentID,
+		nil,
+		stubShapeConfig(0, 0),
+		nil,
+	)
+
+	controller, pool, err := buildAdaptiveController(ctx, modeEnforce, cfg, imdsClient, nil)
+	if err != nil {
+		t.Fatalf("buildAdaptiveController returned error: %v", err)
+	}
+
+	if pool == nil {
+		t.Fatal("expected worker pool to be initialized")
+	}
+
+	if controller.Mode() != modeEnforce {
+		t.Fatalf("unexpected mode: %s", controller.Mode())
+	}
+
+	if imdsClient.compartmentCalls != 1 {
+		t.Fatalf("expected compartment lookup, got %d", imdsClient.compartmentCalls)
+	}
+
+	if imdsClient.regionCalls != 1 {
+		t.Fatalf("expected legacy region lookup, got %d", imdsClient.regionCalls)
+	}
+
+	if imdsClient.canonicalRegionCalls != 1 {
+		t.Fatalf("expected canonical region lookup, got %d", imdsClient.canonicalRegionCalls)
+	}
+
+	if imdsClient.instanceCalls != 1 {
+		t.Fatalf("expected instance lookup, got %d", imdsClient.instanceCalls)
+	}
+}
+
+//nolint:funlen // integration-style test ensures overrides remain preferred with IMDS data available.
+func TestBuildAdaptiveControllerPrefersOverridesOverIMDSMetadata(t *testing.T) {
+	t.Parallel()
+
+	stubMetrics := newStubMetricsClient()
+	ctx := contextWithAssertingMetricsFactory(
+		t,
+		stubMetrics,
+		testCompartmentOverride,
+		overrideRegion,
+	)
+
+	cfg := runtimeconfig.Default()
+	cfg.OCI.CompartmentID = "  " + testCompartmentOverride + "  "
+	cfg.OCI.Region = "  " + overrideRegion + "  "
+	cfg.OCI.InstanceID = "ocid1.instance.oc1..override"
+	cfg.Pool.Workers = 1
+
+	imdsClient := newLoggingStubIMDS(
+		stubRegion,
+		nil,
+		stubCanonicalRegion,
+		nil,
+		"ocid1.instance.oc1..imds",
+		nil,
+		stubCompartmentID,
+		nil,
+		stubShapeConfig(0, 0),
+		nil,
+	)
+
+	controller, pool, err := buildAdaptiveController(ctx, modeDryRun, cfg, imdsClient, nil)
+	if err != nil {
+		t.Fatalf("buildAdaptiveController returned error: %v", err)
+	}
+
+	if pool == nil {
+		t.Fatal("expected worker pool to be initialized")
+	}
+
+	if controller.Mode() != modeDryRun {
+		t.Fatalf("unexpected mode: %s", controller.Mode())
+	}
+
+	if imdsClient.compartmentCalls != 0 {
+		t.Fatalf(
+			"expected overrides to skip compartment lookup, got %d",
+			imdsClient.compartmentCalls,
+		)
+	}
+
+	if imdsClient.regionCalls != 0 {
+		t.Fatalf("expected overrides to skip region lookup, got %d", imdsClient.regionCalls)
+	}
+
+	if imdsClient.canonicalRegionCalls != 0 {
+		t.Fatalf(
+			"expected overrides to skip canonical region lookup, got %d",
+			imdsClient.canonicalRegionCalls,
+		)
+	}
+
+	if imdsClient.instanceCalls != 0 {
+		t.Fatalf("expected instance override to skip lookup, got %d", imdsClient.instanceCalls)
+	}
+}
+
 func TestBuildAdaptiveControllerRequiresCompartmentID(t *testing.T) {
 	t.Parallel()
 
