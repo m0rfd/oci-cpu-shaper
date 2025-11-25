@@ -474,16 +474,26 @@ lint-autofix: lint-fix
 
 install-git-hooks:
 	@set -euo pipefail; \
-	git_dir=".git"; \
-	if [ -f "$$git_dir" ]; then \
-		git_dir="$$(sed -n 's/^gitdir: //p' "$$git_dir")"; \
+	git_common_dir="$$(git rev-parse --git-common-dir 2>/dev/null || true)"; \
+	if [ -z "$$git_common_dir" ]; then \
+		git_common_dir=".git"; \
 	fi; \
-	if [ -z "$$git_dir" ] || [ ! -d "$$git_dir" ]; then \
+	if [ -f "$$git_common_dir" ]; then \
+		git_common_dir="$$(sed -n 's/^gitdir: //p' "$$git_common_dir")"; \
+	fi; \
+	if [ -z "$$git_common_dir" ] || [ ! -d "$$git_common_dir" ]; then \
 		echo "No git metadata found; skipping hook installation."; \
 		exit 0; \
 	fi; \
+	hooks_path="$$(git config core.hooksPath 2>/dev/null || true)"; \
+	repo_root="$$(git rev-parse --show-toplevel 2>/dev/null || pwd)"; \
+	case "$$hooks_path" in \
+		/*) hook_dir="$$hooks_path" ;; \
+		"" ) hook_dir="$$git_common_dir/hooks" ;; \
+		*) hook_dir="$$repo_root/$$hooks_path" ;; \
+	esac; \
 	script_path="hack/githooks/pre-commit"; \
-	hook_path="$$git_dir/hooks/pre-commit"; \
+	hook_path="$$hook_dir/pre-commit"; \
 	if [ ! -f "$$script_path" ]; then \
 		echo "Hook template $$script_path not found" >&2; \
 		exit 1; \
