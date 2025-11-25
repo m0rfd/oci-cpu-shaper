@@ -33,14 +33,36 @@ func coerceConfig(cfg Config) (Config, string) {
 	cfg.RelaxedThreshold = ensureFloat(cfg.RelaxedThreshold, defaults.RelaxedThreshold)
 	cfg.SuppressThreshold = ensureFloatAllowZero(cfg.SuppressThreshold, defaults.SuppressThreshold)
 	cfg.SuppressResume = ensureFloatAllowZero(cfg.SuppressResume, defaults.SuppressResume)
+	cfg.SuppressRunnableThreshold = ensureFloatAllowZero(
+		cfg.SuppressRunnableThreshold,
+		defaults.SuppressRunnableThreshold,
+	)
+	cfg.SuppressRunnableResume = ensureFloatAllowZero(
+		cfg.SuppressRunnableResume,
+		defaults.SuppressRunnableResume,
+	)
 
 	cfg.SuppressThreshold = clamp(cfg.SuppressThreshold, 0, 1)
+
 	cfg.SuppressResume = clamp(cfg.SuppressResume, 0, 1)
+	if cfg.SuppressRunnableThreshold < 0 {
+		cfg.SuppressRunnableThreshold = 0
+	}
+
+	if cfg.SuppressRunnableResume < 0 {
+		cfg.SuppressRunnableResume = 0
+	}
 
 	if cfg.SuppressThreshold <= 0 {
 		cfg.SuppressResume = 0
 	} else if cfg.SuppressResume >= cfg.SuppressThreshold {
 		cfg.SuppressResume = math.Max(cfg.SuppressThreshold*suppressResumeScale, 0)
+	}
+
+	if cfg.SuppressRunnableThreshold <= 0 {
+		cfg.SuppressRunnableResume = 0
+	} else if cfg.SuppressRunnableResume >= cfg.SuppressRunnableThreshold {
+		cfg.SuppressRunnableResume = cfg.SuppressRunnableThreshold * suppressResumeScale
 	}
 
 	mode := strings.TrimSpace(cfg.Mode)

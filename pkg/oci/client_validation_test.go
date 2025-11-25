@@ -29,7 +29,7 @@ func TestClientValidationErrors(t *testing.T) {
 
 	var nilClient *Client
 
-	_, err := nilClient.QueryP95CPU(ctx, "ocid.instance", false)
+	_, err := nilClient.QueryP95CPU(ctx, "ocid.instance")
 	if !errors.Is(err, errNilClient) {
 		t.Fatalf("expected errNilClient, got %v", err)
 	}
@@ -47,7 +47,7 @@ func TestClientValidationErrors(t *testing.T) {
 	client, err := newTestClient(newStubMetricsClient(nil, nil, nil), "ocid.compartment", time.Now)
 	requireNoError(t, err, "create client")
 
-	_, err = client.QueryP95CPU(ctx, "", false)
+	_, err = client.QueryP95CPU(ctx, "")
 	if !errors.Is(err, errMissingInstanceOCID) {
 		t.Fatalf("expected errMissingInstanceOCID, got %v", err)
 	}
@@ -75,7 +75,6 @@ func TestNewInstancePrincipalClientClockFallback(t *testing.T) {
 	value, err := client.QueryP95CPU(
 		context.Background(),
 		"ocid1.instance.oc1..exampleuniqueID",
-		false,
 	)
 	requireNoError(t, err, "query P95 CPU")
 
@@ -91,7 +90,7 @@ func TestNewInstancePrincipalClientTrimsRegionOverride(t *testing.T) {
 
 	client, roundTripper := newRecordingInstancePrincipalClient(t, "  us-phoenix-1  ")
 
-	_, err := client.QueryP95CPU(context.Background(), "ocid1.instance.oc1..exampleuniqueID", false)
+	_, err := client.QueryP95CPU(context.Background(), "ocid1.instance.oc1..exampleuniqueID")
 	requireNoError(t, err, "query P95 CPU")
 
 	if strings.Contains(roundTripper.host, " ") {

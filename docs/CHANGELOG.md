@@ -16,6 +16,12 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
   readings to the pool, and docs (§§3.1, 9) describe the new configuration and
   behaviour. Updated tests cover pause transitions to keep the ≥96% coverage floor (§§3,
   5, 9, 11).
+- Fast-loop suppression now ingests runnable-per-CPU signals from `/proc/stat` and
+  pauses immediately when the run queue spikes. New controller knobs
+  (`suppressRunnableThreshold`/`suppressRunnableResume`,
+  `SHAPER_SUPPRESS_RUNNABLE_THRESHOLD`/`SHAPER_SUPPRESS_RUNNABLE_RESUME`) and docs (§§3.1,
+  5.2, 9) cover the defaults, while unit tests validate runnable-triggered suppression
+  and the estimator’s runnable parsing to preserve the ≥96% coverage floor (§11).
 - Cgroup telemetry helper that reads `/proc/self/cgroup`, parses the
   colocated `cpu.weight`/`cpu.max` files, and publishes the detected values via
   new `cgroup_cpu_weight`/`cgroup_cpu_max_*` metrics plus a `cgroup` block in
@@ -106,6 +112,9 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   updating the exporter, Grafana dashboard, and monitoring docs/tests so
   Prometheus queries continue to track state transitions accurately (§§3.2, 5,
   7, 9, 11).
+- Hard-coded `pkg/oci.Client.QueryP95CPU` to the trailing seven-day window and
+  updated the instance-principal adapters, CLI tool, and docs to rely on that
+  fixed scope so Monitoring queries stay aligned with the reclaim period (§5.2).
 - CLI `--mode` now defaults to enforcing/normal operation instead of `dry-run`,
   updating the help text and docs so operators start with the adaptive
   controller active unless explicitly opting into monitor-only mode (§§5, 9).
@@ -116,6 +125,12 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   metadata resolution, metrics bootstrap, and controller start to keep `cmd/shaper`
   wiring small and directly testable. Updated §3.1 to map the new helpers and added
   focused unit suites per stage to preserve the ≥96% coverage contract (§§3.1, 8, 11, 12).
+- Tightened the estimator default interval to 1 second (from 2 seconds) while
+  keeping `SHAPER_FAST_INTERVAL` overrides intact across the YAML/env/CLI
+  layers. Updated samples and docs to reflect the faster cadence (§§5.2, 9, 12).
+- CLI `--mode` now defaults to `enforce` to match the documented production posture; startup logs,
+  `/metrics`/`/healthz` exports, and the Quick Start/CLI docs note the default along with the
+  `dry-run`/`noop` opt-ins (§§5, 9, 10, 11).
 - Raised the Go toolchain to 1.25.4 in `go.mod`, `.tool-versions`, and the container build ARG so CI, local builds, and release
   images track the latest stable release, and refreshed badges/docs to match (§§8, 12, 14).
 - CLI documentation (§9), `runtimeconfig.Default()`, and `adapt.DefaultConfig()` now

@@ -4,6 +4,8 @@ package runtimeconfig
 import (
 	"testing"
 	"time"
+
+	"oci-cpu-shaper/pkg/adapt"
 )
 
 func TestDefaultConfigAlignsWithAdaptDefaults(t *testing.T) {
@@ -40,6 +42,18 @@ func TestDefaultConfigAlignsWithAdaptDefaults(t *testing.T) {
 		defaults.SuppressThreshold,
 	)
 	assertFloatEqual(t, "suppressResume", cfg.Controller.SuppressResume, defaults.SuppressResume)
+	assertFloatEqual(
+		t,
+		"suppressRunnableThreshold",
+		cfg.Controller.SuppressRunnableThreshold,
+		defaults.SuppressRunnableThreshold,
+	)
+	assertFloatEqual(
+		t,
+		"suppressRunnableResume",
+		cfg.Controller.SuppressRunnableResume,
+		defaults.SuppressRunnableResume,
+	)
 
 	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, time.Second)
 
@@ -55,50 +69,107 @@ func TestConfigToAdaptConfig(t *testing.T) {
 
 	cfg := Config{ //nolint:exhaustruct
 		Controller: ControllerConfig{
-			TargetStart:       0.45,
-			TargetMin:         0.3,
-			TargetMax:         0.6,
-			StepUp:            0.02,
-			StepDown:          0.01,
-			FallbackTarget:    0.4,
-			GoalLow:           0.35,
-			GoalHigh:          0.5,
-			Interval:          time.Minute,
-			RelaxedInterval:   30 * time.Minute,
-			RelaxedThreshold:  0.2,
-			SuppressThreshold: 0.9,
-			SuppressResume:    0.6,
+			TargetStart:               0.45,
+			TargetMin:                 0.3,
+			TargetMax:                 0.6,
+			StepUp:                    0.02,
+			StepDown:                  0.01,
+			FallbackTarget:            0.4,
+			GoalLow:                   0.35,
+			GoalHigh:                  0.5,
+			Interval:                  time.Minute,
+			RelaxedInterval:           30 * time.Minute,
+			RelaxedThreshold:          0.2,
+			SuppressThreshold:         0.9,
+			SuppressResume:            0.6,
+			SuppressRunnableThreshold: 1.4,
+			SuppressRunnableResume:    1.1,
 		},
 	}
 
 	adaptCfg := cfg.ToAdaptConfig()
 
-	assertFloatEqual(t, "targetStart", adaptCfg.TargetStart, cfg.Controller.TargetStart)
-	assertFloatEqual(t, "targetMin", adaptCfg.TargetMin, cfg.Controller.TargetMin)
-	assertFloatEqual(t, "targetMax", adaptCfg.TargetMax, cfg.Controller.TargetMax)
-	assertFloatEqual(t, "stepUp", adaptCfg.StepUp, cfg.Controller.StepUp)
-	assertFloatEqual(t, "stepDown", adaptCfg.StepDown, cfg.Controller.StepDown)
-	assertFloatEqual(t, "fallbackTarget", adaptCfg.FallbackTarget, cfg.Controller.FallbackTarget)
-	assertFloatEqual(t, "goalLow", adaptCfg.GoalLow, cfg.Controller.GoalLow)
-	assertFloatEqual(t, "goalHigh", adaptCfg.GoalHigh, cfg.Controller.GoalHigh)
-	assertDurationEqual(t, "interval", adaptCfg.Interval, cfg.Controller.Interval)
-	assertDurationEqual(
-		t,
-		"relaxedInterval",
-		adaptCfg.RelaxedInterval,
-		cfg.Controller.RelaxedInterval,
-	)
-	assertFloatEqual(
-		t,
-		"relaxedThreshold",
-		adaptCfg.RelaxedThreshold,
-		cfg.Controller.RelaxedThreshold,
-	)
-	assertFloatEqual(
-		t,
-		"suppressThreshold",
-		adaptCfg.SuppressThreshold,
-		cfg.Controller.SuppressThreshold,
-	)
-	assertFloatEqual(t, "suppressResume", adaptCfg.SuppressResume, cfg.Controller.SuppressResume)
+	assertAdaptConfigMapping(t, cfg.Controller, adaptCfg)
+}
+
+func assertAdaptConfigMapping(t *testing.T, controllerCfg ControllerConfig, adaptCfg adapt.Config) {
+	t.Helper()
+
+	assertAdaptFloatFields(t, controllerCfg, adaptCfg)
+	assertAdaptDurationFields(t, controllerCfg, adaptCfg)
+}
+
+func assertAdaptFloatFields(t *testing.T, controllerCfg ControllerConfig, adaptCfg adapt.Config) {
+	t.Helper()
+
+	floatChecks := []struct {
+		name string
+		got  float64
+		want float64
+	}{
+		{name: "targetStart", got: adaptCfg.TargetStart, want: controllerCfg.TargetStart},
+		{name: "targetMin", got: adaptCfg.TargetMin, want: controllerCfg.TargetMin},
+		{name: "targetMax", got: adaptCfg.TargetMax, want: controllerCfg.TargetMax},
+		{name: "stepUp", got: adaptCfg.StepUp, want: controllerCfg.StepUp},
+		{name: "stepDown", got: adaptCfg.StepDown, want: controllerCfg.StepDown},
+		{name: "fallbackTarget", got: adaptCfg.FallbackTarget, want: controllerCfg.FallbackTarget},
+		{name: "goalLow", got: adaptCfg.GoalLow, want: controllerCfg.GoalLow},
+		{name: "goalHigh", got: adaptCfg.GoalHigh, want: controllerCfg.GoalHigh},
+		{
+			name: "relaxedThreshold",
+			got:  adaptCfg.RelaxedThreshold,
+			want: controllerCfg.RelaxedThreshold,
+		},
+		{
+			name: "suppressThreshold",
+			got:  adaptCfg.SuppressThreshold,
+			want: controllerCfg.SuppressThreshold,
+		},
+		{name: "suppressResume", got: adaptCfg.SuppressResume, want: controllerCfg.SuppressResume},
+		{
+			name: "suppressRunnableThreshold",
+			got:  adaptCfg.SuppressRunnableThreshold,
+			want: controllerCfg.SuppressRunnableThreshold,
+		},
+		{
+			name: "suppressRunnableResume",
+			got:  adaptCfg.SuppressRunnableResume,
+			want: controllerCfg.SuppressRunnableResume,
+		},
+	}
+
+	for _, tt := range floatChecks {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assertFloatEqual(t, tt.name, tt.got, tt.want)
+		})
+	}
+}
+
+func assertAdaptDurationFields(
+	t *testing.T,
+	controllerCfg ControllerConfig,
+	adaptCfg adapt.Config,
+) {
+	t.Helper()
+
+	durationChecks := []struct {
+		name string
+		got  time.Duration
+		want time.Duration
+	}{
+		{name: "interval", got: adaptCfg.Interval, want: controllerCfg.Interval},
+		{
+			name: "relaxedInterval",
+			got:  adaptCfg.RelaxedInterval,
+			want: controllerCfg.RelaxedInterval,
+		},
+	}
+
+	for _, tt := range durationChecks {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assertDurationEqual(t, tt.name, tt.got, tt.want)
+		})
+	}
 }

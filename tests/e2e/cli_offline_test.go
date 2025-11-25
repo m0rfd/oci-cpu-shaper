@@ -96,7 +96,7 @@ pool:
 http:
   bind: "127.0.0.1:%d"
 oci:
-  fallbackTarget: 0.25
+  fallbackTarget: 0.22
 `, onlineMetricsPort))
 
 	onlineLogs, onlineMetrics := runShaper(ctx, t, binary, onlineConfig, onlineMetricsPort, map[string]string{

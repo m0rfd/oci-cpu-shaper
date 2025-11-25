@@ -126,10 +126,6 @@ func TestInstancePrincipalMetricsClientDelegateError(t *testing.T) {
 	if querier.lastResource != "ocid.instance" {
 		t.Fatalf("expected resource to propagate, got %q", querier.lastResource)
 	}
-
-	if !querier.lastLast7d {
-		t.Fatal("expected last7d flag to be true")
-	}
 }
 
 func TestInstancePrincipalBuilderConstructorError(t *testing.T) {
@@ -172,10 +168,6 @@ func TestInstancePrincipalMetricsClientSuccess(t *testing.T) {
 
 	if querier.lastResource != "ocid.instance" {
 		t.Fatalf("expected resource to propagate, got %q", querier.lastResource)
-	}
-
-	if !querier.lastLast7d {
-		t.Fatal("expected last7d flag to be true")
 	}
 }
 

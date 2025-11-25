@@ -14,5 +14,7 @@ Attach a tenancy policy allowing the Dynamic Group to read Monitoring metrics. T
 ## Step 4 — Deploy with Komodo Compose (§6.1)
 Roll out the shaper service using the provided Podman Compose or Quadlet examples. Start with the non-root image and `cpu_shares` low enough to yield instantly under contention, matching the fair-share defaults. Sample manifests and mode comparisons are captured in [`06-komodo-compose.md`](./06-komodo-compose.md).
 
+The CLI now defaults to `--mode enforce` so production rollouts inherit the adaptive controller without additional flags. Set `SHAPER_MODE=dry-run` in the Compose/Quadlet env file (or pass `--mode dry-run` on the CLI) for pre-production validation, and reserve `--mode noop` for diagnostics when you need the HTTP/metrics endpoints without starting the controller.
+
 ## Step 5 — Wire the Seven-Day Alarm (§7.4)
 Create an OCI Monitoring alarm that triggers when the seven-day P95 `CpuUtilization` drops below 20%. Point it at your notification topic so the reclaim risk surfaces before Oracle flags the instance as idle. Step-by-step alarm creation instructions sit in [`07-alarms.md`](./07-alarms.md).

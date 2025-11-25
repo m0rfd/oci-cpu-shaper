@@ -24,7 +24,6 @@ type queryConfig struct {
 	instanceID    string
 	compartmentID string
 	region        string
-	last7d        bool
 	timeout       time.Duration
 	allowEmpty    bool
 }
@@ -42,7 +41,7 @@ func main() {
 }
 
 type metricsQuerier interface {
-	QueryP95CPU(ctx context.Context, instanceOCID string, last7d bool) (float32, error)
+	QueryP95CPU(ctx context.Context, instanceOCID string) (float32, error)
 }
 
 //nolint:gochecknoglobals // test seam for injecting fake clients
@@ -66,12 +65,6 @@ func parseConfig(args []string) (queryConfig, error) {
 		"Compartment OCID scoped for Monitoring queries",
 	)
 	flags.StringVar(&cfg.region, "region", "", "OCI region override (optional)")
-	flags.BoolVar(
-		&cfg.last7d,
-		"last7d",
-		true,
-		"Query the trailing seven days instead of the last 24 hours",
-	)
 	flags.DurationVar(
 		&cfg.timeout,
 		"timeout",
@@ -110,7 +103,7 @@ func runQuery(cfg queryConfig) error {
 		return fmt.Errorf("build instance principal client: %w", err)
 	}
 
-	value, err := client.QueryP95CPU(ctx, cfg.instanceID, cfg.last7d)
+	value, err := client.QueryP95CPU(ctx, cfg.instanceID)
 	if err != nil {
 		if errors.Is(err, oci.ErrNoMetricsData) && cfg.allowEmpty {
 			log.Printf("no metrics returned for %s", cfg.instanceID)

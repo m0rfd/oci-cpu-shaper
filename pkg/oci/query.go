@@ -18,13 +18,12 @@ const (
 )
 
 // QueryP95CPU returns the most recent P95 CpuUtilization datapoint for the supplied compute instance.
-// When last7d is true the query spans the trailing seven days at one-minute resolution, otherwise a
-// 24-hour window is used. The Monitoring API limits one-minute queries to seven days of history, so
-// the window is truncated as necessary. ErrNoMetricsData is returned when the API yields no datapoints.
+// The query spans the trailing seven days at one-minute resolution to match the reclaim horizon and
+// the Monitoring API's resolution limit. ErrNoMetricsData is returned when the API yields no
+// datapoints.
 func (c *Client) QueryP95CPU(
 	ctx context.Context,
 	instanceOCID string,
-	last7d bool,
 ) (float32, error) {
 	if c == nil {
 		return 0, errNilClient
@@ -34,7 +33,7 @@ func (c *Client) QueryP95CPU(
 		return 0, errMissingInstanceOCID
 	}
 
-	start, end := computeWindow(c.now().UTC(), last7d)
+	start, end := computeWindow(c.now().UTC())
 	request := buildSummarizeRequest(c.compartmentID, instanceOCID, start, end)
 
 	value, found, err := c.collectLatestDatapoint(ctx, request)
@@ -49,18 +48,11 @@ func (c *Client) QueryP95CPU(
 	return value, nil
 }
 
-func computeWindow(now time.Time, last7d bool) (time.Time, time.Time) {
+func computeWindow(now time.Time) (time.Time, time.Time) {
 	end := now.Truncate(time.Second)
 
-	start := end.Add(-24 * time.Hour)
-	if last7d {
-		start = end.Add(-time.Duration(maxOneMinuteWindowHours) * time.Hour)
-	}
-
 	maxWindow := time.Duration(maxOneMinuteWindowHours) * time.Hour
-	if end.Sub(start) > maxWindow {
-		start = end.Add(-maxWindow)
-	}
+	start := end.Add(-maxWindow)
 
 	return start, end
 }

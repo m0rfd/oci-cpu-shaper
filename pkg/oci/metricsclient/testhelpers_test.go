@@ -12,17 +12,14 @@ type stubP95Querier struct {
 	err          error
 	calls        int
 	lastResource string
-	lastLast7d   bool
 }
 
 func (s *stubP95Querier) QueryP95CPU(
 	_ context.Context,
 	resourceID string,
-	last7d bool,
 ) (float32, error) {
 	s.calls++
 	s.lastResource = resourceID
-	s.lastLast7d = last7d
 
 	if s.err != nil {
 		return 0, s.err

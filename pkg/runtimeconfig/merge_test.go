@@ -52,6 +52,8 @@ func mergeOverridesFixture() string {
   relaxedThreshold: 0.25
   suppressThreshold: 0.91
   suppressResume: 0.61
+  suppressRunnableThreshold: 1.3
+  suppressRunnableResume: 1.0
   goalLow: 0.44
   goalHigh: 0.54
 estimator:
@@ -87,6 +89,8 @@ func assertMergeOverrides(t *testing.T, cfg Config) {
 	assertFloatEqual(t, "relaxedThreshold", cfg.Controller.RelaxedThreshold, 0.25)
 	assertFloatEqual(t, "suppressThreshold", cfg.Controller.SuppressThreshold, 0.91)
 	assertFloatEqual(t, "suppressResume", cfg.Controller.SuppressResume, 0.61)
+	assertFloatEqual(t, "suppressRunnableThreshold", cfg.Controller.SuppressRunnableThreshold, 1.3)
+	assertFloatEqual(t, "suppressRunnableResume", cfg.Controller.SuppressRunnableResume, 1.0)
 	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, 750*time.Millisecond)
 	assertIntEqual(t, "poolWorkers", cfg.Pool.Workers, 3)
 	assertDurationEqual(t, "poolQuantum", cfg.Pool.Quantum, 33*time.Millisecond)
