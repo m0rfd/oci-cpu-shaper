@@ -58,6 +58,7 @@ type MetricsRecorder interface {
 	ObserveHostCPU(utilisation float64)
 	SetInterval(interval time.Duration)
 	SetLastError(err error)
+	SetRelaxedSuccesses(count int)
 }
 
 // Estimator exposes the observation stream produced by pkg/est.

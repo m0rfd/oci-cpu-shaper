@@ -61,6 +61,12 @@ func TestLoadConfigUsesDefaultsWhenFileMissing(t *testing.T) {
 		cfg.Pool.RunnableGuard,
 		defaults.SuppressRunnableThreshold,
 	)
+	assertIntEqual(
+		t,
+		"relaxedConfirmations",
+		cfg.Controller.RelaxedConfirmations,
+		defaults.RelaxedConfirmations,
+	)
 }
 
 func TestLoadConfigSamplesLoad(t *testing.T) {
@@ -117,6 +123,7 @@ func TestLoadConfigAppliesFileOverrides(t *testing.T) {
 	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, 0.88)
 	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, 0.44)
 	assertFloatEqual(t, "poolRunnableGuard", cfg.Pool.RunnableGuard, 1.1)
+	assertIntEqual(t, "relaxedConfirmations", cfg.Controller.RelaxedConfirmations, 3)
 }
 
 func TestLoadConfigAppliesEnvOverrides(t *testing.T) { //nolint:paralleltest
@@ -138,6 +145,7 @@ func setEnvOverrides(t *testing.T) {
 	t.Setenv(envStepUp, "0.05")
 	t.Setenv(envSlowInterval, "2h")
 	t.Setenv(envRelaxedInterval, "12h")
+	t.Setenv(envRelaxedConfirmations, "5")
 	t.Setenv(envFastInterval, "250ms")
 	t.Setenv(envPoolWorkers, "4")
 	t.Setenv(envPoolPauseThreshold, "0.81")
@@ -162,6 +170,7 @@ func assertEnvOverrides(t *testing.T, cfg Config) {
 	assertFloatEqual(t, "stepUp", cfg.Controller.StepUp, 0.05)
 	assertDurationEqual(t, "interval", cfg.Controller.Interval, 2*time.Hour)
 	assertDurationEqual(t, "relaxedInterval", cfg.Controller.RelaxedInterval, 12*time.Hour)
+	assertIntEqual(t, "relaxedConfirmations", cfg.Controller.RelaxedConfirmations, 5)
 	assertFloatEqual(t, "suppressThreshold", cfg.Controller.SuppressThreshold, 0.88)
 	assertFloatEqual(t, "suppressResume", cfg.Controller.SuppressResume, 0.51)
 	assertFloatEqual(

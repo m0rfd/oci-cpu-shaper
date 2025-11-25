@@ -19,6 +19,7 @@ const (
 	defaultGoalHigh               = 0.27
 	defaultRelaxedInterval        = 4 * time.Hour
 	defaultRelaxedThresh          = 0.26
+	defaultRelaxedConfirmations   = 2
 	defaultSuppressThresh         = 0.80
 	defaultSuppressResume         = 0.68
 	defaultRunnableSuppressThresh = 1.20
@@ -43,6 +44,7 @@ func DefaultConfig() Config {
 		Interval:                  time.Hour,
 		RelaxedInterval:           defaultRelaxedInterval,
 		RelaxedThreshold:          defaultRelaxedThresh,
+		RelaxedConfirmations:      defaultRelaxedConfirmations,
 		SuppressThreshold:         defaultSuppressThresh,
 		SuppressResume:            defaultSuppressResume,
 		SuppressRunnableThreshold: defaultRunnableSuppressThresh,

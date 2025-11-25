@@ -217,6 +217,10 @@ func (s *stubMetricsRecorder) SetLastError(err error) {
 	s.errorCalls++
 }
 
+func (s *stubMetricsRecorder) SetRelaxedSuccesses(_ int) {
+	// Stub implementation
+}
+
 func requireEqual[T comparable](t *testing.T, name string, got, want T) {
 	t.Helper()
 

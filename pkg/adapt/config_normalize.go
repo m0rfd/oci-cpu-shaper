@@ -31,6 +31,7 @@ func coerceConfig(cfg Config) (Config, string) {
 	cfg.GoalLow = ensureFloat(cfg.GoalLow, defaults.GoalLow)
 	cfg.GoalHigh = ensureFloat(cfg.GoalHigh, defaults.GoalHigh)
 	cfg.RelaxedThreshold = ensureFloat(cfg.RelaxedThreshold, defaults.RelaxedThreshold)
+	cfg.RelaxedConfirmations = ensureInt(cfg.RelaxedConfirmations, defaults.RelaxedConfirmations)
 	cfg.SuppressThreshold = ensureFloatAllowZero(cfg.SuppressThreshold, defaults.SuppressThreshold)
 	cfg.SuppressResume = ensureFloatAllowZero(cfg.SuppressResume, defaults.SuppressResume)
 	cfg.SuppressRunnableThreshold = ensureFloatAllowZero(
@@ -95,4 +96,12 @@ func ensureFloatAllowZero(value, fallback float64) float64 {
 	}
 
 	return ensureFloat(value, fallback)
+}
+
+func ensureInt(value, fallback int) int {
+	if value == 0 {
+		return fallback
+	}
+
+	return value
 }

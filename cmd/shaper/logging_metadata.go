@@ -41,6 +41,7 @@ func logRuntimeConfig(logger *zap.Logger, cfg runtimeconfig.Config) {
 		zap.Duration("estimatorInterval", cfg.Estimator.Interval),
 		zap.Duration("controllerInterval", cfg.Controller.Interval),
 		zap.Duration("controllerRelaxedInterval", cfg.Controller.RelaxedInterval),
+		zap.Int("controllerRelaxedConfirmations", cfg.Controller.RelaxedConfirmations),
 		zap.Float64("controllerTargetMin", cfg.Controller.TargetMin),
 		zap.Float64("controllerTargetMax", cfg.Controller.TargetMax),
 		zap.Float64("controllerGoalLow", cfg.Controller.GoalLow),

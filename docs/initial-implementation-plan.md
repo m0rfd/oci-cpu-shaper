@@ -257,7 +257,7 @@ while true:
       mode=normal
       if p95 < 0.21: current_target = min(target+0.01, TARGET_MAX)
       if p95 > 0.27: current_target = max(target-0.005, TARGET_MIN)
-      if p95 >= 0.26 consistently: timer = SHAPER_SLOW_INTERVAL_RELAXED
+      if p95 >= 0.26 for RELAXED_CONFIRMATIONS polls: timer = SHAPER_SLOW_INTERVAL_RELAXED
       else: timer = SHAPER_SLOW_INTERVAL
   sleep(timer)
 ```
@@ -272,7 +272,7 @@ The slow-loop thresholds stay aligned with the 21–27% goal band and 26% relaxe
 
 * **CPU**: idle ≤ 0.2% of one core; during shaping, extra CPU = target duty cycle only.
 * **Memory**: RSS ≤ 15 MiB.
-* **Monitoring**: one HTTP call per slow interval; back off to every 4 h when the P95 remains at or above the relaxed threshold.
+* **Monitoring**: one HTTP call per slow interval; back off to every 4 h when the P95 stays at or above the relaxed threshold for the configured confirmation count (default 2).
 
 Sampling and emission of `CpuUtilization` are per minute derived from 10-second samples; our 1-hour cadence is more than enough. ([Oracle Docs][2])
 
