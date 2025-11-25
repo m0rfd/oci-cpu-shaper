@@ -19,7 +19,7 @@ func (c *AdaptiveController) step(ctx context.Context) time.Duration {
 }
 
 func (c *AdaptiveController) handleStepErrorLocked(err error) time.Duration {
-	c.slowState = StateFallback
+	c.setSlowStateLocked(StateFallback)
 
 	c.lastErr = err
 	if c.recorder != nil {
@@ -49,7 +49,7 @@ func (c *AdaptiveController) handleStepSuccessLocked(
 	p95 float64,
 	fetchedAt time.Time,
 ) time.Duration {
-	c.slowState = StateNormal
+	c.setSlowStateLocked(StateNormal)
 
 	c.lastErr = nil
 	if c.recorder != nil {

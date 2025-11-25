@@ -44,7 +44,7 @@ Import `deploy/grafana/oci-cpu-shaper-dashboard.json` into Grafana to visualise 
 3. Review the built-in panels:
    - **OCI CpuUtilization P95** – Tracks the tenancy-side percentile produced by `pkg/oci.Client.QueryP95CPU` to confirm Monitoring reads remain healthy (§5.2).
    - **Shaper target duty cycle** – Charts the controller’s current worker target ratio emitted as `shaper_target_ratio`, helping correlate slow-loop adjustments with observed load.
-   - **Controller state timeline** – Uses the `shaper_state{state="<label>"}` series to highlight transitions between fallback, enforce, and suppressed modes.
+   - **Controller state timeline** – Uses the `controller_state{state="<label>"}` series to track normal versus fallback transitions and `shaper_state{state="<label>"}` to highlight suppression overlays.
    - **Host CPU versus shaper target** – Overlays the `host_cpu_percent` estimator output with the target ratio so operators can verify reclaim pressure stays within the Always Free guardrails (§3.1).
    - **Controller interval** – Visualises `controller_interval_seconds` to reveal when the controller relaxes into six-hour loops or drops back to the hourly cadence after OCI errors or hot P95 readings.
    - **Last OCI error** – Stat/panel fed by `controller_last_error_info{error="<string>"}` pinpoints the current Monitoring failure message, letting responders match it with `/healthz` output and OCI console logs.

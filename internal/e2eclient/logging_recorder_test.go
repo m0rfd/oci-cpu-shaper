@@ -47,6 +47,7 @@ func TestLoggingRecorderForwardsCalls(t *testing.T) {
 
 	recorder.SetMode("observe")
 	recorder.SetState(" fallback ")
+	recorder.SetControllerState(" normal ")
 	recorder.SetTarget(0.37)
 	recorder.ObserveOCIP95(0.42, time.Unix(100, 0))
 	recorder.ObserveHostCPU(0.55)
@@ -60,6 +61,10 @@ func TestLoggingRecorderForwardsCalls(t *testing.T) {
 
 	if delegate.state != "fallback" {
 		t.Fatalf("expected trimmed state, got %q", delegate.state)
+	}
+
+	if delegate.controllerState != "normal" {
+		t.Fatalf("expected controller state to be forwarded, got %q", delegate.controllerState)
 	}
 
 	if delegate.target != 0.37 {
@@ -100,6 +105,11 @@ func TestLoggingRecorderForwardsCalls(t *testing.T) {
 		t.Fatalf("unexpected to value %v", to)
 	}
 
+	baseEntries := logs.FilterMessage("controller base state transition").All()
+	if len(baseEntries) != 1 {
+		t.Fatalf("expected one base state transition log, got %d", len(baseEntries))
+	}
+
 	// Ensure subsequent SetState does not emit duplicate logs.
 	recorder.SetState("fallback")
 
@@ -131,16 +141,17 @@ func TestLoggingRecorderForwardsCalls(t *testing.T) {
 }
 
 type recordingDelegate struct {
-	mode         string
-	state        string
-	target       float64
-	ocip95       float64
-	hostCPU      float64
-	lastResource string
-	ocip95Count  int64
-	interval     time.Duration
-	errorSet     int
-	errorCleared int
+	mode            string
+	state           string
+	controllerState string
+	target          float64
+	ocip95          float64
+	hostCPU         float64
+	lastResource    string
+	ocip95Count     int64
+	interval        time.Duration
+	errorSet        int
+	errorCleared    int
 }
 
 var errLoggingStepFailure = errors.New("step failure")
@@ -155,6 +166,10 @@ func (r *recordingDelegate) SetMode(mode string) {
 
 func (r *recordingDelegate) SetState(state string) {
 	r.state = state
+}
+
+func (r *recordingDelegate) SetControllerState(state string) {
+	r.controllerState = state
 }
 
 func (r *recordingDelegate) SetTarget(target float64) {

@@ -140,22 +140,24 @@ type controllerStepper interface {
 }
 
 type stubMetricsRecorder struct {
-	mu          sync.Mutex
-	mode        string
-	modeCalls   int
-	state       string
-	stateCalls  int
-	target      float64
-	targetCalls int
-	ociValue    float64
-	ociTime     time.Time
-	ociCalls    int
-	host        float64
-	hostCalls   int
-	interval    time.Duration
-	intervalSet int
-	lastError   error
-	errorCalls  int
+	mu              sync.Mutex
+	mode            string
+	modeCalls       int
+	state           string
+	stateCalls      int
+	controller      string
+	controllerCalls int
+	target          float64
+	targetCalls     int
+	ociValue        float64
+	ociTime         time.Time
+	ociCalls        int
+	host            float64
+	hostCalls       int
+	interval        time.Duration
+	intervalSet     int
+	lastError       error
+	errorCalls      int
 }
 
 func newStubMetricsRecorder() *stubMetricsRecorder { return new(stubMetricsRecorder) }
@@ -174,6 +176,14 @@ func (s *stubMetricsRecorder) SetState(state string) {
 
 	s.state = state
 	s.stateCalls++
+}
+
+func (s *stubMetricsRecorder) SetControllerState(state string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.controller = state
+	s.controllerCalls++
 }
 
 func (s *stubMetricsRecorder) SetTarget(target float64) {

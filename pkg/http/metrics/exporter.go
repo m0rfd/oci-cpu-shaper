@@ -19,8 +19,9 @@ const (
 	contentType              = "application/openmetrics-text; version=1.0.0; charset=utf-8"
 	millisecondsPerSecond    = 1000.0
 	hundredPercent           = 100.0
+	defaultLabelUnknown      = "unknown"
 	defaultErrorLabelNone    = "none"
-	defaultErrorLabelUnknown = "unknown"
+	defaultErrorLabelUnknown = defaultLabelUnknown
 )
 
 var (
@@ -41,6 +42,7 @@ type Exporter struct {
 	shaperMode       string
 	shaperEnforcing  float64
 	shaperState      string
+	controllerState  string
 	ociP95           float64
 	ociLastSuccess   time.Time
 	dutyCycleMillis  float64
@@ -71,7 +73,7 @@ func NewExporter() *Exporter {
 func (e *Exporter) SetMode(mode string) {
 	trimmed := strings.TrimSpace(mode)
 	if trimmed == "" {
-		trimmed = "unknown"
+		trimmed = defaultLabelUnknown
 	}
 
 	enforcement := 0.0
@@ -89,11 +91,23 @@ func (e *Exporter) SetMode(mode string) {
 func (e *Exporter) SetState(state string) {
 	trimmed := strings.TrimSpace(state)
 	if trimmed == "" {
-		trimmed = "unknown"
+		trimmed = defaultLabelUnknown
 	}
 
 	e.mu.Lock()
 	e.shaperState = trimmed
+	e.mu.Unlock()
+}
+
+// SetControllerState records the base controller state label (normal/fallback).
+func (e *Exporter) SetControllerState(state string) {
+	trimmed := strings.TrimSpace(state)
+	if trimmed == "" {
+		trimmed = defaultLabelUnknown
+	}
+
+	e.mu.Lock()
+	e.controllerState = trimmed
 	e.mu.Unlock()
 }
 
@@ -311,6 +325,9 @@ func (e *Exporter) WriteTo(dst io.Writer) (int64, error) {
 		"# HELP shaper_state Controller state machine output (value set to 1 for the active state).\n",
 		"# TYPE shaper_state gauge\n",
 		fmt.Sprintf("shaper_state{state=\"%s\"} 1\n", snapshot.shaperState),
+		"# HELP controller_state Base controller state derived from OCI metrics (1 for the active state).\n",
+		"# TYPE controller_state gauge\n",
+		fmt.Sprintf("controller_state{state=\"%s\"} 1\n", snapshot.controllerState),
 		"# HELP controller_interval_seconds Duration until the next controller step (seconds).\n",
 		"# TYPE controller_interval_seconds gauge\n",
 		fmt.Sprintf("controller_interval_seconds %.6f\n", snapshot.intervalSeconds),
@@ -370,6 +387,7 @@ type exporterSnapshot struct {
 	shaperMode          string
 	shaperEnforcing     float64
 	shaperState         string
+	controllerState     string
 	ociP95              float64
 	ociLastSuccessEpoch float64
 	dutyCycleMillis     float64
@@ -398,11 +416,17 @@ func (e *Exporter) snapshot() exporterSnapshot {
 		errorLabel = defaultErrorLabelNone
 	}
 
+	controllerState := e.controllerState
+	if strings.TrimSpace(controllerState) == "" {
+		controllerState = defaultLabelUnknown
+	}
+
 	return exporterSnapshot{
 		shaperTarget:        e.shaperTarget,
 		shaperMode:          e.shaperMode,
 		shaperEnforcing:     e.shaperEnforcing,
 		shaperState:         e.shaperState,
+		controllerState:     controllerState,
 		ociP95:              e.ociP95,
 		ociLastSuccessEpoch: epoch,
 		dutyCycleMillis:     e.dutyCycleMillis,

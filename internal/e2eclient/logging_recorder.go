@@ -13,8 +13,9 @@ type LoggingRecorder struct {
 	logger   *zap.Logger
 	delegate adapt.MetricsRecorder
 
-	mu        sync.Mutex
-	lastState string
+	mu                  sync.Mutex
+	lastState           string
+	lastControllerState string
 }
 
 // NewLoggingRecorder decorates the provided MetricsRecorder so e2e tests can observe
@@ -57,6 +58,27 @@ func (r *LoggingRecorder) SetState(state string) {
 			zap.String("to", trimmed),
 		)
 		r.lastState = trimmed
+	}
+
+	r.mu.Unlock()
+}
+
+func (r *LoggingRecorder) SetControllerState(state string) {
+	trimmed := strings.TrimSpace(state)
+	if r.delegate != nil {
+		r.delegate.SetControllerState(trimmed)
+	}
+
+	r.mu.Lock()
+
+	previous := r.lastControllerState
+	if trimmed != previous {
+		r.logger.Info(
+			"controller base state transition",
+			zap.String("from", previous),
+			zap.String("to", trimmed),
+		)
+		r.lastControllerState = trimmed
 	}
 
 	r.mu.Unlock()

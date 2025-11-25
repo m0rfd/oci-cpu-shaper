@@ -86,7 +86,7 @@ func NewAdaptiveController(
 	controller.estimator = estimator
 	controller.recorder = recorder
 	controller.state = StateFallback
-	controller.slowState = StateFallback
+	controller.setSlowStateLocked(StateFallback)
 	controller.target = normalized.FallbackTarget
 	controller.desired = normalized.FallbackTarget
 	controller.interval = normalized.Interval
@@ -96,6 +96,7 @@ func NewAdaptiveController(
 
 	if recorder != nil {
 		recorder.SetMode(mode)
+		recorder.SetControllerState(controller.slowState.String())
 		recorder.SetState(controller.state.String())
 		recorder.SetTarget(controller.target)
 		recorder.SetInterval(controller.interval)

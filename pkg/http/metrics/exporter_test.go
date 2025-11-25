@@ -28,6 +28,7 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 	exporter := metrics.NewExporter()
 	exporter.SetMode(" dry-run ")
 	exporter.SetState(" fallback ")
+	exporter.SetControllerState(" fallback ")
 	exporter.SetTarget(0.275)
 	exporter.ObserveOCIP95(0.33, time.Unix(1_700_001_234, 0))
 	exporter.SetInterval(45 * time.Second)
@@ -57,6 +58,9 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 		"# HELP shaper_state Controller state machine output (value set to 1 for the active state).",
 		"# TYPE shaper_state gauge",
 		"shaper_state{state=\"fallback\"} 1",
+		"# HELP controller_state Base controller state derived from OCI metrics (1 for the active state).",
+		"# TYPE controller_state gauge",
+		"controller_state{state=\"fallback\"} 1",
 		"# HELP controller_interval_seconds Duration until the next controller step (seconds).",
 		"# TYPE controller_interval_seconds gauge",
 		"controller_interval_seconds 45.000000",
@@ -268,6 +272,10 @@ func TestExporterGuardsAgainstInvalidInputs(t *testing.T) {
 
 	if !strings.Contains(output, "shaper_state{state=\"unknown\"} 1") {
 		t.Fatalf("expected unknown state, got %s", output)
+	}
+
+	if !strings.Contains(output, "controller_state{state=\"unknown\"} 1") {
+		t.Fatalf("expected controller base state to default to unknown, got %s", output)
 	}
 
 	if !strings.Contains(output, "shaper_enforcing 1") {

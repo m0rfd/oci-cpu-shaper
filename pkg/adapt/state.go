@@ -53,6 +53,7 @@ type DutyCycler interface {
 type MetricsRecorder interface {
 	SetMode(mode string)
 	SetState(state string)
+	SetControllerState(state string)
 	SetTarget(target float64)
 	ObserveOCIP95(value float64, fetchedAt time.Time)
 	ObserveHostCPU(utilisation float64)

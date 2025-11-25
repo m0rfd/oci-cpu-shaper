@@ -4,6 +4,7 @@
 
 ### Added
 _Note coverage-impacting additions: mention new test suites or tooling that shift the CI ≥96% statement coverage budget (§11)._
+- Controller metrics now expose `controller_state` (normal vs. fallback) alongside `shaper_state`, with controller wiring and metrics docs updated to clarify the labels.
 - Overview architecture now diagrams the runtime config pipeline, controller layers, and metrics surfaces, and README repository
   structure calls out the shared `pkg/runtimeconfig` package so §0, §3.1, and §5.2 references stay aligned.
 - Execution-flow reference (`docs/05-execution-flow.txt`) summarising the CLI,

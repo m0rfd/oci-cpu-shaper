@@ -119,6 +119,12 @@ func (r *controllerRecorderLogger) SetState(state string) {
 	r.lastState = trimmed
 }
 
+func (r *controllerRecorderLogger) SetControllerState(state string) {
+	if r.delegate != nil {
+		r.delegate.SetControllerState(state)
+	}
+}
+
 func (r *controllerRecorderLogger) SetTarget(target float64) {
 	if r.delegate != nil {
 		r.delegate.SetTarget(target)

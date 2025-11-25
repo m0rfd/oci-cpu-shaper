@@ -67,6 +67,14 @@ func (c *AdaptiveController) applyTargetLocked(target float64) {
 	}
 }
 
+func (c *AdaptiveController) setSlowStateLocked(state State) {
+	c.slowState = state
+
+	if c.recorder != nil {
+		c.recorder.SetControllerState(state.String())
+	}
+}
+
 func (c *AdaptiveController) updateEffectiveStateLocked() {
 	if c.suppressed {
 		c.state = StateSuppressed

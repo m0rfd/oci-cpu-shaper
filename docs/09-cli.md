@@ -191,12 +191,15 @@ Binding failures still abort startup: when the requested `http.bind` address is 
 | ------ | ---- | ----------- |
 | `shaper_target_ratio` | gauge | Current duty-cycle target assigned to the worker pool (0.0–1.0). |
 | `shaper_mode{mode="<name>"}` | gauge | Active controller mode (`noop`, `dry-run`, or `enforce`) reported as a labelled one-hot gauge. |
-| `shaper_state{state="<name>"}` | gauge | Controller state-machine output (`normal`, `fallback`, `suppressed`, or `unknown`). |
+| `controller_state{state="<name>"}` | gauge | Base controller state driven by OCI metrics (`normal`, `fallback`, or `unknown`). |
+| `shaper_state{state="<name>"}` | gauge | Effective state-machine output after suppression overlays (`normal`, `fallback`, `suppressed`, or `unknown`). |
 | `oci_p95` | gauge | Latest OCI `CpuUtilization` P95 ratio used for adaptive decisions. |
 | `oci_last_success_epoch` | counter | Unix epoch seconds when `QueryP95CPU` last succeeded (`0` while offline). |
 | `duty_cycle_ms` | gauge | Worker quantum configured for each duty-cycle interval in milliseconds. |
 | `worker_count` | gauge | Number of goroutines currently driving CPU load. |
 | `host_cpu_percent` | gauge | Most recent host CPU utilisation sample from the fast estimator loop. |
+
+`controller_state` reflects only the normal/fallback branch of the controller (driven by OCI telemetry), while `shaper_state` includes suppression overlays so dashboards can distinguish OCI outages from local contention.
 
 ### Example scrape output
 
@@ -207,6 +210,9 @@ shaper_target_ratio 0.275000
 # HELP shaper_mode Controller operating mode (value set to 1 for the active mode).
 # TYPE shaper_mode gauge
 shaper_mode{mode="dry-run"} 1
+# HELP controller_state Base controller state derived from OCI metrics (1 for the active state).
+# TYPE controller_state gauge
+controller_state{state="fallback"} 1
 # HELP shaper_state Controller state machine output (value set to 1 for the active state).
 # TYPE shaper_state gauge
 shaper_state{state="fallback"} 1
