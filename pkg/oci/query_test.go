@@ -127,10 +127,16 @@ func TestComputeWindowRespectsSevenDayLimit(t *testing.T) {
 
 	start, end := computeWindow(now)
 
-	expectedWindow := time.Duration(maxOneMinuteWindowHours) * time.Hour
+	expectedWindow := 7 * 24 * time.Hour
 
 	requireEqual(t, end, now.Truncate(time.Second), "end timestamp truncated")
 	requireEqual(t, start, end.Add(-expectedWindow), "seven day lookback")
+	requireEqual(
+		t,
+		int(end.Sub(start)/time.Minute),
+		7*24*60,
+		"one-minute granularity across window",
+	)
 }
 
 func TestBuildSummarizeRequestEscapesInstanceOCID(t *testing.T) {
@@ -157,7 +163,7 @@ func TestBuildSummarizeRequestEscapesInstanceOCID(t *testing.T) {
 	}
 
 	expectedQuery := fmt.Sprintf(
-		metricQueryTemplate,
+		"CpuUtilization[1m]{resourceId = \"%s\"}.percentile(0.95)",
 		escapeDimensionValue(instanceID),
 	)
 	requireEqual(t, *details.Query, expectedQuery, "escaped query")
@@ -305,30 +311,78 @@ func TestCollectLatestDatapointPropagatesErrors(t *testing.T) {
 func TestNormalizePageToken(t *testing.T) {
 	t.Parallel()
 
-	if token := normalizePageToken(nil); token != nil {
-		t.Fatalf("expected nil for nil token, got %#v", token)
+	testcases := map[string]struct {
+		input    *string
+		expected *string
+	}{
+		"nil input returns nil": {
+			input:    nil,
+			expected: nil,
+		},
+		"whitespace input returns nil": {
+			input:    stringPointer("  \t  \n"),
+			expected: nil,
+		},
+		"trims embedded spaces": {
+			input:    stringPointer(" next page "),
+			expected: stringPointer("next page"),
+		},
+		"preserves non-space characters": {
+			input:    stringPointer("next"),
+			expected: stringPointer("next"),
+		},
 	}
 
-	whitespace := "  \t  "
-	if token := normalizePageToken(&whitespace); token != nil {
-		t.Fatalf("expected nil for whitespace token, got %#v", token)
-	}
+	for name, testcase := range testcases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-	raw := " next "
+			token := normalizePageToken(testcase.input)
 
-	token := normalizePageToken(&raw)
-	if token == nil || *token != "next" {
-		t.Fatalf("expected trimmed token 'next', got %#v", token)
+			if testcase.expected == nil {
+				requireEqual(t, token, testcase.expected, "normalized token")
+
+				return
+			}
+
+			if token == nil {
+				t.Fatalf("expected token %q, got nil", *testcase.expected)
+			}
+
+			requireEqual(t, *token, *testcase.expected, "normalized token value")
+		})
 	}
 }
 
 func TestEscapeDimensionValue(t *testing.T) {
 	t.Parallel()
 
-	input := `ocid1.instance.oc1..example"uniqueID`
-	expected := `ocid1.instance.oc1..example\"uniqueID`
+	cases := map[string]struct {
+		input    string
+		expected string
+	}{
+		"no quotes": {
+			input:    "ocid1.instance.oc1..exampleuniqueID",
+			expected: "ocid1.instance.oc1..exampleuniqueID",
+		},
+		"single quote": {
+			input:    `ocid1.instance.oc1..example"uniqueID`,
+			expected: `ocid1.instance.oc1..example\"uniqueID`,
+		},
+		"multiple quotes": {
+			input:    `ocid1."instance".oc1..example"uniqueID`,
+			expected: `ocid1.\"instance\".oc1..example\"uniqueID`,
+		},
+	}
 
-	requireEqual(t, escapeDimensionValue(input), expected, "escaped value")
+	for name, testcase := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			result := escapeDimensionValue(testcase.input)
+			requireEqual(t, result, testcase.expected, "escaped value")
+		})
+	}
 }
 
 func TestNewClientValidatesParameters(t *testing.T) {
