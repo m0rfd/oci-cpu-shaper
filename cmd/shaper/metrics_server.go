@@ -2,22 +2,16 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net"
 	"net/http"
-	"strings"
-	"time"
 
 	"go.uber.org/zap"
+	"oci-cpu-shaper/internal/metricsserver"
 )
 
-const (
-	metricsReadHeaderTimeout = 5 * time.Second
-	metricsShutdownTimeout   = 5 * time.Second
-)
+const metricsShutdownTimeout = metricsserver.ShutdownTimeout
 
-type metricsShutdownFunc func(context.Context)
+type metricsShutdownFunc = metricsserver.ShutdownFunc
 
 func startMetricsEndpoint(
 	ctx context.Context,
@@ -26,132 +20,30 @@ func startMetricsEndpoint(
 	bindAddr string,
 	handler http.Handler,
 ) (metricsShutdownFunc, context.CancelFunc, error) {
-	if handler == nil {
-		return nil, nil, nil
-	}
-
-	if deps.startMetricsServer == nil {
-		logger.Warn("metrics server disabled", zap.String("reason", "start function missing"))
-
-		return nil, nil, nil
-	}
-
-	trimmed := strings.TrimSpace(bindAddr)
-	if trimmed == "" {
-		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
-
-		return nil, nil, nil
-	}
-
-	if ctx == nil {
-		return nil, nil, errMetricsContextRequired
-	}
-
-	logger.Info("starting metrics server", zap.String("bind", trimmed))
-
-	metricsCtx, cancel := context.WithCancel(ctx)
-
-	shutdown, err := deps.startMetricsServer(metricsCtx, logger, trimmed, handler)
+	shutdown, cancel, err := metricsserver.StartEndpoint(
+		ctx,
+		metricsserver.EndpointDeps{StartServer: deps.startMetricsServer},
+		logger,
+		bindAddr,
+		handler,
+	)
 	if err != nil {
-		cancel()
-
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("start metrics endpoint: %w", err)
 	}
 
 	return shutdown, cancel, nil
 }
 
-func startMetricsServer( //nolint:cyclop,funlen // listener lifecycle requires several guard branches
+func startMetricsServer(
 	ctx context.Context,
 	logger *zap.Logger,
 	addr string,
 	handler http.Handler,
 ) (metricsShutdownFunc, error) {
-	trimmed := strings.TrimSpace(addr)
-
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
-	if trimmed == "" {
-		logger.Info("metrics server disabled", zap.String("reason", "http bind address empty"))
-
-		return nil, errMetricsServerDisabled
-	}
-
-	if handler == nil {
-		logger.Warn("metrics server disabled", zap.String("reason", "handler missing"))
-
-		return nil, errMetricsServerDisabled
-	}
-
-	if ctx == nil {
-		return nil, errMetricsContextRequired
-	}
-
-	baseCtx := context.WithoutCancel(ctx)
-
-	var listenCfg net.ListenConfig
-
-	listener, err := listenCfg.Listen(ctx, "tcp", trimmed)
+	shutdown, err := metricsserver.StartServer(ctx, logger, addr, handler)
 	if err != nil {
-		logger.Error(
-			"metrics server listen failed",
-			zap.String("bind", trimmed),
-			zap.Error(err),
-		)
-
-		return nil, fmt.Errorf("listen metrics endpoint %q: %w", trimmed, err)
+		return nil, fmt.Errorf("start metrics server: %w", err)
 	}
 
-	server := &http.Server{ //nolint:exhaustruct // only security-critical timeout configured here
-		ReadHeaderTimeout: metricsReadHeaderTimeout,
-	}
-	server.Addr = trimmed
-	server.Handler = handler
-
-	logger.Info("metrics server listening", zap.String("bind", trimmed))
-
-	serveDone := make(chan struct{})
-
-	go func() {
-		defer close(serveDone)
-
-		err := server.Serve(listener)
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("metrics server serve", zap.String("bind", trimmed), zap.Error(err))
-
-			return
-		}
-
-		logger.Info("metrics server stopped", zap.String("bind", trimmed))
-	}()
-
-	shutdown := func(shutdownCtx context.Context) {
-		if shutdownCtx == nil {
-			shutdownCtx = baseCtx
-		}
-
-		logger.Info("stopping metrics server", zap.String("bind", trimmed))
-
-		err := server.Shutdown(shutdownCtx)
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Warn("metrics server shutdown", zap.String("bind", trimmed), zap.Error(err))
-		}
-	}
-
-	go func() {
-		<-ctx.Done()
-
-		shutdownCtx, cancel := context.WithTimeout(baseCtx, metricsShutdownTimeout)
-		defer cancel()
-
-		shutdown(shutdownCtx)
-	}()
-
-	return func(shutdownCtx context.Context) {
-		shutdown(shutdownCtx)
-
-		<-serveDone
-	}, nil
+	return shutdown, nil
 }

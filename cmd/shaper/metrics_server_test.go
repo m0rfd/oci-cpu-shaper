@@ -17,6 +17,8 @@ import (
 
 const testMetricsBind = "127.0.0.1:0"
 
+var errMetricsStartFailure = errors.New("metrics start failure")
+
 func TestStartMetricsEndpointSkipsWhenHandlerMissing(t *testing.T) {
 	t.Parallel()
 
@@ -338,6 +340,100 @@ func TestStartMetricsServerRequiresContext(t *testing.T) {
 	}
 }
 
+func TestStartMetricsEndpointWrapsStartError(t *testing.T) {
+	t.Parallel()
+
+	deps := defaultRunDeps()
+	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) (metricsShutdownFunc, error) {
+		return nil, errMetricsStartFailure
+	}
+
+	shutdown, cancel, err := startMetricsEndpoint(
+		context.Background(),
+		deps,
+		zap.NewNop(),
+		testMetricsBind,
+		http.NewServeMux(),
+	)
+
+	if shutdown != nil || cancel != nil {
+		t.Fatalf(
+			"expected shutdown and cancel to be nil on start failure, got %v and %v",
+			shutdown,
+			cancel,
+		)
+	}
+
+	if !errors.Is(err, errMetricsStartFailure) {
+		t.Fatalf("expected wrapped sentinel error, got %v", err)
+	}
+}
+
+func TestStartMetricsEndpointWrapsContextError(t *testing.T) {
+	t.Parallel()
+
+	var nilContext context.Context
+
+	shutdown, cancel, err := startMetricsEndpoint(
+		nilContext,
+		defaultRunDeps(),
+		zap.NewNop(),
+		testMetricsBind,
+		http.NewServeMux(),
+	)
+
+	if !errors.Is(err, errMetricsContextRequired) {
+		t.Fatalf("expected context error, got %v", err)
+	}
+
+	if shutdown != nil || cancel != nil {
+		t.Fatalf(
+			"expected nil shutdown and cancel on context error, got %v and %v",
+			shutdown,
+			cancel,
+		)
+	}
+}
+
+func TestStartMetricsEndpointDelegates(t *testing.T) {
+	t.Parallel()
+
+	startCalled := false
+
+	deps := defaultRunDeps()
+	deps.startMetricsServer = func(context.Context, *zap.Logger, string, http.Handler) (metricsShutdownFunc, error) {
+		startCalled = true
+
+		return func(context.Context) {}, nil
+	}
+
+	shutdown, cancel, err := startMetricsEndpoint(
+		context.Background(),
+		deps,
+		zap.NewNop(),
+		testMetricsBind,
+		http.NewServeMux(),
+	)
+	if err != nil {
+		t.Fatalf("start metrics endpoint: %v", err)
+	}
+
+	if !startCalled {
+		t.Fatal("expected start function to be invoked")
+	}
+
+	if shutdown == nil {
+		t.Fatal("expected shutdown function from delegate")
+	}
+
+	if cancel == nil {
+		t.Fatal("expected cancel function from delegate")
+	}
+
+	cancel()
+	shutdown(context.Background())
+}
+
 //nolint:funlen // test exercises server lifecycle and shutdown paths in one flow.
 func TestStartMetricsServerServesRequests(t *testing.T) {
 	t.Parallel()
@@ -547,5 +643,25 @@ func TestStartMetricsServerFailsWhenAddressInUse(t *testing.T) {
 
 	if shutdown != nil {
 		t.Fatal("expected shutdown function to be nil when start fails")
+	}
+}
+
+func TestStartMetricsServerWrapsError(t *testing.T) {
+	t.Parallel()
+
+	var nilContext context.Context
+
+	shutdown, err := startMetricsServer(
+		nilContext,
+		zap.NewNop(),
+		testMetricsBind,
+		http.NewServeMux(),
+	)
+	if !errors.Is(err, errMetricsContextRequired) {
+		t.Fatalf("expected wrapped context error, got %v", err)
+	}
+
+	if shutdown != nil {
+		t.Fatal("expected shutdown function to be nil on wrapped error")
 	}
 }
