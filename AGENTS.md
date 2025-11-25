@@ -11,7 +11,7 @@
   you have the same justification documented.
 - Docs: sync `docs/` (including `docs/CHANGELOG.md`) plus any impacted READMEs/config samples when behavior or config shifts (§12).
 - Guidance hygiene: keep nested `AGENTS.md` files accurate; revise or prune stale rules as code moves (§8.4 of `docs/08-development.md`).
-- Config defaults: treat `pkg/runtimeconfig` and `pkg/adapt` as the sources of truth and keep `docs/initial-implementation-plan.md` aligned when knobs change.
+- Config defaults: treat `pkg/runtimeconfig/defaults.go` and `pkg/adapt/config_defaults.go` as the sources of truth and keep `docs/initial-implementation-plan.md`, `docs/09-cli.md`, and sample configs aligned when knobs change.
 - Performance: avoid busy loops; respect duty-cycle budgets from §§3 & 10.
 - Reviews: confirm instructions in every affected scope still apply and update them when they drift.
 
