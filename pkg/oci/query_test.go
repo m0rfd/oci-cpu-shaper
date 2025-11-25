@@ -14,14 +14,14 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/monitoring"
 )
 
-func TestQueryP95CPUFetchesWindowPercentile(t *testing.T) {
+func TestQueryP95CPUFetchesWindowSamples(t *testing.T) {
 	t.Parallel()
 
 	instanceID := "ocid1.instance.oc1.phx.exampleuniqueID"
 	compartmentID := "ocid1.compartment.oc1..exampleuniqueID"
 	now := time.Date(2025, time.January, 2, 15, 4, 5, 0, time.UTC)
 
-	expectedQuery := "CpuUtilization[1m]{resourceId = \"" + instanceID + "\"}.window(7d).percentile(0.95)"
+	expectedQuery := "CpuUtilization[1m]{resourceId = \"" + instanceID + "\"}.mean()"
 
 	server := newIPv4TestServer(
 		t,
@@ -159,7 +159,6 @@ func TestBuildSummarizeRequestEscapesInstanceOCID(t *testing.T) {
 	expectedQuery := fmt.Sprintf(
 		metricQueryTemplate,
 		escapeDimensionValue(instanceID),
-		percentileTarget,
 	)
 	requireEqual(t, *details.Query, expectedQuery, "escaped query")
 

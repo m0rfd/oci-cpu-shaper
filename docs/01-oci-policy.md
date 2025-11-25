@@ -33,12 +33,14 @@ After applying the policy, confirm that instance principals can authenticate bef
 1. SSH into an instance in the dynamic group.
 2. Install the OCI CLI and run a simple Monitoring query:
 
-   ```bash
-   oci monitoring metric-data summarize-metrics-data \
-     --namespace oci_computeagent \
-      --query-text "CpuUtilization[1m]{resourceId='<instance_ocid>'}.window(7d).percentile(0.95)" \
-     --compartment-id <compartment_ocid>
-   ```
+    ```bash
+    oci monitoring metric-data summarize-metrics-data \
+      --namespace oci_computeagent \
+      --query-text "CpuUtilization[1m]{resourceId='<instance_ocid>'}.mean()" \
+      --start-time "$(date -u -Iseconds -d '-7 days')" \
+      --end-time "$(date -u -Iseconds)" \
+      --compartment-id <compartment_ocid>
+    ```
 3. A successful response returns JSON datapoints; authorization failures return `NotAuthorizedOrNotFound` errors.
 
 When the shaper binary starts, `pkg/oci` uses the same underlying instance principal flow to obtain temporary credentials, ensuring parity between manual validation and automated queries.
