@@ -233,8 +233,8 @@ else \
                         tail -n +2 "$$integration_profile" >> $(COVERAGE_PROFILE); \
                         if [ "$$reuse_integration" != "1" ]; then \
 				rm -f "$$integration_profile"; \
-			fi; \
-		fi; \
+	fi; \
+	fi; \
 		if [ -n "$(strip $(E2E_PKGS))" ]; then \
 			e2e_profile="coverage-e2e.out"; \
 			if GOCACHE="$(GOCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $(E2E_PKGS); then \
@@ -243,7 +243,7 @@ else \
 				echo "Skipping e2e coverage due to test failures"; \
 			fi; \
 			rm -f "$$e2e_profile"; \
-		fi; \
+	fi; \
 		$(GO) tool cover -func=$(COVERAGE_PROFILE) | tee $(COVERAGE_SUMMARY); \
 		TOTAL=$$(awk '/^total:/ {total=$$NF} END {print total}' $(COVERAGE_SUMMARY)); \
 		if [ -n "$$TOTAL" ]; then \
@@ -255,7 +255,7 @@ else \
 			fi; \
 		else \
 			echo "Coverage summary unavailable"; \
-		fi; \
+	fi; \
 	fi
 
 agents: verify-go-version
@@ -480,8 +480,11 @@ install-git-hooks:
 		echo "No .git directory; skipping hook installation."; \
 		exit 0; \
 	fi; \
-	hook_source="$(ROOT_DIR)/hack/githooks/pre-commit"; \
+	script_path="hack/githooks/pre-commit"; \
 	hook_path=".git/hooks/pre-commit"; \
-	mkdir -p "$(ROOT_DIR)/.git/hooks"; \
-	ln -sf "$$hook_source" "$$hook_path"; \
-	echo "Installed pre-commit hook symlink to $$hook_source"
+	if [ ! -f "$$script_path" ]; then \
+		echo "Hook template $$script_path not found" >&2; \
+		exit 1; \
+	fi; \
+	install -m 0755 "$$script_path" "$$hook_path"; \
+	echo "Installed pre-commit hook with auto-staging autofix."
