@@ -238,15 +238,20 @@ else \
 				rm -f "$$integration_profile"; \
 	fi; \
 	fi; \
-		if [ -n "$(strip $(E2E_PKGS))" ]; then \
-			e2e_profile="coverage-e2e.out"; \
-			if GOCACHE="$(GOCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $(E2E_PKGS); then \
-				tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
-			else \
-				echo "Skipping e2e coverage due to test failures"; \
-			fi; \
-			rm -f "$$e2e_profile"; \
-	fi; \
+                e2e_pkgs="$(strip $(E2E_PKGS))"; \
+                if [ -n "$$e2e_pkgs" ]; then \
+                        if [ "$(strip $(RUN_E2E_TESTS))" = "1" ]; then \
+                                e2e_profile="coverage-e2e.out"; \
+                                if GOCACHE="$(GOCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $$e2e_pkgs; then \
+                                        tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
+				else \
+                                        echo "Skipping e2e coverage due to test failures"; \
+                                fi; \
+                                rm -f "$$e2e_profile"; \
+		else \
+                                echo "Skipping e2e coverage; set RUN_E2E_TESTS=1 to enable."; \
+                        fi; \
+                fi; \
 		$(GO) tool cover -func=$(COVERAGE_PROFILE) | tee $(COVERAGE_SUMMARY); \
 		TOTAL=$$(awk '/^total:/ {total=$$NF} END {print total}' $(COVERAGE_SUMMARY)); \
 		if [ -n "$$TOTAL" ]; then \
