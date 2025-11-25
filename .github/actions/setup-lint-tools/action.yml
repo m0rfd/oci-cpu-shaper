@@ -1,0 +1,47 @@
+name: Setup lint tools
+description: Restore cached ShellCheck/Pyflakes or install pinned versions
+runs:
+  using: composite
+  steps:
+    - name: Restore lint tool cache
+      id: lint-tool-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.local
+          ~/.cache/pip
+        key: ${{ runner.os }}-lint-tools-shellcheck-${{ env.SHELLCHECK_VERSION }}-pyflakes-${{ env.PYFLAKES_VERSION }}
+
+    - name: Install lint tools (cache miss)
+      if: steps.lint-tool-cache.outputs.cache-hit != 'true'
+      env:
+        SHELLCHECK_VERSION: ${{ env.SHELLCHECK_VERSION }}
+        PYFLAKES_VERSION: ${{ env.PYFLAKES_VERSION }}
+      shell: bash
+      run: |
+        set -o errexit
+        set -o nounset
+        set -o pipefail
+
+        mkdir -p "$HOME/.local/bin"
+        curl -sSLo /tmp/shellcheck.tar.xz "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+        tar -C /tmp -xJf /tmp/shellcheck.tar.xz
+        cp "/tmp/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" "$HOME/.local/bin/shellcheck"
+        chmod +x "$HOME/.local/bin/shellcheck"
+
+        python3 -m pip install --upgrade --user pip
+        python3 -m pip install --user "pyflakes==${PYFLAKES_VERSION}"
+
+    - name: Add lint tools to PATH
+      shell: bash
+      run: echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+
+    - name: Verify lint tool versions
+      shell: bash
+      run: |
+        set -o errexit
+        set -o nounset
+        set -o pipefail
+
+        shellcheck --version
+        pyflakes --version

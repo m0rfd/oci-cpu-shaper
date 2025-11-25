@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+status=0
+
+if command -v mbake >/dev/null 2>&1; then
+  echo "Running mbake validate..."
+  if ! mbake validate Makefile; then
+    status=1
+  fi
+
+  echo "Running mbake format --check..."
+  if ! mbake format --check Makefile; then
+    status=1
+  fi
+else
+  echo "mbake not found; skipping Makefile checks" >&2
+fi
+
+if command -v golangci-lint >/dev/null 2>&1; then
+  echo "Running golangci-lint --fix..."
+  mkdir -p .cache/golangci
+  if ! GOLANGCI_LINT_CACHE="${repo_root}/.cache/golangci" golangci-lint run --fix; then
+    status=1
+  fi
+else
+  echo "golangci-lint not found; skipping Go lint" >&2
+fi
+
+exit "$status"
