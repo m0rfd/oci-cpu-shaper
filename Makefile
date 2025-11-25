@@ -59,7 +59,7 @@ MBAKE_BIN ?= $(HOME)/.local/bin/mbake
 MBAKE ?= $(MBAKE_BIN)
 MBAKE_FORMAT_PATHS ?= Makefile
 
-.PHONY: actionlint agents bench build check clean coverage e2e ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-fix lint-makefile lint-workflows maintenance mbake setup test tools verify-go-version
+.PHONY: actionlint agents bench build check clean coverage e2e ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake setup test tools verify-go-version
 
 GO_MACHINE_ARCH := $(shell uname -m)
 GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
@@ -435,6 +435,8 @@ clean:
 	@set -euo pipefail; \
 	rm -rf "$(COVERAGE_PROFILE)" "$(COVERAGE_SUMMARY)" coverage-*.out "$(GOCACHE_DIR)" "$(GOLANGCI_LINT_CACHE_DIR)" "$(GOVULNCHECK_CACHE_DIR)" artifacts
 
+lint-autofix: lint-fix
+
 install-git-hooks:
 	@set -euo pipefail; \
 	if [ ! -d .git ]; then \
@@ -442,7 +444,6 @@ install-git-hooks:
 		exit 0; \
 	fi; \
 	hook_path=".git/hooks/pre-commit"; \
-	hook_path=".git/hooks/pre-commit"; \
-	printf '#!/bin/bash\nset -euo pipefail\nif command -v mbake >/dev/null 2>&1; then\n  mbake format Makefile\nfi\nif command -v make >/dev/null 2>&1; then\n  make lint\nelse\n  echo "make not available; skipping lint hook" >&2\nfi\n' > "$$hook_path"; \
+	printf '#!/bin/bash\nset -euo pipefail\n\n# Check Makefile formatting\nif command -v mbake >/dev/null 2>&1; then\n  echo "Running mbake check..."\n  if ! mbake format --check Makefile; then\n    echo "Makefile formatting failed. Attempting autofix..."\n    mbake format Makefile\n    echo "Makefile formatted. Please stage the changes and commit again." >&2\n    exit 1\n  fi\nfi\n\n# Check Go linting\nif command -v make >/dev/null 2>&1; then\n  echo "Running make lint..."\n  if ! make lint; then\n    echo "Linting failed. Attempting autofix..."\n    if make lint-fix; then\n      echo "Autofix successful. Please stage the changes and commit again." >&2\n      exit 1\n    else\n      echo "Autofix failed or incomplete. Please check issues manually." >&2\n      exit 1\n    fi\n  fi\nelse\n  echo "make not available; skipping lint hook" >&2\nfi\n' > "$$hook_path"; \
 	chmod +x "$$hook_path"; \
-	echo "Installed pre-commit hook to run 'mbake format' and 'make lint'. Use 'make lint-fix' to autofix issues."
+	echo "Installed pre-commit hook with opportunistic autofix. If linting fails, it will attempt to fix and ask you to stage changes."

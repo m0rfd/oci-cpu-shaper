@@ -191,6 +191,25 @@ jobs:
       - name: Run test suite
         run: make test
 
+  build:
+    name: go build
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    env:
+      GOCACHE: ${{ github.workspace }}/.cache/go
+      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go with cache
+        id: setup-go
+        uses: ./.github/actions/setup-go-with-cache
+
+      - name: Build all packages
+        run: make build
+
   coverage:
     name: go test & coverage
     # Coverage suite normally completes in ~1-2m; cap at 5m to catch hangs.
