@@ -469,48 +469,11 @@ install-git-hooks:
 		echo "No .git directory; skipping hook installation."; \
 		exit 0; \
 	fi; \
+	script_path="hack/githooks/pre-commit"; \
 	hook_path=".git/hooks/pre-commit"; \
-	printf '%s\n' \
-  '#!/bin/bash' \
-  'set -euo pipefail' \
-  '' \
-  'repo_root="$$(git rev-parse --show-toplevel)"' \
-  'if ! git diff --quiet --ignore-submodules --; then' \
-  '  echo "Unstaged changes detected; please commit or stash them before running the hook." >&2' \
-  '  exit 1' \
-  'fi' \
-  '' \
-  'export GOCACHE="$${repo_root}/.cache/go"' \
-  'export GOLANGCI_LINT_CACHE="$${repo_root}/.cache/golangci"' \
-  'mkdir -p "$$GOCACHE" "$$GOLANGCI_LINT_CACHE"' \
-  '' \
-  'pre_diff="$$(git diff --name-only --ignore-submodules --)"' \
-  '' \
-  'if command -v mbake >/dev/null 2>&1; then' \
-  '  echo "Running mbake check..."' \
-  '  if ! mbake format --check Makefile; then' \
-  '    echo "Makefile formatting failed. Attempting autofix..."' \
-  '    mbake format Makefile' \
-  '  fi' \
-  'fi' \
-  '' \
-  'if command -v make >/dev/null 2>&1; then' \
-  '  echo "Running make lint-fix..."' \
-  '  if ! make lint-fix; then' \
-  '    echo "Linting failed and could not be autofixed. Please check issues manually." >&2' \
-  '    exit 1' \
-  '  fi' \
-  'else' \
-  '  echo "make not available; skipping lint hook" >&2' \
-  'fi' \
-  '' \
-  'post_diff="$$(git diff --name-only --ignore-submodules --)"' \
-  '' \
-  'new_files="$$(comm -13 <(printf "%s\\n" "$$pre_diff" | sort -u | sed ''\''/^$$/d''\'') <(printf "%s\\n" "$$post_diff" | sort -u | sed ''\''/^$$/d''\''))"' \
-  'if [ -n "$$new_files" ]; then' \
-  '  echo "Autofix applied changes. Auto-staging..."' \
-  '  echo "$$new_files" | xargs git add' \
-  'fi' \
-	> "$$hook_path"; \
-	chmod +x "$$hook_path"; \
+	if [ ! -f "$$script_path" ]; then \
+		echo "Hook template $$script_path not found" >&2; \
+		exit 1; \
+	fi; \
+	install -m 0755 "$$script_path" "$$hook_path"; \
 	echo "Installed pre-commit hook with auto-staging autofix."
