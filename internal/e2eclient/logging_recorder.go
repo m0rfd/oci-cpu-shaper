@@ -91,3 +91,9 @@ func (r *LoggingRecorder) SetLastError(err error) {
 		r.delegate.SetLastError(err)
 	}
 }
+
+func (r *LoggingRecorder) SetRelaxedSuccesses(count int) {
+	if r.delegate != nil {
+		r.delegate.SetRelaxedSuccesses(count)
+	}
+}

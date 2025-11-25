@@ -63,8 +63,8 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 		"# HELP controller_last_error_info Last controller error message (value set to 1 for the active error).",
 		"# TYPE controller_last_error_info gauge",
 		"controller_last_error_info{error=\"monitoring gap\"} 1",
-		"# HELP controller_relaxed_successes Number of consecutive samples with P95 above threshold ",
-		"(resets when switching to relaxed interval).",
+		"# HELP controller_relaxed_successes Number of consecutive samples with P95 above threshold " +
+			"(resets when switching to relaxed interval).",
 		"# TYPE controller_relaxed_successes gauge",
 		"controller_relaxed_successes 0",
 		"# HELP oci_p95 Last observed OCI CPU P95 ratio.",
