@@ -40,8 +40,33 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
 
+      - name: Cache Python tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-pyflakes-3.2.0
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install actionlint dependencies
+        run: |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck python3-pip
+          python3 -m pip install --user pyflakes==3.2.0
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+
       - name: Run lint
         run: make lint
+
+      - name: Run actionlint for release workflow
+        run: make actionlint ACTIONLINT_PATHS=".github/workflows/release.yml"
+
+      - name: Check Makefile formatting
+        run: make lint-makefile
 
       - name: Run tests
         run: make test
