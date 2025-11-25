@@ -216,7 +216,7 @@ coverage: verify-go-version
                 GOCACHE="$(GOCACHE_DIR)" $(GO) test -race -covermode=atomic $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$unit_profile" $(COVERAGE_PKGS); \
                 cat "$$unit_profile" > $(COVERAGE_PROFILE); \
                 rm -f "$$unit_profile"; \
-                if [ -n "$(strip $(INTEGRATION_PKGS))" ]; then \
+                		if [ -n "$(strip $(INTEGRATION_PKGS))" ]; then \
 			integration_profile="$(strip $(INTEGRATION_COVERAGE_PROFILE))"; \
 			if [ -z "$$integration_profile" ]; then \
 				integration_profile="coverage-integration.out"; \
@@ -227,14 +227,14 @@ coverage: verify-go-version
 					echo "Integration coverage profile '$$integration_profile' not found."; \
 					exit 1; \
 				fi; \
-else \
-                                GOCACHE="$(GOCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=integration $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$integration_profile" $(INTEGRATION_PKGS); \
-                        fi; \
-                        tail -n +2 "$$integration_profile" >> $(COVERAGE_PROFILE); \
-                        if [ "$$reuse_integration" != "1" ]; then \
+			else \
+				GOCACHE="$(GOCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=integration $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$integration_profile" $(INTEGRATION_PKGS); \
+			fi; \
+			tail -n +2 "$$integration_profile" >> $(COVERAGE_PROFILE); \
+			if [ "$$reuse_integration" != "1" ]; then \
 				rm -f "$$integration_profile"; \
-	fi; \
-	fi; \
+			fi; \
+		fi; \
 		if [ -n "$(strip $(E2E_PKGS))" ]; then \
 			e2e_profile="coverage-e2e.out"; \
 			if GOCACHE="$(GOCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $(E2E_PKGS); then \
@@ -243,19 +243,9 @@ else \
 				echo "Skipping e2e coverage due to test failures"; \
 			fi; \
 			rm -f "$$e2e_profile"; \
-	fi; \
+		fi; \
 		$(GO) tool cover -func=$(COVERAGE_PROFILE) | tee $(COVERAGE_SUMMARY); \
-		TOTAL=$$(awk '/^total:/ {total=$$NF} END {print total}' $(COVERAGE_SUMMARY)); \
-		if [ -n "$$TOTAL" ]; then \
-			echo "Total coverage: $$TOTAL"; \
-			COVERAGE_VALUE=$$(printf '%s' "$$TOTAL" | tr -d '%'); \
-			if ! awk -v cov="$$COVERAGE_VALUE" -v min="$(MIN_COVERAGE)" 'BEGIN {if (cov+0 >= min+0) exit 0; exit 1}' ; then \
-				echo "Coverage $${COVERAGE_VALUE}% is below required $(MIN_COVERAGE)%"; \
-				exit 1; \
-			fi; \
-		else \
-			echo "Coverage summary unavailable"; \
-	fi; \
+		"$(ROOT_DIR)/hack/coverage_summary_check.sh" "$(COVERAGE_SUMMARY)" "$(MIN_COVERAGE)"; \
 	fi
 
 agents: verify-go-version
