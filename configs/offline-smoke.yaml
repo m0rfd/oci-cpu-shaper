@@ -1,7 +1,7 @@
 controller:
   interval: 15s
   relaxedInterval: 1m
-  relaxedThreshold: 0.30
+  relaxedThreshold: 0.26
   fallbackTarget: 0.22
 estimator:
   interval: 5s
