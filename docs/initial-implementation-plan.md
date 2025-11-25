@@ -253,14 +253,16 @@ while true:
       timer = SHAPER_SLOW_INTERVAL
   else:
       mode=normal
-      if p95 < 0.23: current_target = min(target+STEP_UP, TARGET_MAX)
-      if p95 > 0.30: current_target = max(target-STEP_DOWN, TARGET_MIN)
+      if p95 < 0.21: current_target = min(target+0.01, TARGET_MAX)
+      if p95 > 0.27: current_target = max(target-0.005, TARGET_MIN)
       if p95 >= 0.26 consistently: timer = SHAPER_SLOW_INTERVAL_RELAXED
       else: timer = SHAPER_SLOW_INTERVAL
   sleep(timer)
 ```
 
 **MQL facts used:** `percentile()` is a supported statistic; 1-minute interval returns up to 7 days. ([Oracle Docs][7])
+
+The slow-loop thresholds stay aligned with the 21–27% goal band and 26% relaxed trigger documented in the defaults above.
 
 ---
 
