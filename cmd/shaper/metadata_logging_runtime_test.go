@@ -17,14 +17,16 @@ func TestLogRuntimeConfig(t *testing.T) {
 
 	cfg := runtimeconfig.Config{
 		Controller: runtimeconfig.ControllerConfig{ //nolint:exhaustruct
-			TargetMin:         0.21,
-			TargetMax:         0.39,
-			GoalLow:           0.23,
-			GoalHigh:          0.30,
-			Interval:          time.Minute,
-			RelaxedInterval:   6 * time.Hour,
-			SuppressThreshold: 0.85,
-			SuppressResume:    0.70,
+			TargetMin:                 0.21,
+			TargetMax:                 0.39,
+			GoalLow:                   0.23,
+			GoalHigh:                  0.30,
+			Interval:                  time.Minute,
+			RelaxedInterval:           6 * time.Hour,
+			SuppressThreshold:         0.85,
+			SuppressResume:            0.70,
+			SuppressRunnableThreshold: 1.25,
+			SuppressRunnableResume:    1.05,
 		},
 		Estimator: runtimeconfig.EstimatorConfig{Interval: 2 * time.Second},
 		Pool: runtimeconfig.PoolConfig{
@@ -32,6 +34,7 @@ func TestLogRuntimeConfig(t *testing.T) {
 			Quantum:         50 * time.Millisecond,
 			PauseThreshold:  0.85,
 			ResumeThreshold: 0.70,
+			RunnableGuard:   1.3,
 		},
 		HTTP: runtimeconfig.HTTPConfig{Bind: "127.0.0.1:9000"},
 		OCI:  runtimeconfig.OCIConfig{Offline: true}, //nolint:exhaustruct
@@ -63,6 +66,9 @@ func TestLogRuntimeConfig(t *testing.T) {
 	requireLogFieldFloat(t, entry, "controllerGoalHigh", 0.30)
 	requireLogFieldFloat(t, entry, "suppressThreshold", 0.85)
 	requireLogFieldFloat(t, entry, "suppressResume", 0.70)
+	requireLogFieldFloat(t, entry, "suppressRunnableThreshold", 1.25)
+	requireLogFieldFloat(t, entry, "suppressRunnableResume", 1.05)
+	requireLogFieldFloat(t, entry, "poolRunnableGuard", 1.3)
 	requireLogFieldString(t, entry, "httpBind", "127.0.0.1:9000")
 }
 
@@ -198,6 +204,7 @@ func TestLogControllerInitialization(t *testing.T) {
 			Quantum:         25 * time.Millisecond,
 			PauseThreshold:  0.85,
 			ResumeThreshold: 0.70,
+			RunnableGuard:   1.1,
 		},
 		Estimator: runtimeconfig.EstimatorConfig{
 			Interval: 750 * time.Millisecond,

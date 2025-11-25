@@ -28,10 +28,12 @@ Three foundational flags align with §§3.1 and 5.2 of the implementation plan:
 | ---- | ----------- | ------- |
 | `--config` | Path to the primary YAML configuration file. Relative paths resolve from the current working directory. | `/etc/oci-cpu-shaper/config.yaml` |
 | `--log-level` | Structured logging level understood by the Zap logger (`debug`, `info`, `warn`, `error`, `dpanic`, `panic`, `fatal`). | `info` |
-| `--mode` | Controller operating mode. `dry-run` and `enforce` now spin up the adaptive controller with real OCI metrics, estimator sampling, and worker pools; `noop` keeps the historical bypass for smoke tests. | `dry-run` |
+| `--mode` | Controller operating mode. `dry-run` and `enforce` now spin up the adaptive controller with real OCI metrics, estimator sampling, and worker pools; `noop` keeps the historical bypass for smoke tests. | `enforce` |
 | `--shutdown-after` | Optional duration that cancels the run context after the requested window, letting CI smoke tests and diagnostics shut down predictably without external supervisors. | `0s` (disabled) |
 
 Flags remain intentionally minimal so orchestration tools can template them alongside file-based configuration and environment overrides. When `--shutdown-after` is non-zero the CLI installs a context deadline and treats the resulting `context deadline exceeded`/`context canceled` errors as clean shutdowns so smoke tests can rely on exit status `0`.
+
+`--mode` defaults to `enforce` so production-ready deployments do not need to pass the flag. Operators can opt into a metrics-only posture with `--mode dry-run` (or `SHAPER_MODE=dry-run` in Compose/Quadlet env files) and can bypass controller wiring entirely for diagnostics with `--mode noop`.
 
 The CLI also installs `SIGINT`/`SIGTERM` handlers that wrap the run loop in a
 `context.WithCancel`. Delivering either signal now cancels the controller,
@@ -64,8 +66,10 @@ controller:
   relaxedThreshold: 0.26
   suppressThreshold: 0.80
   suppressResume: 0.68
+  suppressRunnableThreshold: 1.20
+  suppressRunnableResume: 0.96
 estimator:
-  interval: 2s
+  interval: 1s
 pool:
   workers: 2
   quantum: 1ms
@@ -83,16 +87,16 @@ oci:
 - The repository publishes these defaults as ready-to-use manifests at
   `configs/mode-a.yaml` and `configs/mode-b.yaml`. Both files copy the controller,
   estimator, pool thresholds, HTTP, and `oci.offline` defaults above (including
-  the tighter 0.20–0.32 band, four-hour relaxed interval, two-second estimator
+  the tighter 0.20–0.32 band, four-hour relaxed interval, one-second estimator
   cadence, and two-worker pool) while omitting tenancy-specific OCIDs so the
   samples remain usable in source control. Operators should extend the manifest
   with their own `compartmentId`, `region`, and optional `instanceId` values
   before entering enforce mode.
-- `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed four-hour interval when OCI P95 remains healthy. The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) now reflect the 0.80/0.68 hysteresis that decides when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools. Set `controller.suppressThreshold` to `0` (or any non-positive value) to disable host-load suppression entirely; the resume threshold is ignored in that case.
+- `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed four-hour interval when OCI P95 sits at or above 0.26. The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) now reflect the 0.80/0.68 hysteresis that decides when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools, while `suppressRunnableThreshold`/`suppressRunnableResume` clamp the loop immediately when runnable tasks exceed ~1.2 per CPU and only resume once the run queue cools. Set `controller.suppressThreshold` to `0` (or any non-positive value) to disable utilisation-based suppression entirely; the resume threshold is ignored in that case. The same runnable guard now flows into the worker pool so both the controller target and the workers pause in lock-step when the per-CPU run queue crosses the configured limit.
 - The loader now enforces the documented ratios and cadences: `targetMin` must remain below `targetMax`, every slow-loop target and goal must fall within that band, and the `interval`, `relaxedInterval`, `stepUp`, `stepDown`, `pool.quantum`, and `pool.workers` values must be positive. Invalid manifests abort startup with an exit status of `2` so operators can fix the config before the controller touches system state (§§3.1, 5.2).
 - Configuration processing now flows through four dedicated stages, all implemented in `pkg/runtimeconfig`: an immutable defaults builder, a YAML merge helper, environment overrides, and validators. Each stage is unit-tested individually so overrides and safety rails stay predictable, and env vars always win over file-sourced values without mutating the stored defaults (§5.2).
 - Validation now enforces that every slow-loop target or goal remains below both suppression thresholds, so manifests that would immediately re-trigger the fast loop are rejected with an exit status of `2` and a descriptive error message (§§3.1, 5.2).
-- `estimator.interval` controls the fast `/proc/stat` sampler cadence (§5.2) while the worker `pool` exposes quantum sizing that stays within the 1–5 ms duty-cycle budget. `pool.pauseThreshold`/`pool.resumeThreshold` mirror the controller suppression hysteresis (0.80/0.68) so the worker pool pauses entirely when host utilisation crosses the configured limit and only resumes once the load cools. The manifests now explicitly pin `pool.workers` to `2` to keep deterministic load across instance shapes.
+- `estimator.interval` controls the fast `/proc/stat` sampler cadence (§5.2) while the worker `pool` exposes quantum sizing that stays within the 1–5 ms duty-cycle budget. `pool.pauseThreshold`/`pool.resumeThreshold` mirror the controller suppression hysteresis (0.80/0.68) so the worker pool pauses entirely when host utilisation crosses the configured limit and only resumes once the load cools, and `pool.runnableGuard` pauses workers immediately on run-queue spikes even when utilisation is below the pause threshold. The manifests now explicitly pin `pool.workers` to `2` to keep deterministic load across instance shapes.
 - `http.bind` retains the Prometheus listener address and now backs the `/metrics` exporter described in §9.5, while `oci.compartmentId` supplies the tenancy scope required by the Monitoring client and `oci.region` pins the Monitoring endpoint region when IMDS access is unavailable (for example, CI smoke tests).
 - `oci.instanceId` is optional and lets operators bypass IMDS lookups when metadata access is blocked (for example, CI smoke tests or staging environments without instance principals). When `oci.offline` is set the CLI injects a static metrics client and fallback instance ID so dry-run/enforce can exercise the adaptive controller without IMDS or Monitoring access (§§5.2, 11).
 
@@ -111,10 +115,13 @@ The CLI honours the following environment variables, matching the naming in §5.
 | `SHAPER_STEP_UP` / `SHAPER_STEP_DOWN` | Target deltas when OCI P95 is below or above the goal band. | `0.01` / `0.005` |
 | `SHAPER_FALLBACK_TARGET` | Fixed target while OCI metrics are unavailable. | `0.22` |
 | `SHAPER_SLOW_INTERVAL` / `SHAPER_SLOW_INTERVAL_RELAXED` | Baseline and relaxed controller cadences. | `1h` / `4h` |
-| `SHAPER_FAST_INTERVAL` | Host CPU sampling cadence for the estimator. | `2s` |
-| `SHAPER_SUPPRESS_THRESHOLD` / `SHAPER_SUPPRESS_RESUME` | Fast-loop suppression thresholds that gate the zero-target mode. Assign `SHAPER_SUPPRESS_THRESHOLD=0` (or any non-positive value) to disable suppression; the resume override is ignored when suppression is off. | `0.80` / `0.68` |
+| `SHAPER_RELAXED_THRESHOLD` | P95 ratio that switches the controller to the relaxed cadence. | `0.26` |
+| `SHAPER_FAST_INTERVAL` | Host CPU sampling cadence for the estimator. | `1s` |
+| `SHAPER_SUPPRESS_THRESHOLD` / `SHAPER_SUPPRESS_RESUME` | Utilisation-based fast-loop suppression thresholds that gate the zero-target mode. Assign `SHAPER_SUPPRESS_THRESHOLD=0` (or any non-positive value) to disable utilisation suppression; the resume override is ignored when that path is off. | `0.80` / `0.68` |
+| `SHAPER_SUPPRESS_RUNNABLE_THRESHOLD` / `SHAPER_SUPPRESS_RUNNABLE_RESUME` | Runnable-per-CPU band that pauses the controller immediately when the run queue spikes. Assign either to `0` to disable runnable-based suppression independently of utilisation thresholds. | `1.20` / `0.96` |
 | `SHAPER_WORKER_COUNT` | Number of duty-cycle workers (`>=1`). | `2` |
 | `SHAPER_POOL_PAUSE_THRESHOLD` / `SHAPER_POOL_RESUME_THRESHOLD` | Host CPU hysteresis that pauses/resumes the worker pool when the estimator detects contention. | `0.80` / `0.68` |
+| `SHAPER_POOL_RUNNABLE_GUARD` | Runnable-per-CPU guard that pauses all workers immediately when the run queue exceeds the configured threshold. | `1.20` |
 | `HTTP_ADDR` | Prometheus listener bind address. | `:9108` |
 | `OCI_COMPARTMENT_ID` | Tenancy scope for OCI Monitoring API calls. | *(required for enforce/dry-run unless offline mode is enabled)* |
 | `OCI_REGION` | Overrides the Monitoring region, avoiding live IMDS lookups when running in smoke-test environments. | *(empty)* |
@@ -160,7 +167,7 @@ Configuration validation shares this behaviour: when thresholds conflict with th
 
 Smoke tests introduced in §11 now cover the dependency-injected entrypoint as well as adaptive-controller wiring, ensuring that enforce/dry-run builds start the OCI client, estimator sampler, and worker pool while `noop` preserves the bypass path for validation scenarios. Offline mode keeps this wiring intact by substituting the static metrics client so container smoke tests can run without live tenancy credentials, and new unit coverage exercises the IMDS-backed region/compartment resolver plus its failure modes to keep the ≥96% statement coverage guarantee intact.
 
-Local contributors can validate the CLI wiring the same way: run `make lint` and `make test` before checking in changes and finish with `make coverage MIN_COVERAGE=96` to confirm the documentation’s QA promise remains true.
+Local contributors can validate the CLI wiring the same way: run `make lint` (or `make lint-fix` to autofix) and `make test` before checking in changes and finish with `make coverage MIN_COVERAGE=96` to confirm the documentation’s QA promise remains true.
 
 Rootful binaries built with `-tags rootful` now issue their
 `sched_setscheduler(0, SCHED_IDLE, ...)` request as soon as the worker pool is

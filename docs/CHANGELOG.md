@@ -16,6 +16,12 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
   readings to the pool, and docs (§§3.1, 9) describe the new configuration and
   behaviour. Updated tests cover pause transitions to keep the ≥96% coverage floor (§§3,
   5, 9, 11).
+- Fast-loop suppression now ingests runnable-per-CPU signals from `/proc/stat` and
+  pauses immediately when the run queue spikes. New controller knobs
+  (`suppressRunnableThreshold`/`suppressRunnableResume`,
+  `SHAPER_SUPPRESS_RUNNABLE_THRESHOLD`/`SHAPER_SUPPRESS_RUNNABLE_RESUME`) and docs (§§3.1,
+  5.2, 9) cover the defaults, while unit tests validate runnable-triggered suppression
+  and the estimator’s runnable parsing to preserve the ≥96% coverage floor (§11).
 - Cgroup telemetry helper that reads `/proc/self/cgroup`, parses the
   colocated `cpu.weight`/`cpu.max` files, and publishes the detected values via
   new `cgroup_cpu_weight`/`cgroup_cpu_max_*` metrics plus a `cgroup` block in
@@ -101,15 +107,30 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   boundaries and responsibilities, and linked `docs/AGENTS.md` plus
   `cmd/shaper/AGENTS.md` back to the architecture section so wiring guidance
   stays current (§§3, 8, 12).
+- Hard-coded `pkg/oci.Client.QueryP95CPU` to the trailing seven-day window and
+  updated the instance-principal adapters, CLI tool, and docs to rely on that
+  fixed scope so Monitoring queries stay aligned with the reclaim period (§5.2).
+- CLI `--mode` now defaults to enforcing/normal operation instead of `dry-run`,
+  updating the help text and docs so operators start with the adaptive
+  controller active unless explicitly opting into monitor-only mode (§§5, 9).
+- Introduced `pkg/oci/metricsclient` for metrics builders/context helpers and shifted the
+  CLI defaults to consume it, keeping metrics wiring thin while preserving the e2e
+  override path. Updated §3.1 package touchpoints to note the new module (§§3.1, 5, 12).
 - Staged the CLI bootstrap into dedicated helpers for argument parsing, config/logging setup,
   metadata resolution, metrics bootstrap, and controller start to keep `cmd/shaper`
   wiring small and directly testable. Updated §3.1 to map the new helpers and added
   focused unit suites per stage to preserve the ≥96% coverage contract (§§3.1, 8, 11, 12).
+- Tightened the estimator default interval to 1 second (from 2 seconds) while
+  keeping `SHAPER_FAST_INTERVAL` overrides intact across the YAML/env/CLI
+  layers. Updated samples and docs to reflect the faster cadence (§§5.2, 9, 12).
+- CLI `--mode` now defaults to `enforce` to match the documented production posture; startup logs,
+  `/metrics`/`/healthz` exports, and the Quick Start/CLI docs note the default along with the
+  `dry-run`/`noop` opt-ins (§§5, 9, 10, 11).
 - Raised the Go toolchain to 1.25.4 in `go.mod`, `.tool-versions`, and the container build ARG so CI, local builds, and release
   images track the latest stable release, and refreshed badges/docs to match (§§8, 12, 14).
 - CLI documentation (§9), `runtimeconfig.Default()`, and `adapt.DefaultConfig()` now
   match the Mode A/Mode B manifests exactly (0.22 target start, 0.20–0.32 band, 4 hour
-  relaxed interval, 2 second estimator loop, 0.80/0.68 suppression + pool thresholds,
+  relaxed interval, 1 second estimator loop, 0.80/0.68 suppression + pool thresholds,
   two-worker pool, etc.), keeping the published YAML and binary defaults aligned.
 - Metadata logging now queries IMDS for canonical-region names even when
   `OCI_REGION` overrides are provided, only falling back to the override when
@@ -117,7 +138,7 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   true canonical region (§§2, 9).
 - The CI golangci-lint job now fails when `.golangci.yml`'s auto-fixable
   formatters (gci, gofmt, gofumpt, goimports, golines, swaggo) mutate files
-  during `make lint`; the workflow prints the diff and reminds contributors to
+  during `make lint` (or `make lint-fix`); the workflow prints the diff and reminds contributors to
   commit the fixes instead of allowing silent changes to slip through (§§8, 11,
   14).
 - Controller configuration now accepts `controller.suppressThreshold=0` (or
@@ -197,7 +218,7 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
 - Release workflow now builds and pushes both distroless `rootless` and rootful image targets with dedicated tags plus per-variant SBOM artifacts so operators can pull the UID profile their deployment requires (§§6, 14).
 - Refreshed §§4–9 documentation to describe the Prometheus endpoint, offline/static metrics client behaviour, and updated `QueryP95CPU` interface so operators see the current exporter wiring and Monitoring contract.
 - Local lint tooling is standardised on `golangci-lint` v2.6.1 with pinned installation in CI and the developer Makefile helper, keeping contributor environments aligned (§14).
-- `make lint`/`make test` now create repository-local caches (`.cache/golangci` and `.cache/go`) and set `GOLANGCI_LINT_CACHE`/`GOCACHE` accordingly so the tools never write to protected runner directories; prefer using the Makefile helpers instead of invoking the linters or `go test` manually to keep sandbox runs stable (§14).
+- `make lint`/`make lint-fix`/`make test` now create repository-local caches (`.cache/golangci` and `.cache/go`) and set `GOLANGCI_LINT_CACHE`/`GOCACHE` accordingly so the tools never write to protected runner directories; prefer using the Makefile helpers instead of invoking the linters or `go test` manually to keep sandbox runs stable (§14).
 - `.tool-versions` now pins `golangci-lint` v2.6.1 so `mise`/`asdf` environments surface the same linting behaviour developers see in CI (§14).
 - `golangci-lint` now runs with depguard allow-listing for module imports and `issues.fix: true`, letting formatters auto-apply fixes while docs instruct contributors to stage the generated edits (§14).
 - Overview, README, and Monitoring documentation now link to the IAM, reclaim, cgroup, alarm, and Quick Start guides so operators can navigate the consolidated Always Free playbook (§§0, 5, 10).

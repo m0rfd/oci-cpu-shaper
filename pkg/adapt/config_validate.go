@@ -4,6 +4,11 @@ import "fmt"
 
 // ValidateConfig ensures controller thresholds are internally consistent.
 func ValidateConfig(cfg Config) error {
+	err := validateRunnableThresholds(cfg)
+	if err != nil {
+		return err
+	}
+
 	normalized, _ := coerceConfig(cfg)
 
 	return validateControllerConfig(normalized)
@@ -129,6 +134,36 @@ func validateSuppressionThresholds(cfg Config) error {
 				threshold.value,
 			)
 		}
+	}
+
+	return validateRunnableThresholds(cfg)
+}
+
+func validateRunnableThresholds(cfg Config) error {
+	if cfg.SuppressRunnableThreshold < 0 {
+		return fmt.Errorf(
+			"%w: controller.suppressRunnableThreshold (%.2f) must be zero or greater",
+			ErrInvalidConfig,
+			cfg.SuppressRunnableThreshold,
+		)
+	}
+
+	if cfg.SuppressRunnableResume < 0 {
+		return fmt.Errorf(
+			"%w: controller.suppressRunnableResume (%.2f) must be zero or greater",
+			ErrInvalidConfig,
+			cfg.SuppressRunnableResume,
+		)
+	}
+
+	if cfg.SuppressRunnableThreshold > 0 &&
+		cfg.SuppressRunnableResume >= cfg.SuppressRunnableThreshold {
+		return fmt.Errorf(
+			"%w: controller.suppressRunnableResume (%.2f) must be less than controller.suppressRunnableThreshold (%.2f)",
+			ErrInvalidConfig,
+			cfg.SuppressRunnableResume,
+			cfg.SuppressRunnableThreshold,
+		)
 	}
 
 	return nil

@@ -10,6 +10,7 @@ import (
 	"oci-cpu-shaper/pkg/adapt"
 	"oci-cpu-shaper/pkg/imds"
 	"oci-cpu-shaper/pkg/oci"
+	"oci-cpu-shaper/pkg/oci/metricsclient"
 	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
@@ -120,6 +121,50 @@ func (s *stubPoolStarter) Quantum() time.Duration {
 
 func (*stubPoolStarter) SetWorkerStartErrorHandler(func(error)) {}
 
+type trackingPoolStarter struct {
+	startCalls       int
+	workerCalls      int
+	quantumCalls     int
+	workers          int
+	quantum          time.Duration
+	workerStartErr   error
+	handlerSet       int
+	errorHandlerFunc func(error)
+}
+
+func (s *trackingPoolStarter) Start(context.Context) {
+	s.startCalls++
+
+	if s.errorHandlerFunc != nil {
+		s.errorHandlerFunc(s.workerStartErr)
+	}
+}
+
+func (s *trackingPoolStarter) Workers() int {
+	s.workerCalls++
+
+	if s.workers <= 0 {
+		return 1
+	}
+
+	return s.workers
+}
+
+func (s *trackingPoolStarter) Quantum() time.Duration {
+	s.quantumCalls++
+
+	if s.quantum <= 0 {
+		return time.Millisecond
+	}
+
+	return s.quantum
+}
+
+func (s *trackingPoolStarter) SetWorkerStartErrorHandler(handler func(error)) {
+	s.handlerSet++
+	s.errorHandlerFunc = handler
+}
+
 type stubIMDSClient struct {
 	region               string
 	regionErr            error
@@ -223,9 +268,9 @@ func stubShapeConfig(ocpus, memory float64) imds.ShapeConfig {
 func contextWithStubMetrics(t *testing.T, metrics oci.MetricsClient) context.Context {
 	t.Helper()
 
-	return withMetricsClientFactory(
+	return metricsclient.WithBuilder(
 		context.Background(),
-		func(string, string) (oci.MetricsClient, error) {
+		func(string, string) (metricsclient.MetricsClient, error) {
 			return metrics, nil
 		},
 	)
@@ -239,9 +284,9 @@ func contextWithAssertingMetricsFactory(
 ) context.Context {
 	t.Helper()
 
-	return withMetricsClientFactory(
+	return metricsclient.WithBuilder(
 		context.Background(),
-		func(compartmentID, region string) (oci.MetricsClient, error) {
+		func(compartmentID, region string) (metricsclient.MetricsClient, error) {
 			if compartmentID != wantCompartmentID {
 				t.Fatalf("unexpected compartment id: %s", compartmentID)
 			}

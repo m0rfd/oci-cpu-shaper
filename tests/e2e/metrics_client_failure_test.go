@@ -89,7 +89,7 @@ pool:
 http:
   bind: "127.0.0.1:0"
 oci:
-  fallbackTarget: 0.25
+  fallbackTarget: 0.22
 `)
 
 	if err := os.WriteFile(path, contents, 0o600); err != nil {

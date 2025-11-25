@@ -50,6 +50,8 @@ func mergeControllerConfig(dst *ControllerConfig, src controllerFileConfig) {
 	assignFloat(&dst.RelaxedThreshold, src.RelaxedThreshold)
 	assignFloat(&dst.SuppressThreshold, src.SuppressThreshold)
 	assignFloat(&dst.SuppressResume, src.SuppressResume)
+	assignFloat(&dst.SuppressRunnableThreshold, src.SuppressRunnableThreshold)
+	assignFloat(&dst.SuppressRunnableResume, src.SuppressRunnableResume)
 }
 
 func mergeEstimatorConfig(dst *EstimatorConfig, src estimatorFileConfig) {
@@ -61,6 +63,7 @@ func mergePoolConfig(dst *PoolConfig, src poolFileConfig) {
 	assignDuration(&dst.Quantum, src.Quantum)
 	assignFloat(&dst.PauseThreshold, src.PauseThreshold)
 	assignFloat(&dst.ResumeThreshold, src.ResumeThreshold)
+	assignFloat(&dst.RunnableGuard, src.RunnableGuard)
 }
 
 func mergeHTTPConfig(dst *HTTPConfig, src httpFileConfig) {

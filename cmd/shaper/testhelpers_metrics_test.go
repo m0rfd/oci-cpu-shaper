@@ -15,7 +15,10 @@ const (
 	metricsServerWait = time.Second
 )
 
-var errMetricsServerBoom = errors.New("metrics server start failure")
+var (
+	errMetricsServerBoom = errors.New("metrics server start failure")
+	errStubQueryFailure  = errors.New("stub: query failure")
+)
 
 type stubMetricsAdapter struct{}
 
@@ -37,6 +40,7 @@ func expectMetricsSnippets(t *testing.T, output string, snippets []string) {
 
 type healthSnapshot struct {
 	State          string `json:"state"`
+	Mode           string `json:"mode"`
 	LastOCIError   string `json:"ociError"`
 	EstimatorError string `json:"estimatorError"`
 }

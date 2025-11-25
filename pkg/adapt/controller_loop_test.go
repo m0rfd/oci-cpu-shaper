@@ -7,7 +7,7 @@ package adapt
 import (
 	"context"
 	"errors"
-	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,6 +30,7 @@ func TestAdaptiveControllerRunLifecycle(t *testing.T) {
 			{
 				Timestamp:    time.Unix(0, 0),
 				Utilisation:  0.5,
+				Runnable:     0,
 				BusyJiffies:  0,
 				TotalJiffies: 0,
 				Err:          nil,
@@ -97,6 +98,7 @@ func TestConsumeEstimatorStopsOnClose(t *testing.T) {
 	observations <- est.Observation{
 		Timestamp:    time.Unix(0, 0),
 		Utilisation:  0.5,
+		Runnable:     0,
 		BusyJiffies:  0,
 		TotalJiffies: 0,
 		Err:          nil,
@@ -110,7 +112,7 @@ func TestConsumeEstimatorStopsOnClose(t *testing.T) {
 		t.Fatal("consumeEstimator did not exit after channel close")
 	}
 
-	if len(shaper.hostLoads) == 0 {
+	if len(shaper.hostSignal) == 0 {
 		t.Fatal("expected host load to be observed after consuming estimator values")
 	}
 }
@@ -143,7 +145,7 @@ func TestAdaptiveControllerRunHandlesNilEstimatorChannel(t *testing.T) {
 			t.Fatal("expected error from run with nil estimator channel")
 		}
 
-		if !strings.Contains(runErr.Error(), "nil observations channel") {
+		if !errors.Is(runErr, errEstimatorNilChannel) {
 			t.Fatalf("unexpected run error: %v", runErr)
 		}
 	case <-time.After(time.Second):
@@ -154,6 +156,44 @@ func TestAdaptiveControllerRunHandlesNilEstimatorChannel(t *testing.T) {
 type nilChannelEstimator struct{}
 
 func (nilChannelEstimator) Run(context.Context) <-chan est.Observation { return nil }
+
+func TestConsumeEstimatorStopsWhenEstimatorClosesImmediately(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	observations := make(chan est.Observation)
+
+	ctx := t.Context()
+
+	var waitGroup sync.WaitGroup
+
+	waitGroup.Go(func() {
+		controller.consumeEstimator(ctx, observations)
+	})
+
+	close(observations)
+
+	done := make(chan struct{})
+
+	go func() {
+		waitGroup.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("consumeEstimator goroutine did not exit after immediate channel close")
+	}
+}
 
 func TestAdaptiveControllerRunEmitsMetricsSignals(t *testing.T) {
 	t.Parallel()

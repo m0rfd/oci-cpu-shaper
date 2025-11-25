@@ -88,3 +88,36 @@ func TestValidateConfigAllowsDisabledSuppression(t *testing.T) {
 		t.Fatalf("ValidateConfig returned error for disabled suppression: %v", err)
 	}
 }
+
+func TestValidateConfigRejectsInvalidRunnableSuppression(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.SuppressRunnableThreshold = -1
+
+	err := ValidateConfig(cfg)
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig for negative runnable threshold, got %v", err)
+	}
+
+	cfg.SuppressRunnableThreshold = 1
+	cfg.SuppressRunnableResume = 2
+
+	err = ValidateConfig(cfg)
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig when runnable resume exceeds threshold, got %v", err)
+	}
+}
+
+func TestValidateConfigAllowsDisabledRunnableSuppression(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.SuppressRunnableThreshold = 0
+	cfg.SuppressRunnableResume = 0
+
+	err := ValidateConfig(cfg)
+	if err != nil {
+		t.Fatalf("ValidateConfig returned error for disabled runnable suppression: %v", err)
+	}
+}

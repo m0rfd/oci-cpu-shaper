@@ -8,7 +8,7 @@
 ## §3 Runtime Wiring Overview
 1. **CLI bootstrap (`cmd/shaper/entrypoint.go` + wiring helpers)** parses flags/YAML/env, builds the zap logger, and loads IMDS/OCI metadata. `entrypoint.go` only assembles the default run dependencies and hands control to `app.go`/`app_run.go` for orchestration and signal handling. `run_deps.go` owns exit codes and the factories for loggers, IMDS clients, controller creation, metrics exporters, and cgroup inspection. `logger_factory.go` builds the zap logger, `metadata_resolver.go` validates/resolves OCI metadata, `logging_metadata.go` records the resolved metadata for structured logs, `metrics_http.go` wires the metrics exporter/server, and `cgroup_inspection.go` records sandbox CPU limits. `controller_helpers.go` bridges CLI wiring to the adaptive controller without embedding controller logic in the entrypoint. The bootstrap then constructs the adaptive controller, estimator sampler, and worker pool before starting goroutines. (`run`, `defaultControllerFactory`, `buildAdaptiveController`.)
 2. **Worker pool (`pkg/shape`)** spins `N` goroutines that run millisecond quanta, busy-spinning for the requested duty-cycle ratio and sleeping for the remainder. Rootful builds optionally downgrade each worker to `SCHED_IDLE`. (`Pool.Start`, `worker`.)
-3. **Estimator sampler (`pkg/est`)** collects `/proc/stat` snapshots each second, computes host CPU utilisation deltas, and streams observations (or errors) to the adaptive controller. (`Sampler.Run`, `buildObservation`.)
+3. **Estimator sampler (`pkg/est`)** collects `/proc/stat` snapshots each second, computes host CPU utilisation deltas plus runnable task counts, and streams observations (or errors) to the adaptive controller. (`Sampler.Run`, `buildObservation`.)
 4. **Adaptive controller (`pkg/adapt`)** runs the slow loop (default 1 h) that queries OCI Monitoring for 7-day P95 CPU. The ticker-driven orchestration (`AdaptiveController.Run`) drives the OCI step logic (`AdaptiveController.step`) while the estimator feedback path (`handleObservation`) clamps into min/max bounds and flips between normal/fallback/suppressed states based on host load feedback.
 5. **Metrics and status HTTP handlers (`pkg/http/metrics`, `pkg/http/status`)** expose `/metrics` (OpenMetrics) plus `/healthz` so Prometheus and automation can scrape controller state, P95 readings, worker stats, and any recent OCI/estimator errors.
 
@@ -31,9 +31,15 @@ controller.Run(ctx) -----------------> slow loop ticker (default 1h)
                                               |
                                      update shape.Pool duty cycle target
                                               |
-                              worker pool keeps busy/sleep quanta per target
+                             worker pool keeps busy/sleep quanta per target
                                               |
-                             estimator feeds host CPU load for suppression guard
+                             estimator feeds host CPU load + run queue for suppression guard
+
+The fast loop now treats the instantaneous run queue as a guardrail as well as a
+suppression input: when runnable-per-CPU or utilisation samples breach their
+configured thresholds the controller drops its target to zero and the worker
+pool pauses immediately, resuming only after the guard clears or the
+suppression hysteresis cools.
 ```
 
 ### §3.1 CLI Entrypoint boundaries
@@ -44,16 +50,19 @@ controller.Run(ctx) -----------------> slow loop ticker (default 1h)
 - `app_controller.go`: wires the staged metadata/metrics/controller bootstrap and exposes lifecycle helpers for starting/stopping the metrics server and controller.
 - `app.go`/`app_run.go`: maintain the signal-aware run loop and compose the bootstrap/controller stages without re-embedding wiring logic.
 - `controller_helpers.go`: converts runtime config into adaptive-controller inputs and keeps controller state machines out of the CLI.
-- `metadata_resolver.go`: resolves IMDS/OCI metadata for runtime config and validates controller prerequisites.
-- `logger_factory.go`: constructs zap loggers with the configured level and encoder settings. IMDS HTTP
+- `metrics_client_default_*.go`: selects the metrics builder from `pkg/oci/metricsclient` (or the e2e shim) so the CLI only wires builders/offline paths.
+- `logger_factory.go`: constructs zap loggers with the configured level and encoder settings.
+- `metadata_resolver.go`: resolves IMDS/OCI metadata for runtime config and validates controller prerequisites. IMDS HTTP
   behaviors stay in `pkg/imds` while the CLI factory/resolution logic is covered by focused suites (`metadata_imds_factory_test.go`
   for endpoint overrides, `metadata_logging_imds_test.go` for logIMDSMetadata success/warn/offline paths, and
   `metadata_logging_runtime_test.go` for runtime metadata/config logging) to keep responsibilities separated.
+- `logging_metadata.go`: records resolved metadata for structured logging and recorder enrichment.
 - `metrics_http.go`: builds the metrics exporter and HTTP listener used by `/metrics` and `/healthz`.
 - `cgroup_inspection.go`: probes the local cgroup v2 CPU settings so metrics and `/healthz` reflect sandbox limits.
 
 ## §5 Package Touchpoints
 - `pkg/oci`: Instance-principal Monitoring client issues the MQL percentile query and paginates results, returning the freshest datapoint. (`Client.QueryP95CPU`.)
+- `pkg/oci/metricsclient`: Builds/wraps metrics clients, exposes context helpers for dependency injection, and surfaces the instance-principal wrapper used by the CLI defaults.
 - `pkg/imds`: HTTP client reads region, compartment OCID, and instance ID with retried IMDSv2 requests; CLI falls back to offline overrides when needed.
 - `pkg/adapt`: State machine tracks `normal`, `fallback`, and `suppressed`, records errors for `/healthz`, and surfaces target/mode/state for `/metrics`.
 - `pkg/est`: Publishes host utilisation plus the last sampling error so suppression hysteresis keeps the shaper out of the way when the host is busy.

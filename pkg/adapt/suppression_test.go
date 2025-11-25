@@ -60,8 +60,44 @@ func TestConsumeEstimatorSuppression(t *testing.T) {
 		)
 	}
 
-	if len(shaper.hostLoads) == 0 {
+	if len(shaper.hostSignal) == 0 {
 		t.Fatal("expected shaper to observe host load samples")
+	}
+}
+
+func TestConsumeEstimatorRunnableSuppression(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+	cfg.SuppressThreshold = 0
+	cfg.SuppressResume = 0
+	cfg.SuppressRunnableThreshold = 1.1
+	cfg.SuppressRunnableResume = 0.5
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	feedObservationWithRunnable(controller, 0, 0.1, 1.2, nil)
+
+	if controller.State() != StateSuppressed {
+		t.Fatalf("expected runnable surge to suppress controller, got %v", controller.State())
+	}
+
+	if controller.Target() != 0 {
+		t.Fatalf("expected suppressed target to drop to zero, got %.2f", controller.Target())
+	}
+
+	feedObservationWithRunnable(controller, 1, 0.1, 0.2, nil)
+
+	if controller.State() != StateFallback {
+		t.Fatalf(
+			"expected controller to resume after runnable cooldown, got %v",
+			controller.State(),
+		)
 	}
 }
 

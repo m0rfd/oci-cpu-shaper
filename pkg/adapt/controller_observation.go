@@ -1,6 +1,10 @@
 package adapt
 
-import "oci-cpu-shaper/pkg/est"
+import (
+	"math"
+
+	"oci-cpu-shaper/pkg/est"
+)
 
 func (c *AdaptiveController) handleObservation(observation est.Observation) {
 	c.mu.Lock()
@@ -16,20 +20,46 @@ func (c *AdaptiveController) handleObservation(observation est.Observation) {
 	c.lastEstErr = nil
 
 	utilisation := clamp(observation.Utilisation, 0, 1)
+
+	runnable := observation.Runnable
+	if math.IsNaN(runnable) || math.IsInf(runnable, 0) {
+		runnable = 0
+	}
+
+	if runnable < 0 {
+		runnable = 0
+	}
+
+	guarded := c.guardExceeded(utilisation, runnable)
+
 	if c.recorder != nil {
 		c.recorder.ObserveHostCPU(utilisation)
 	}
 
 	if c.shaper != nil {
-		c.shaper.ObserveHostLoad(utilisation)
+		c.shaper.ObserveHostLoad(utilisation, runnable)
 	}
 
-	if c.cfg.SuppressThreshold <= 0 {
+	// Optimization: if suppression is disabled, we don't need to track
+	// internal state related to suppression transitions beyond the guard path.
+	if c.cfg.SuppressThreshold <= 0 && c.cfg.SuppressRunnableThreshold <= 0 {
+		if guarded {
+			c.suppressed = true
+			c.applySuppressionTargetsLocked(false)
+			c.updateEffectiveStateLocked()
+		}
+
 		return
 	}
 
 	c.updateHostLoadLocked(utilisation)
-	previouslySuppressed := c.transitionSuppressionLocked()
+	c.hostRunnable = runnable
+	previouslySuppressed := c.transitionSuppressionLocked(guarded)
 	c.applySuppressionTargetsLocked(previouslySuppressed)
 	c.updateEffectiveStateLocked()
+}
+
+func (c *AdaptiveController) guardExceeded(utilisation, runnable float64) bool {
+	return (c.cfg.SuppressThreshold > 0 && utilisation >= c.cfg.SuppressThreshold) ||
+		(c.cfg.SuppressRunnableThreshold > 0 && runnable >= c.cfg.SuppressRunnableThreshold)
 }

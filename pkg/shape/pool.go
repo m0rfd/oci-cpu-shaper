@@ -27,6 +27,7 @@ type Pool struct {
 	targetBits          atomic.Uint64
 	pauseThresholdBits  atomic.Uint64
 	resumeThresholdBits atomic.Uint64
+	runnableGuardBits   atomic.Uint64
 	paused              atomic.Uint32
 }
 
@@ -140,9 +141,16 @@ func (p *Pool) SetPauseThresholds(pause, resume float64) {
 	setPauseThresholds(p, pause, resume)
 }
 
+// SetRunnableGuard configures the runnable-per-CPU threshold that immediately pauses workers.
+//
+// A zero threshold disables runnable-based pausing.
+func (p *Pool) SetRunnableGuard(threshold float64) {
+	setRunnableGuard(p, threshold)
+}
+
 // ObserveHostLoad toggles the paused state based on the configured thresholds.
-func (p *Pool) ObserveHostLoad(utilisation float64) {
-	observeHostLoad(p, utilisation)
+func (p *Pool) ObserveHostLoad(utilisation, runnable float64) {
+	observeHostLoad(p, utilisation, runnable)
 }
 
 // Paused returns true when the worker pool is temporarily suspended.

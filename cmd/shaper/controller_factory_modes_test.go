@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"oci-cpu-shaper/pkg/adapt"
-	"oci-cpu-shaper/pkg/oci"
+	"oci-cpu-shaper/pkg/oci/metricsclient"
 	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
@@ -41,7 +41,7 @@ func TestDefaultControllerFactoryReturnsNoopForMode(t *testing.T) {
 	}
 }
 
-func TestDefaultControllerFactoryTrimsModeToDryRun(t *testing.T) {
+func TestDefaultControllerFactoryTrimsModeToEnforce(t *testing.T) {
 	t.Parallel()
 
 	cfg := runtimeconfig.Default()
@@ -69,8 +69,8 @@ func TestDefaultControllerFactoryTrimsModeToDryRun(t *testing.T) {
 		t.Fatal("expected pool to be created for adaptive controller")
 	}
 
-	if controller.Mode() != modeDryRun {
-		t.Fatalf("expected modeDryRun, got %q", controller.Mode())
+	if controller.Mode() != modeEnforce {
+		t.Fatalf("expected default enforce mode, got %q", controller.Mode())
 	}
 }
 
@@ -133,9 +133,9 @@ func TestDefaultControllerFactoryErrorsOnMissingCompartmentID(t *testing.T) {
 func TestDefaultControllerFactoryPropagatesMetricsFailure(t *testing.T) {
 	t.Parallel()
 
-	ctx := withMetricsClientFactory(
+	ctx := metricsclient.WithBuilder(
 		context.Background(),
-		func(string, string) (oci.MetricsClient, error) {
+		func(string, string) (metricsclient.MetricsClient, error) {
 			return nil, errStubControllerRun
 		},
 	)

@@ -20,7 +20,7 @@ PROD_PKGS := $(shell $(GO) list $(PROD_PATTERNS) 2>/dev/null)
 COVERAGE_PKGS := $(filter-out $(COVERAGE_EXCLUDES),$(PROD_PKGS))
 INTEGRATION_PKGS_RAW := $(shell $(GO) list ./tests/integration/... ./cmd/shaper 2>/dev/null)
 INTEGRATION_PKGS := $(filter-out $(COVERAGE_EXCLUDES),$(INTEGRATION_PKGS_RAW))
-E2E_PKGS_RAW := $(shell $(GO) list ./tests/e2e/... 2>/dev/null)
+E2E_PKGS_RAW := $(shell $(GO) list ./tests/e2e/... ./cmd/shaper 2>/dev/null)
 UNIT_TEST_PKGS := $(filter-out $(INTEGRATION_PKGS_RAW) $(E2E_PKGS_RAW),$(PKGS))
 COVERAGE_TAGS ?=
 E2E_PKGS := $(filter-out $(COVERAGE_EXCLUDES),$(E2E_PKGS_RAW))
@@ -45,9 +45,9 @@ GO_BIN_PATH := $(HOME)/go/bin
 endif
 
 ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
-GOVULNCHECK_CACHE_DIR := $(ROOT_DIR)/.cache/govulncheck
-GOCACHE_DIR := $(ROOT_DIR)/.cache/go
-GOLANGCI_LINT_CACHE_DIR := $(ROOT_DIR)/.cache/golangci
+GOVULNCHECK_CACHE_DIR ?= $(ROOT_DIR)/.cache/govulncheck
+GOCACHE_DIR ?= $(ROOT_DIR)/.cache/go
+GOLANGCI_LINT_CACHE_DIR ?= $(ROOT_DIR)/.cache/golangci
 
 GOLANGCI_LINT_BIN ?= $(GO_BIN_PATH)/golangci-lint
 GOLANGCI_LINT ?= $(GOLANGCI_LINT_BIN)
@@ -59,11 +59,11 @@ MBAKE_BIN ?= $(HOME)/.local/bin/mbake
 MBAKE ?= $(MBAKE_BIN)
 MBAKE_FORMAT_PATHS ?= Makefile
 
-.PHONY: lint test build check tools ensure-golangci-lint ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks verify-go-version ensure-mbake mbake help clean
+.PHONY: actionlint agents bench build check clean coverage e2e ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake setup test tools verify-go-version
 
 GO_MACHINE_ARCH := $(shell uname -m)
 GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
-HELP_TARGETS := lint test coverage build check govulncheck integration e2e agents actionlint help clean
+HELP_TARGETS := lint lint-makefile test coverage build check govulncheck integration e2e agents actionlint help clean
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-mbake
 
@@ -80,16 +80,31 @@ ensure-golangci-lint:
 		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(GO_BIN_PATH) $(GOLANGCI_LINT_VERSION) > /dev/null 2>&1; \
 	fi
 
-lint: verify-go-version ensure-golangci-lint mbake
+lint: verify-go-version ensure-golangci-lint
 	@mkdir -p "$(GOLANGCI_LINT_CACHE_DIR)"
 	@echo "Running golangci-lint..."
 	@GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE_DIR)" $(GOLANGCI_LINT) run
+
+lint-makefile: ensure-mbake
+	@echo "Running mbake validate..."
+	@$(MBAKE) validate $(MBAKE_FORMAT_PATHS)
+	@echo "Running mbake check..."
+	@$(MBAKE) format --check $(MBAKE_FORMAT_PATHS)
+
+lint-fix: verify-go-version ensure-golangci-lint mbake
+	@mkdir -p "$(GOLANGCI_LINT_CACHE_DIR)"
+	@echo "Running mbake format..."
+	@$(MBAKE) format $(MBAKE_FORMAT_PATHS)
+	@echo "Running golangci-lint with fix..."
+	@GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE_DIR)" $(GOLANGCI_LINT) run --fix
 
 help:
 	@printf "Available targets:\n"
 	@for target in $(HELP_TARGETS); do \ \
 		case $$target in \ \
-			lint) desc="Run golangci-lint with autofix";; \ \
+			lint) desc="Run golangci-lint";; \ \
+			lint-makefile) desc="Run mbake validate and check";; \ \
+			lint-fix) desc="Run golangci-lint with autofix";; \ \
 			test) desc="Run unit tests (excludes integration/e2e)";; \ \
 			coverage) desc="Run coverage with minimum threshold enforcement";; \ \
 			build) desc="Compile all modules with cache isolation";; \ \
@@ -134,6 +149,8 @@ ensure-mbake:
 mbake: ensure-mbake
 	@$(MBAKE) format $(MBAKE_FORMAT_PATHS)
 
+format: mbake
+
 test: verify-go-version
 	@if [ -z "$(strip $(UNIT_TEST_PKGS))" ]; then \
 		echo "No Go packages found; skipping tests."; \
@@ -141,10 +158,11 @@ test: verify-go-version
 		mkdir -p "$(GOCACHE_DIR)"; \
 		GOCACHE="$(GOCACHE_DIR)" $(GO) test -race $(UNIT_TEST_PKGS); \
 	fi
-	@if [ "$(strip $(RUN_E2E_TESTS))" = "1" ] && [ -d "$(ROOT_DIR)/tests/e2e" ]; then \
+	@e2e_pkgs="$(strip $(E2E_PKGS))"; \
+	if [ "$(strip $(RUN_E2E_TESTS))" = "1" ] && [ -n "$$e2e_pkgs" ]; then \
 		mkdir -p "$(GOCACHE_DIR)"; \
-		GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=e2e ./tests/e2e/...; \
-	elif [ -d "$(ROOT_DIR)/tests/e2e" ]; then \
+		GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=e2e $$e2e_pkgs; \
+	elif [ -n "$$e2e_pkgs" ]; then \
 		echo "Skipping e2e tests; set RUN_E2E_TESTS=1 to enable."; \
 	fi
 
@@ -233,7 +251,7 @@ govulncheck: verify-go-version
         GOCACHE="$(GOCACHE_DIR)" GOVULNCHECK_CACHE="$(GOVULNCHECK_CACHE_DIR)" \
         $(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
-check: lint test agents
+check: lint lint-makefile test agents
 
 actionlint: ensure-actionlint
 	@set -euo pipefail; \
@@ -259,6 +277,10 @@ build: verify-go-version
 
 integration: verify-go-version
 	@set -euo pipefail; \
+	if [ "$$(uname -s)" != "Linux" ]; then \
+		echo "integration suite requires Linux (detected $$(uname -s))"; \
+		exit 1; \
+	fi; \
 	if ! command -v docker >/dev/null 2>&1; then \
 		echo "integration suite requires the docker CLI"; \
 		exit 1; \
@@ -323,12 +345,13 @@ integration: verify-go-version
 
 e2e:
 	@set -euo pipefail; \
-	if [ ! -d "$(ROOT_DIR)/tests/e2e" ]; then \
+	e2e_pkgs="$(strip $(E2E_PKGS))"; \
+	if [ -z "$$e2e_pkgs" ]; then \
 		echo "e2e suite not available"; \
 		exit 0; \
 	fi; \
 	mkdir -p "$(GOCACHE_DIR)"; \
-	GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=e2e -v ./tests/e2e/...
+	GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=e2e -v $$e2e_pkgs
 
 setup: ensure-dev-deps ensure-go maintenance
 	@set -euo pipefail; \
@@ -412,6 +435,8 @@ clean:
 	@set -euo pipefail; \
 	rm -rf "$(COVERAGE_PROFILE)" "$(COVERAGE_SUMMARY)" coverage-*.out "$(GOCACHE_DIR)" "$(GOLANGCI_LINT_CACHE_DIR)" "$(GOVULNCHECK_CACHE_DIR)" artifacts
 
+lint-autofix: lint-fix
+
 install-git-hooks:
 	@set -euo pipefail; \
 	if [ ! -d .git ]; then \
@@ -419,14 +444,6 @@ install-git-hooks:
 		exit 0; \
 	fi; \
 	hook_path=".git/hooks/pre-commit"; \
-	cat > "$$hook_path" <<-'EOF'
-	#!/bin/bash
-	set -euo pipefail
-	if command -v make >/dev/null 2>&1; then
-	  make lint
-	else
-	  echo "make not available; skipping lint hook" >&2
-	fi
-	EOF
+	printf '#!/bin/bash\nset -euo pipefail\n\n# Check Makefile formatting\nif command -v mbake >/dev/null 2>&1; then\n  echo "Running mbake check..."\n  if ! mbake format --check Makefile; then\n    echo "Makefile formatting failed. Attempting autofix..."\n    mbake format Makefile\n    echo "Makefile formatted. Auto-staging changes..."\n    git add Makefile\n  fi\nfi\n\n# Check Go linting\nif command -v make >/dev/null 2>&1; then\n  echo "Running make lint-fix..."\n  if make lint-fix; then\n    # Check if any files were modified by lint-fix and stage them\n    # We use git diff --name-only to find modified files that are already tracked\n    modified_files=$$(git diff --name-only)\n    if [ -n "$$modified_files" ]; then\n      echo "Autofix applied changes. Auto-staging..."\n      echo "$$modified_files" | xargs git add\n    fi\n  else\n    echo "Linting failed and could not be autofixed. Please check issues manually." >&2\n    exit 1\n  fi\nelse\n  echo "make not available; skipping lint hook" >&2\nfi\n' > "$$hook_path"; \
 	chmod +x "$$hook_path"; \
-	echo "Installed pre-commit hook to run 'make lint' with autofix support"
+	echo "Installed pre-commit hook with auto-staging autofix."

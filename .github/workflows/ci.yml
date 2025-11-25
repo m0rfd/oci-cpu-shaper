@@ -82,6 +82,10 @@ jobs:
       - name: Run golangci-lint
         run: make lint
 
+      - name: Check Makefile formatting
+        run: make lint-makefile
+
+
       - name: Ensure golangci-lint did not leave uncommitted fixes
         run: |
           if ! git diff --quiet; then
@@ -184,6 +188,25 @@ jobs:
 
       - name: Run test suite
         run: make test
+
+  build:
+    name: go build
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    env:
+      GOCACHE: ${{ github.workspace }}/.cache/go
+      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go with cache
+        id: setup-go
+        uses: ./.github/actions/setup-go-with-cache
+
+      - name: Build all packages
+        run: make build
 
   coverage:
     name: go test & coverage

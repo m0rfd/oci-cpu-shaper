@@ -12,13 +12,16 @@ controller:
   relaxedThreshold: 0.27
   suppressThreshold: 0.9
   suppressResume: 0.6
+  suppressRunnableThreshold: 1.05
+  suppressRunnableResume: 0.8
 estimator:
-  interval: 2s
+  interval: 1s
 pool:
   workers: 2
   quantum: 2ms
   pauseThreshold: 0.88
   resumeThreshold: 0.44
+  runnableGuard: 1.1
 http:
   bind: ":9200"
 oci:

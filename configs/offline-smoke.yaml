@@ -1,16 +1,29 @@
 controller:
-  interval: 15s
-  relaxedInterval: 1m
-  relaxedThreshold: 0.30
-  fallbackTarget: 0.25
+  targetStart: 0.22
+  targetMin: 0.20
+  targetMax: 0.32
+  stepUp: 0.01
+  stepDown: 0.005
+  fallbackTarget: 0.22
+  goalLow: 0.21
+  goalHigh: 0.27
+  interval: 1h
+  relaxedInterval: 4h
+  relaxedThreshold: 0.26
+  suppressThreshold: 0.80
+  suppressResume: 0.68
+  suppressRunnableThreshold: 1.20
+  suppressRunnableResume: 0.96
 estimator:
-  interval: 5s
+  interval: 1s
 pool:
-  workers: 1
-  quantum: 10ms
-  pauseThreshold: 0.85
-  resumeThreshold: 0.70
+  workers: 2
+  quantum: 1ms
+  pauseThreshold: 0.80
+  resumeThreshold: 0.68
 oci:
   compartmentId: ""
   instanceId: "ocid1.instance.oc1..offline-smoke"
   offline: true
+http:
+  bind: ":9108"

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"oci-cpu-shaper/pkg/oci"
+	"oci-cpu-shaper/pkg/oci/metricsclient"
 	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
@@ -51,9 +51,9 @@ func TestBuildAdaptiveControllerUsesConfiguredInstanceID(t *testing.T) {
 func TestBuildAdaptiveControllerOfflineSkipsExternalDependencies(t *testing.T) {
 	t.Parallel()
 
-	ctx := withMetricsClientFactory(
+	ctx := metricsclient.WithBuilder(
 		context.Background(),
-		func(string, string) (oci.MetricsClient, error) {
+		func(string, string) (metricsclient.MetricsClient, error) {
 			t.Fatal("expected offline mode to avoid metrics factory")
 
 			return nil, errStubControllerRun

@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	defaultEstimatorInterval = 2 * time.Second
+	defaultEstimatorInterval = 1 * time.Second
 	defaultPoolWorkers       = 2
 )
 
@@ -31,17 +31,17 @@ func Default() Config {
 	cfg.Controller.RelaxedThreshold = defaults.RelaxedThreshold
 	cfg.Controller.SuppressThreshold = defaults.SuppressThreshold
 	cfg.Controller.SuppressResume = defaults.SuppressResume
+	cfg.Controller.SuppressRunnableThreshold = defaults.SuppressRunnableThreshold
+	cfg.Controller.SuppressRunnableResume = defaults.SuppressRunnableResume
 
 	cfg.Estimator.Interval = defaultEstimatorInterval
 
 	cfg.Pool.Workers = defaultPoolWorkers
-	if cfg.Pool.Workers <= 0 {
-		cfg.Pool.Workers = 1
-	}
 
 	cfg.Pool.Quantum = shape.DefaultQuantum
 	cfg.Pool.PauseThreshold = defaults.SuppressThreshold
 	cfg.Pool.ResumeThreshold = defaults.SuppressResume
+	cfg.Pool.RunnableGuard = defaults.SuppressRunnableThreshold
 
 	cfg.HTTP.Bind = ":9108"
 
@@ -51,20 +51,22 @@ func Default() Config {
 // ToAdaptConfig maps the controller configuration into the adapt.Config struct.
 func (cfg Config) ToAdaptConfig() adapt.Config {
 	return adapt.Config{
-		ResourceID:        "",
-		Mode:              "",
-		TargetStart:       cfg.Controller.TargetStart,
-		TargetMin:         cfg.Controller.TargetMin,
-		TargetMax:         cfg.Controller.TargetMax,
-		StepUp:            cfg.Controller.StepUp,
-		StepDown:          cfg.Controller.StepDown,
-		FallbackTarget:    cfg.Controller.FallbackTarget,
-		GoalLow:           cfg.Controller.GoalLow,
-		GoalHigh:          cfg.Controller.GoalHigh,
-		Interval:          cfg.Controller.Interval,
-		RelaxedInterval:   cfg.Controller.RelaxedInterval,
-		RelaxedThreshold:  cfg.Controller.RelaxedThreshold,
-		SuppressThreshold: cfg.Controller.SuppressThreshold,
-		SuppressResume:    cfg.Controller.SuppressResume,
+		ResourceID:                "",
+		Mode:                      "",
+		TargetStart:               cfg.Controller.TargetStart,
+		TargetMin:                 cfg.Controller.TargetMin,
+		TargetMax:                 cfg.Controller.TargetMax,
+		StepUp:                    cfg.Controller.StepUp,
+		StepDown:                  cfg.Controller.StepDown,
+		FallbackTarget:            cfg.Controller.FallbackTarget,
+		GoalLow:                   cfg.Controller.GoalLow,
+		GoalHigh:                  cfg.Controller.GoalHigh,
+		Interval:                  cfg.Controller.Interval,
+		RelaxedInterval:           cfg.Controller.RelaxedInterval,
+		RelaxedThreshold:          cfg.Controller.RelaxedThreshold,
+		SuppressThreshold:         cfg.Controller.SuppressThreshold,
+		SuppressResume:            cfg.Controller.SuppressResume,
+		SuppressRunnableThreshold: cfg.Controller.SuppressRunnableThreshold,
+		SuppressRunnableResume:    cfg.Controller.SuppressRunnableResume,
 	}
 }
