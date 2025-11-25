@@ -95,6 +95,12 @@ func (c *AdaptiveController) handleStepSuccessLocked(
 }
 
 func (c *AdaptiveController) nextIntervalLocked(p95 float64) time.Duration {
+	if c.suppressed {
+		c.resetRelaxedSuccessesLocked()
+
+		return c.cfg.Interval
+	}
+
 	nextInterval := c.cfg.Interval
 
 	if p95 >= c.cfg.RelaxedThreshold {
