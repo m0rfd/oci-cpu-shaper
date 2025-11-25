@@ -45,9 +45,9 @@ GO_BIN_PATH := $(HOME)/go/bin
 endif
 
 ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
-GOVULNCHECK_CACHE_DIR := $(ROOT_DIR)/.cache/govulncheck
-GOCACHE_DIR := $(ROOT_DIR)/.cache/go
-GOLANGCI_LINT_CACHE_DIR := $(ROOT_DIR)/.cache/golangci
+GOVULNCHECK_CACHE_DIR ?= $(ROOT_DIR)/.cache/govulncheck
+GOCACHE_DIR ?= $(ROOT_DIR)/.cache/go
+GOLANGCI_LINT_CACHE_DIR ?= $(ROOT_DIR)/.cache/golangci
 
 GOLANGCI_LINT_BIN ?= $(GO_BIN_PATH)/golangci-lint
 GOLANGCI_LINT ?= $(GOLANGCI_LINT_BIN)
@@ -85,11 +85,17 @@ lint: verify-go-version ensure-golangci-lint mbake
 	@echo "Running golangci-lint..."
 	@GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE_DIR)" $(GOLANGCI_LINT) run
 
+lint-fix: verify-go-version ensure-golangci-lint mbake
+	@mkdir -p "$(GOLANGCI_LINT_CACHE_DIR)"
+	@echo "Running golangci-lint with fix..."
+	@GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE_DIR)" $(GOLANGCI_LINT) run --fix
+
 help:
 	@printf "Available targets:\n"
 	@for target in $(HELP_TARGETS); do \ \
 		case $$target in \ \
-			lint) desc="Run golangci-lint with autofix";; \ \
+			lint) desc="Run golangci-lint";; \ \
+			lint-fix) desc="Run golangci-lint with autofix";; \ \
 			test) desc="Run unit tests (excludes integration/e2e)";; \ \
 			coverage) desc="Run coverage with minimum threshold enforcement";; \ \
 			build) desc="Compile all modules with cache isolation";; \ \
@@ -435,4 +441,4 @@ install-git-hooks:
 	fi
 	EOF
 	chmod +x "$$hook_path"; \
-	echo "Installed pre-commit hook to run 'make lint' with autofix support"
+	echo "Installed pre-commit hook to run 'make lint'. Use 'make lint-fix' to autofix issues."

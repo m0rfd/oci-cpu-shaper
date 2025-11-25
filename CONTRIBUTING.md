@@ -19,7 +19,8 @@ issue or pull request.
 
 Run the following helpers from the repository root before every pull request:
 
-- `make lint` to execute `golangci-lint` with auto-fix enabled. The target pins
+- `make lint-fix` to execute `golangci-lint` with auto-fix enabled.
+- `make lint` to run checks without modifying files. The target pins
   `GOLANGCI_LINT_CACHE` to `.cache/golangci` and mirrors the CI configuration.
 - `make test` to run `go test -race ./...` so race conditions surface early.
 - `make coverage MIN_COVERAGE=96` to regenerate `coverage.out`/`coverage.txt` and

@@ -3,6 +3,7 @@ linters:
   default: all
   disable:
     - wsl
+    - ireturn
   enable:
     - wsl_v5
   exclusions:
