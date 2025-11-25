@@ -87,6 +87,13 @@ func TestValidateRuntimeConfigRejectsNonPositiveValues(t *testing.T) {
 			}),
 			wantRef: "controller.stepUp",
 		},
+		{
+			name: "zero relaxed confirmations",
+			cfg: makeConfig(func(cfg *Config) {
+				cfg.Controller.RelaxedConfirmations = 0
+			}),
+			wantRef: "controller.relaxedConfirmations",
+		},
 	}
 
 	for _, tc := range testCases {

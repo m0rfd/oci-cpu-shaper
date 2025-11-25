@@ -82,7 +82,7 @@ func TestControllerRunHandlesClosedEstimatorChannel(t *testing.T) {
 func TestControllerRunResetsTickerForChangingIntervals(t *testing.T) {
 	t.Parallel()
 
-	metrics := &scriptedMetricsClient{values: []float64{0.80, 0.22, 0.22}}
+	metrics := &scriptedMetricsClient{values: []float64{0.80, 0.80, 0.22, 0.22}}
 	shaper := newRecordingShaper()
 
 	cfg := adapt.DefaultConfig()
@@ -104,7 +104,7 @@ func TestControllerRunResetsTickerForChangingIntervals(t *testing.T) {
 		errCh <- controller.Run(ctx)
 	}()
 
-	waitForCalls(t, metrics, 3, 2*time.Second)
+	waitForCalls(t, metrics, 4, 2*time.Second)
 	cancel()
 
 	if runErr := <-errCh; !errors.Is(runErr, context.Canceled) {
@@ -112,23 +112,24 @@ func TestControllerRunResetsTickerForChangingIntervals(t *testing.T) {
 	}
 
 	callTimes := metrics.times()
-	if len(callTimes) < 3 {
-		t.Fatalf("expected at least three metrics calls, got %d", len(callTimes))
+	if len(callTimes) < 4 {
+		t.Fatalf("expected at least four metrics calls, got %d", len(callTimes))
 	}
 
 	firstGap := callTimes[1].Sub(callTimes[0])
 	secondGap := callTimes[2].Sub(callTimes[1])
+	thirdGap := callTimes[3].Sub(callTimes[2])
 
-	if firstGap <= secondGap {
-		t.Fatalf("expected relaxed interval gap (%v) to exceed base interval gap (%v)", firstGap, secondGap)
+	if firstGap < cfg.Interval/2 || firstGap > cfg.Interval*2 {
+		t.Fatalf("expected base interval gap near %v, got %v", cfg.Interval, firstGap)
 	}
 
-	if firstGap < cfg.RelaxedInterval/2 {
-		t.Fatalf("expected relaxed interval gap around %v, got %v", cfg.RelaxedInterval, firstGap)
+	if secondGap < cfg.RelaxedInterval/2 {
+		t.Fatalf("expected relaxed interval gap around %v, got %v", cfg.RelaxedInterval, secondGap)
 	}
 
-	if secondGap > cfg.RelaxedInterval/2 {
-		t.Fatalf("expected base interval gap near %v after reset, got %v", cfg.Interval, secondGap)
+	if thirdGap < cfg.Interval/2 || thirdGap > cfg.Interval*2 {
+		t.Fatalf("expected base interval gap near %v after reset, got %v", cfg.Interval, thirdGap)
 	}
 }
 

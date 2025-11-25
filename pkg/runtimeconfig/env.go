@@ -16,6 +16,7 @@ const (
 	envSlowInterval              = "SHAPER_SLOW_INTERVAL"
 	envRelaxedInterval           = "SHAPER_SLOW_INTERVAL_RELAXED"
 	envFastInterval              = "SHAPER_FAST_INTERVAL"
+	envRelaxedConfirmations      = "SHAPER_RELAXED_CONFIRMATIONS"
 	envPoolWorkers               = "SHAPER_WORKER_COUNT"
 	envHTTPBind                  = "HTTP_ADDR"
 	envCompartmentID             = "OCI_COMPARTMENT_ID"
@@ -32,6 +33,7 @@ const (
 	envSuppressRunnableResume    = "SHAPER_SUPPRESS_RUNNABLE_RESUME"
 	envPoolPauseThreshold        = "SHAPER_POOL_PAUSE_THRESHOLD"
 	envPoolResumeThreshold       = "SHAPER_POOL_RESUME_THRESHOLD"
+	envPoolRunnableGuard         = "SHAPER_POOL_RUNNABLE_GUARD"
 )
 
 var lookupEnv = os.LookupEnv //nolint:gochecknoglobals // overridden in tests
@@ -46,6 +48,10 @@ func applyEnvOverrides(cfg *Config) {
 	cfg.Controller.GoalLow = envFloat(envGoalLow, cfg.Controller.GoalLow)
 	cfg.Controller.GoalHigh = envFloat(envGoalHigh, cfg.Controller.GoalHigh)
 	cfg.Controller.RelaxedThreshold = envFloat(envRelaxedThreshold, cfg.Controller.RelaxedThreshold)
+	cfg.Controller.RelaxedConfirmations = envInt(
+		envRelaxedConfirmations,
+		cfg.Controller.RelaxedConfirmations,
+	)
 	cfg.Controller.SuppressThreshold = envFloat(
 		envSuppressThreshold,
 		cfg.Controller.SuppressThreshold,
@@ -67,6 +73,7 @@ func applyEnvOverrides(cfg *Config) {
 	cfg.Pool.Workers = envInt(envPoolWorkers, cfg.Pool.Workers)
 	cfg.Pool.PauseThreshold = envFloat(envPoolPauseThreshold, cfg.Pool.PauseThreshold)
 	cfg.Pool.ResumeThreshold = envFloat(envPoolResumeThreshold, cfg.Pool.ResumeThreshold)
+	cfg.Pool.RunnableGuard = envFloat(envPoolRunnableGuard, cfg.Pool.RunnableGuard)
 
 	cfg.HTTP.Bind = envStringAllowEmpty(envHTTPBind, cfg.HTTP.Bind)
 

@@ -84,6 +84,7 @@ func buildAdaptiveController(
 	}
 
 	pool.SetPauseThresholds(cfg.Pool.PauseThreshold, cfg.Pool.ResumeThreshold)
+	pool.SetRunnableGuard(cfg.Pool.RunnableGuard)
 
 	sampler := est.NewSampler(nil, cfg.Estimator.Interval)
 

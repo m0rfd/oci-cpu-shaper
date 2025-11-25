@@ -181,3 +181,7 @@ func (r *recordingDelegate) SetLastError(err error) {
 		r.errorCleared++
 	}
 }
+
+func (r *recordingDelegate) SetRelaxedSuccesses(_ int) {
+	// Stub implementation
+}

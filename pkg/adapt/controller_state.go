@@ -40,12 +40,22 @@ func (c *AdaptiveController) LastEstimatorError() error {
 	return c.lastEstErr
 }
 
-// Mode returns the configured controller mode label.
+// Mode returns the configured mode string ("noop", "dry-run", or "enforce").
 func (c *AdaptiveController) Mode() string {
+	return c.mode
+}
+
+// RelaxedSuccesses returns the current count of consecutive samples
+// with P95 >= RelaxedThreshold. This counter resets to 0 when P95 drops
+// below the threshold or when OCI queries fail. Once the counter reaches
+// RelaxedConfirmations, the controller switches to RelaxedInterval.
+// This getter enables observability and debugging of the relaxed interval
+// hysteresis behavior.
+func (c *AdaptiveController) RelaxedSuccesses() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	return c.mode
+	return c.relaxedSuccesses
 }
 
 func (c *AdaptiveController) applyTargetLocked(target float64) {

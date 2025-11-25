@@ -46,7 +46,7 @@ type Controller interface {
 type DutyCycler interface {
 	SetTarget(target float64)
 	Target() float64
-	ObserveHostLoad(utilisation float64)
+	ObserveHostLoad(utilisation, runnable float64)
 }
 
 // MetricsRecorder captures controller observability signals.
@@ -58,6 +58,7 @@ type MetricsRecorder interface {
 	ObserveHostCPU(utilisation float64)
 	SetInterval(interval time.Duration)
 	SetLastError(err error)
+	SetRelaxedSuccesses(count int)
 }
 
 // Estimator exposes the observation stream produced by pkg/est.

@@ -25,6 +25,11 @@ func validateControllerConfig(cfg Config) error {
 		return err
 	}
 
+	err = validateRelaxedConfirmations(cfg)
+	if err != nil {
+		return err
+	}
+
 	err = validateGoalBounds(cfg)
 	if err != nil {
 		return err
@@ -83,6 +88,29 @@ func validateStepSizes(cfg Config) error {
 				step.value,
 			)
 		}
+	}
+
+	return nil
+}
+
+func validateRelaxedConfirmations(cfg Config) error {
+	const maxRelaxedConfirmations = 100
+
+	if cfg.RelaxedConfirmations <= 0 {
+		return fmt.Errorf(
+			"%w: controller.relaxedConfirmations (%d) must be greater than zero",
+			ErrInvalidConfig,
+			cfg.RelaxedConfirmations,
+		)
+	}
+
+	if cfg.RelaxedConfirmations > maxRelaxedConfirmations {
+		return fmt.Errorf(
+			"%w: controller.relaxedConfirmations (%d) must not exceed %d (would delay relaxed interval excessively)",
+			ErrInvalidConfig,
+			cfg.RelaxedConfirmations,
+			maxRelaxedConfirmations,
+		)
 	}
 
 	return nil

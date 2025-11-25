@@ -55,6 +55,18 @@ func TestLoadConfigUsesDefaultsWhenFileMissing(t *testing.T) {
 	)
 	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, defaults.SuppressThreshold)
 	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, defaults.SuppressResume)
+	assertFloatEqual(
+		t,
+		"poolRunnableGuard",
+		cfg.Pool.RunnableGuard,
+		defaults.SuppressRunnableThreshold,
+	)
+	assertIntEqual(
+		t,
+		"relaxedConfirmations",
+		cfg.Controller.RelaxedConfirmations,
+		defaults.RelaxedConfirmations,
+	)
 }
 
 func TestLoadConfigSamplesLoad(t *testing.T) {
@@ -110,18 +122,35 @@ func TestLoadConfigAppliesFileOverrides(t *testing.T) {
 	assertFloatEqual(t, "suppressRunnableResume", cfg.Controller.SuppressRunnableResume, 0.8)
 	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, 0.88)
 	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, 0.44)
+	assertFloatEqual(t, "poolRunnableGuard", cfg.Pool.RunnableGuard, 1.1)
+	assertIntEqual(t, "relaxedConfirmations", cfg.Controller.RelaxedConfirmations, 3)
 }
 
-func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
+func TestLoadConfigAppliesEnvOverrides(t *testing.T) { //nolint:paralleltest
+	setEnvOverrides(t)
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	assertEnvOverrides(t, cfg)
+}
+
+func setEnvOverrides(t *testing.T) {
+	t.Helper()
+
 	t.Setenv(envTargetStart, "0.30")
 	t.Setenv(envTargetMin, "0.20")
 	t.Setenv(envStepUp, "0.05")
 	t.Setenv(envSlowInterval, "2h")
 	t.Setenv(envRelaxedInterval, "12h")
+	t.Setenv(envRelaxedConfirmations, "5")
 	t.Setenv(envFastInterval, "250ms")
 	t.Setenv(envPoolWorkers, "4")
 	t.Setenv(envPoolPauseThreshold, "0.81")
 	t.Setenv(envPoolResumeThreshold, "0.49")
+	t.Setenv(envPoolRunnableGuard, "1.7")
 	t.Setenv(envHTTPBind, " :9300 ")
 	t.Setenv(envCompartmentID, " "+testCompartmentOverride+" ")
 	t.Setenv(envInstanceID, " ocid1.instance.oc1..override ")
@@ -131,17 +160,17 @@ func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
 	t.Setenv(envSuppressResume, "0.51")
 	t.Setenv(envSuppressRunnableThreshold, "1.3")
 	t.Setenv(envSuppressRunnableResume, "0.7")
+}
 
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("Load returned error: %v", err)
-	}
+func assertEnvOverrides(t *testing.T, cfg Config) {
+	t.Helper()
 
 	assertFloatEqual(t, "targetStart", cfg.Controller.TargetStart, 0.30)
 	assertFloatEqual(t, "targetMin", cfg.Controller.TargetMin, 0.20)
 	assertFloatEqual(t, "stepUp", cfg.Controller.StepUp, 0.05)
 	assertDurationEqual(t, "interval", cfg.Controller.Interval, 2*time.Hour)
 	assertDurationEqual(t, "relaxedInterval", cfg.Controller.RelaxedInterval, 12*time.Hour)
+	assertIntEqual(t, "relaxedConfirmations", cfg.Controller.RelaxedConfirmations, 5)
 	assertFloatEqual(t, "suppressThreshold", cfg.Controller.SuppressThreshold, 0.88)
 	assertFloatEqual(t, "suppressResume", cfg.Controller.SuppressResume, 0.51)
 	assertFloatEqual(
@@ -153,6 +182,7 @@ func TestLoadConfigAppliesEnvOverrides(t *testing.T) {
 	assertFloatEqual(t, "suppressRunnableResume", cfg.Controller.SuppressRunnableResume, 0.7)
 	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, 0.81)
 	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, 0.49)
+	assertFloatEqual(t, "poolRunnableGuard", cfg.Pool.RunnableGuard, 1.7)
 	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, 250*time.Millisecond)
 	assertIntEqual(t, "workers", cfg.Pool.Workers, 4)
 	assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9300")

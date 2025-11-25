@@ -31,9 +31,15 @@ controller.Run(ctx) -----------------> slow loop ticker (default 1h)
                                               |
                                      update shape.Pool duty cycle target
                                               |
-                              worker pool keeps busy/sleep quanta per target
+                             worker pool keeps busy/sleep quanta per target
                                               |
                              estimator feeds host CPU load + run queue for suppression guard
+
+The fast loop now treats the instantaneous run queue as a guardrail as well as a
+suppression input: when runnable-per-CPU or utilisation samples breach their
+configured thresholds the controller drops its target to zero and the worker
+pool pauses immediately, resuming only after the guard clears or the
+suppression hysteresis cools.
 ```
 
 ### §3.1 CLI Entrypoint boundaries

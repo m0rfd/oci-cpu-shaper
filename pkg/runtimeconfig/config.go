@@ -14,17 +14,21 @@ type Config struct {
 
 // ControllerConfig describes the adaptive controller thresholds.
 type ControllerConfig struct {
-	TargetStart               float64
-	TargetMin                 float64
-	TargetMax                 float64
-	StepUp                    float64
-	StepDown                  float64
-	FallbackTarget            float64
-	GoalLow                   float64
-	GoalHigh                  float64
-	Interval                  time.Duration
-	RelaxedInterval           time.Duration
-	RelaxedThreshold          float64
+	TargetStart      float64
+	TargetMin        float64
+	TargetMax        float64
+	StepUp           float64
+	StepDown         float64
+	FallbackTarget   float64
+	GoalLow          float64
+	GoalHigh         float64
+	Interval         time.Duration
+	RelaxedInterval  time.Duration
+	RelaxedThreshold float64
+	// RelaxedConfirmations specifies the number of consecutive samples
+	// with P95 >= RelaxedThreshold required before switching to RelaxedInterval.
+	// Prevents flapping during transient spikes. Must be > 0. Default: 2.
+	RelaxedConfirmations      int
 	SuppressThreshold         float64
 	SuppressResume            float64
 	SuppressRunnableThreshold float64
@@ -42,6 +46,7 @@ type PoolConfig struct {
 	Quantum         time.Duration
 	PauseThreshold  float64
 	ResumeThreshold float64
+	RunnableGuard   float64
 }
 
 // HTTPConfig drives the metrics server listener wiring.
@@ -77,6 +82,7 @@ type controllerFileConfig struct {
 	Interval                  *time.Duration `yaml:"interval"`
 	RelaxedInterval           *time.Duration `yaml:"relaxedInterval"`
 	RelaxedThreshold          *float64       `yaml:"relaxedThreshold"`
+	RelaxedConfirmations      *int           `yaml:"relaxedConfirmations"`
 	SuppressThreshold         *float64       `yaml:"suppressThreshold"`
 	SuppressResume            *float64       `yaml:"suppressResume"`
 	SuppressRunnableThreshold *float64       `yaml:"suppressRunnableThreshold"`
@@ -92,6 +98,7 @@ type poolFileConfig struct {
 	Quantum         *time.Duration `yaml:"quantum"`
 	PauseThreshold  *float64       `yaml:"pauseThreshold"`
 	ResumeThreshold *float64       `yaml:"resumeThreshold"`
+	RunnableGuard   *float64       `yaml:"runnableGuard"`
 }
 
 type httpFileConfig struct {

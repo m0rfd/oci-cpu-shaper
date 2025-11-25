@@ -102,7 +102,10 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - `/metrics` exporter and Prometheus integration surfaced through the CLI, including emitted series, sample scrape output, and Compose/HTTP_ADDR wiring documented across §§4–9.
 
 ### Changed
-_Record coverage reductions or mitigations so reviewers can audit the CI ≥96% threshold impact (§11)._ 
+_Record coverage reductions or mitigations so reviewers can audit the CI ≥96% threshold impact (§11)._
+- Relaxed controller cadence now waits for two consecutive above-threshold P95 samples before switching to the four-hour loop.
+  New `controller.relaxedConfirmations`/`SHAPER_RELAXED_CONFIRMATIONS` knobs carry a default of `2`, update the sample configs,
+  and ship unit coverage for the hysteresis counter so the ≥96% statement floor remains intact (§§3.1, 5.2, 9, 11).
 - Refreshed `docs/05-execution-flow.txt` to document the CLI entrypoint file
   boundaries and responsibilities, and linked `docs/AGENTS.md` plus
   `cmd/shaper/AGENTS.md` back to the architecture section so wiring guidance
