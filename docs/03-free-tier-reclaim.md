@@ -10,7 +10,7 @@ Oracle reclaims idle Always Free compute instances when resource consumption sta
 | Network | `< 20%` | Applies to public network throughput and is evaluated separately from CPU. |
 | Memory | `< 20%` | Only enforced on Ampere A1 shapes. |
 
-The reclaim detector requires **all** three signals to stay below 20% for the entire window before flagging an instance as idle.[^oci-reclaim] Maintaining CPU ≥ 23% gives the controller headroom over transient dips, as outlined in the implementation plan’s goals.
+The reclaim detector requires **all** three signals to stay below 20% for the entire window before flagging an instance as idle.[^oci-reclaim] Keeping CPU utilisation in the **22–27% range** gives the controller headroom over transient dips while matching the defaults documented in the implementation plan.
 
 ## 3.2 Monitoring CPU utilisation
 

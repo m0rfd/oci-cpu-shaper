@@ -7,7 +7,7 @@
 
 ## 4.1 CPU control integration
 - Validate cgroup v2 `cpu.weight` mappings across Docker, containerd, and Quadlet installs; document any runtime-specific quirks in [`04-cgroups-v2.md`](04-cgroups-v2.md) (§4).
-- Provide configuration presets (e.g., Compose snippets) that keep the shaper responsive while sustaining ≥23% P95 CPU (§§4, 6).
+- Provide configuration presets (e.g., Compose snippets) that keep the shaper responsive while sustaining **22–27% P95 CPU** (§§4, 6).
 - Add automated checks that surface misconfigured weights or ceilings before rollout, such as health endpoints exposing current controller limits (§4).
 
 ## 5.2 Adaptive controller wiring
