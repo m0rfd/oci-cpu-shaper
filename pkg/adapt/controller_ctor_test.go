@@ -4,13 +4,18 @@
 //nolint:testpackage,godoclint // Tests exercise private helpers and provide file-level docs.
 package adapt
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestNewAdaptiveControllerInitializesRecorder(t *testing.T) {
 	t.Parallel()
 
 	recorder := newStubMetricsRecorder()
-	metrics := newFakeMetrics([]metricResult{{value: 0.2, err: nil}})
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.2, timestamp: time.Unix(1_700_000_000, 0), err: nil}},
+	)
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 	cfg.Mode = " dry-run "
@@ -33,7 +38,9 @@ func TestNewAdaptiveControllerInitializesRecorder(t *testing.T) {
 func TestNewAdaptiveControllerSetsFallbackTarget(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.3, err: nil}})
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.3, timestamp: time.Unix(1_700_000_060, 0), err: nil}},
+	)
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 	cfg.FallbackTarget = 0.42

@@ -29,7 +29,7 @@ func TestClientValidationErrors(t *testing.T) {
 
 	var nilClient *Client
 
-	_, err := nilClient.QueryP95CPU(ctx, "ocid.instance")
+	_, _, err := nilClient.QueryP95CPU(ctx, "ocid.instance")
 	if !errors.Is(err, errNilClient) {
 		t.Fatalf("expected errNilClient, got %v", err)
 	}
@@ -47,7 +47,7 @@ func TestClientValidationErrors(t *testing.T) {
 	client, err := newTestClient(newStubMetricsClient(nil, nil, nil), "ocid.compartment", time.Now)
 	requireNoError(t, err, "create client")
 
-	_, err = client.QueryP95CPU(ctx, "")
+	_, _, err = client.QueryP95CPU(ctx, "")
 	if !errors.Is(err, errMissingInstanceOCID) {
 		t.Fatalf("expected errMissingInstanceOCID, got %v", err)
 	}
@@ -72,13 +72,17 @@ func TestNewInstancePrincipalClientClockFallback(t *testing.T) {
 		t.Fatalf("expected clock fallback near now, got %v", now)
 	}
 
-	value, err := client.QueryP95CPU(
+	value, fetchedAt, err := client.QueryP95CPU(
 		context.Background(),
 		"ocid1.instance.oc1..exampleuniqueID",
 	)
 	requireNoError(t, err, "query P95 CPU")
 
-	requireEqual(t, value, float32(37.5), "latest datapoint")
+	requireEqual(t, value, float64(37.5), "latest datapoint")
+
+	if fetchedAt.IsZero() {
+		t.Fatalf("expected non-zero timestamp")
+	}
 
 	if roundTripper.host == "" {
 		t.Fatalf("expected request host to be recorded")
@@ -90,7 +94,7 @@ func TestNewInstancePrincipalClientTrimsRegionOverride(t *testing.T) {
 
 	client, roundTripper := newRecordingInstancePrincipalClient(t, "  us-phoenix-1  ")
 
-	_, err := client.QueryP95CPU(context.Background(), "ocid1.instance.oc1..exampleuniqueID")
+	_, _, err := client.QueryP95CPU(context.Background(), "ocid1.instance.oc1..exampleuniqueID")
 	requireNoError(t, err, "query P95 CPU")
 
 	if strings.Contains(roundTripper.host, " ") {

@@ -1,9 +1,12 @@
 package oci
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // MetricsClient exposes the minimum surface area of the OCI Monitoring API
 // required by the adaptive controller.
 type MetricsClient interface {
-	QueryP95CPU(ctx context.Context, resourceID string) (float64, error)
+	QueryP95CPU(ctx context.Context, resourceID string) (float64, time.Time, error)
 }

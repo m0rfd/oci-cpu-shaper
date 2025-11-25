@@ -6,7 +6,7 @@ import (
 )
 
 func (c *AdaptiveController) step(ctx context.Context) time.Duration {
-	p95, err := c.metrics.QueryP95CPU(ctx, c.cfg.ResourceID)
+	p95, fetchedAt, err := c.metrics.QueryP95CPU(ctx, c.cfg.ResourceID)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -15,7 +15,7 @@ func (c *AdaptiveController) step(ctx context.Context) time.Duration {
 		return c.handleStepErrorLocked(err)
 	}
 
-	return c.handleStepSuccessLocked(p95, time.Now())
+	return c.handleStepSuccessLocked(p95, fetchedAt)
 }
 
 func (c *AdaptiveController) handleStepErrorLocked(err error) time.Duration {

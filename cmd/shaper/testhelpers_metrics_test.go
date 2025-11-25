@@ -24,8 +24,8 @@ type stubMetricsAdapter struct{}
 
 func newStubMetricsClient() *stubMetricsAdapter { return &stubMetricsAdapter{} }
 
-func (*stubMetricsAdapter) QueryP95CPU(context.Context, string) (float64, error) {
-	return stubDefaultP95CPU, nil
+func (*stubMetricsAdapter) QueryP95CPU(context.Context, string) (float64, time.Time, error) {
+	return stubDefaultP95CPU, time.Time{}, nil
 }
 
 func expectMetricsSnippets(t *testing.T, output string, snippets []string) {

@@ -140,26 +140,28 @@ type scriptedMetricsClient struct {
 	calls  []time.Time
 }
 
-func (s *scriptedMetricsClient) QueryP95CPU(context.Context, string) (float64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *scriptedMetricsClient) QueryP95CPU(context.Context, string) (float64, time.Time, error) {
+        s.mu.Lock()
+        defer s.mu.Unlock()
 
-	s.calls = append(s.calls, time.Now())
-	if s.notify != nil {
-		select {
-		case s.notify <- struct{}{}:
-		default:
-		}
+        now := time.Now()
+
+        s.calls = append(s.calls, now)
+        if s.notify != nil {
+                select {
+                case s.notify <- struct{}{}:
+                default:
+                }
 	}
 
 	if len(s.values) == 0 {
-		return 0.25, nil
-	}
+                return 0.25, now, nil
+        }
 
-	value := s.values[0]
-	s.values = s.values[1:]
+        value := s.values[0]
+        s.values = s.values[1:]
 
-	return value, nil
+        return value, now, nil
 }
 
 func (s *scriptedMetricsClient) times() []time.Time {

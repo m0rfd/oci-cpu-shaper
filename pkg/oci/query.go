@@ -30,28 +30,28 @@ const (
 func (c *Client) QueryP95CPU(
 	ctx context.Context,
 	instanceOCID string,
-) (float32, error) {
+) (float64, time.Time, error) {
 	if c == nil {
-		return 0, errNilClient
+		return 0, time.Time{}, errNilClient
 	}
 
 	if instanceOCID == "" {
-		return 0, errMissingInstanceOCID
+		return 0, time.Time{}, errMissingInstanceOCID
 	}
 
 	start, end := computeWindow(c.now().UTC())
 	request := buildSummarizeRequest(c.compartmentID, instanceOCID, start, end)
 
-	value, found, err := c.collectLatestDatapoint(ctx, request)
+	value, fetchedAt, found, err := c.collectLatestDatapoint(ctx, request)
 	if err != nil {
-		return 0, err
+		return 0, time.Time{}, err
 	}
 
 	if !found {
-		return 0, ErrNoMetricsData
+		return 0, time.Time{}, ErrNoMetricsData
 	}
 
-	return value, nil
+	return value, fetchedAt, nil
 }
 
 func computeWindow(now time.Time) (time.Time, time.Time) {
@@ -93,17 +93,18 @@ func buildSummarizeRequest(
 func (c *Client) collectLatestDatapoint(
 	ctx context.Context,
 	request monitoring.SummarizeMetricsDataRequest,
-) (float32, bool, error) {
+) (float64, time.Time, bool, error) {
 	pageToken := (*string)(nil)
 	values := make([]float64, 0)
+	latest := time.Time{}
 
 	for {
 		response, nextPage, err := c.metrics.SummarizeMetricsData(ctx, request, pageToken)
 		if err != nil {
-			return 0, false, fmt.Errorf("summarize metrics: %w", err)
+			return 0, time.Time{}, false, fmt.Errorf("summarize metrics: %w", err)
 		}
 
-		values = appendMetricValues(values, response.Items)
+		values, latest = appendMetricValues(values, latest, response.Items)
 
 		pageToken = normalizePageToken(nextPage)
 		if pageToken == nil {
@@ -112,15 +113,19 @@ func (c *Client) collectLatestDatapoint(
 	}
 
 	if len(values) == 0 {
-		return 0, false, nil
+		return 0, time.Time{}, false, nil
 	}
 
 	percentile := percentile(values, percentileTarget)
 
-	return float32(percentile), true, nil
+	return percentile, latest, true, nil
 }
 
-func appendMetricValues(values []float64, streams []monitoring.MetricData) []float64 {
+func appendMetricValues(
+	values []float64,
+	latest time.Time,
+	streams []monitoring.MetricData,
+) ([]float64, time.Time) {
 	for _, stream := range streams {
 		for _, datapoint := range stream.AggregatedDatapoints {
 			if datapoint.Value == nil || datapoint.Timestamp == nil {
@@ -128,10 +133,15 @@ func appendMetricValues(values []float64, streams []monitoring.MetricData) []flo
 			}
 
 			values = append(values, *datapoint.Value)
+
+			timestamp := datapoint.Timestamp.Time
+			if timestamp.After(latest) {
+				latest = timestamp
+			}
 		}
 	}
 
-	return values
+	return values, latest
 }
 
 func percentile(values []float64, target float64) float64 {

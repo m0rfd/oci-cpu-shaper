@@ -7,12 +7,13 @@ package adapt
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestAdaptiveControllerRecordsLastError(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0, err: errOCIDown}})
+	metrics := newFakeMetrics([]metricResult{{value: 0, err: errOCIDown}}) //nolint:exhaustruct
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 
@@ -41,7 +42,7 @@ func TestAdaptiveControllerRecordsLastError(t *testing.T) {
 func TestAdaptiveControllerStateAccessors(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}}) //nolint:exhaustruct
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 	cfg.Mode = enforceMode
@@ -106,7 +107,7 @@ func TestClampEnforcesBounds(t *testing.T) {
 func TestApplySuppressionTargetsLockedRestoresClampedStart(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}}) //nolint:exhaustruct
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 
@@ -145,7 +146,7 @@ func TestApplySuppressionTargetsLockedRestoresClampedStart(t *testing.T) {
 func TestApplySuppressionTargetsLockedMaintainsZeroWhenSuppressed(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}}) //nolint:exhaustruct
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 
@@ -177,7 +178,7 @@ func TestRelaxedSuccessesGetter(t *testing.T) {
 	t.Parallel()
 
 	cfg := DefaultConfig()
-	metrics := newFakeMetrics([]metricResult{{value: 0.30, err: nil}})
+	metrics := newFakeMetrics([]metricResult{{value: 0.30, err: nil}}) //nolint:exhaustruct
 	shaper := newFakeShaper()
 
 	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
@@ -213,8 +214,8 @@ func TestRelaxedSuccessesResetOnDrop(t *testing.T) {
 	cfg.RelaxedThreshold = 0.26
 
 	metrics := newFakeMetrics([]metricResult{
-		{value: 0.30, err: nil}, // High
-		{value: 0.24, err: nil}, // Drop below threshold
+		{value: 0.30, timestamp: time.Unix(1_700_000_480, 0), err: nil}, // High
+		{value: 0.24, timestamp: time.Unix(1_700_000_540, 0), err: nil}, // Drop below threshold
 	})
 	shaper := newFakeShaper()
 

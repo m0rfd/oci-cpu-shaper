@@ -28,9 +28,13 @@ func TestStaticMetricsClientQueryP95CPU(t *testing.T) {
 
 			client := oci.NewStaticMetricsClient(testCase.value)
 
-			got, err := client.QueryP95CPU(context.Background(), "ocid1.test")
+			got, fetchedAt, err := client.QueryP95CPU(context.Background(), "ocid1.test")
 			if err != nil {
 				t.Fatalf("QueryP95CPU returned error: %v", err)
+			}
+
+			if fetchedAt.IsZero() {
+				t.Fatalf("expected non-zero timestamp for static client")
 			}
 
 			if testCase.wantEquals {

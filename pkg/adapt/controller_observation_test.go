@@ -9,7 +9,7 @@ import "testing"
 func TestHandleObservationClearsEstimatorError(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}}) //nolint:exhaustruct
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 	cfg.SuppressThreshold = 0
@@ -39,7 +39,7 @@ func TestHandleObservationClearsEstimatorError(t *testing.T) {
 func TestHandleObservationGuardSuppression(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}}) //nolint:exhaustruct
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 

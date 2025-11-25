@@ -176,6 +176,7 @@ func TestExporterObserveOCIP95TracksTimestamp(t *testing.T) {
 	exporter := metrics.NewExporter()
 	timestamp := time.Unix(1_700_000_111, 0)
 	exporter.ObserveOCIP95(0.45, timestamp)
+	exporter.ObserveOCIP95(0.55, time.Time{})
 
 	data, err := exporter.Render()
 	if err != nil {
@@ -187,6 +188,10 @@ func TestExporterObserveOCIP95TracksTimestamp(t *testing.T) {
 	want := fmt.Sprintf("oci_last_success_epoch %d", timestamp.Unix())
 	if !strings.Contains(body, want) {
 		t.Fatalf("expected %q in metrics output, got %s", want, body)
+	}
+
+	if !strings.Contains(body, "oci_p95 0.550000") {
+		t.Fatalf("expected latest P95 value in metrics output, got %s", body)
 	}
 }
 

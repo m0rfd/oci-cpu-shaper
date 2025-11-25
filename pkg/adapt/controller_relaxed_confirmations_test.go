@@ -89,7 +89,11 @@ func runConfirmationIncrementTest(
 
 	results := make([]metricResult, len(p95Samples))
 	for index, p95 := range p95Samples {
-		results[index] = metricResult{value: p95, err: nil}
+		results[index] = metricResult{
+			value:     p95,
+			timestamp: time.Unix(1_700_000_000+int64(index), 0),
+			err:       nil,
+		}
 	}
 
 	runIntervalRecordingScenario(
@@ -172,7 +176,11 @@ func TestRelaxedConfirmationsCounterReset(t *testing.T) {
 
 			results := make([]metricResult, len(testCase.p95Samples))
 			for index, p95 := range testCase.p95Samples {
-				results[index] = metricResult{value: p95, err: nil}
+				results[index] = metricResult{
+					value:     p95,
+					timestamp: time.Unix(1_700_000_100+int64(index), 0),
+					err:       nil,
+				}
 			}
 
 			runIntervalRecordingScenario(
@@ -187,6 +195,8 @@ func TestRelaxedConfirmationsCounterReset(t *testing.T) {
 }
 
 // TestRelaxedConfirmationsResetOnError verifies that errors reset the counter.
+//
+//nolint:funlen // Covers error/reset and relaxed interval assertions in a single flow.
 func TestRelaxedConfirmationsResetOnError(t *testing.T) {
 	t.Parallel()
 
@@ -197,10 +207,18 @@ func TestRelaxedConfirmationsResetOnError(t *testing.T) {
 	cfg.RelaxedConfirmations = 2
 
 	results := []metricResult{
-		{value: 0.30, err: nil},     // 1st high
-		{value: 0, err: errOCIDown}, // Error - should reset counter
-		{value: 0.30, err: nil},     // 1st high again after error
-		{value: 0.28, err: nil},     // 2nd consecutive high
+		{value: 0.30, timestamp: time.Unix(1_700_000_200, 0), err: nil}, // 1st high
+		{
+			value:     0,
+			timestamp: time.Unix(1_700_000_260, 0),
+			err:       errOCIDown,
+		}, // Error - should reset counter
+		{
+			value:     0.30,
+			timestamp: time.Unix(1_700_000_320, 0),
+			err:       nil,
+		}, // 1st high again after error
+		{value: 0.28, timestamp: time.Unix(1_700_000_380, 0), err: nil}, // 2nd consecutive high
 	}
 
 	expectedIntervals := []time.Duration{
@@ -278,7 +296,11 @@ func TestRelaxedConfirmationsStaysInRelaxedMode(t *testing.T) {
 
 	results := make([]metricResult, len(p95Samples))
 	for index, p95 := range p95Samples {
-		results[index] = metricResult{value: p95, err: nil}
+		results[index] = metricResult{
+			value:     p95,
+			timestamp: time.Unix(1_700_000_500+int64(index), 0),
+			err:       nil,
+		}
 	}
 
 	runIntervalRecordingScenario(

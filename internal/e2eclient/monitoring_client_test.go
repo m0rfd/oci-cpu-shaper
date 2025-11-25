@@ -49,24 +49,32 @@ func TestMonitoringClientQueryP95CPUScenarios(t *testing.T) {
 		t.Fatalf("unexpected client error: %v", err)
 	}
 
-	_, err = client.QueryP95CPU(context.Background(), "empty")
+	_, fetchedAt, err := client.QueryP95CPU(context.Background(), "empty")
 	if !errors.Is(err, oci.ErrNoMetricsData) {
 		t.Fatalf("expected ErrNoMetricsData, got %v", err)
 	}
 
-	_, err = client.QueryP95CPU(context.Background(), "error")
+	if !fetchedAt.IsZero() {
+		t.Fatalf("expected zero timestamp on empty response, got %v", fetchedAt)
+	}
+
+	_, _, err = client.QueryP95CPU(context.Background(), "error")
 	if err == nil || !strings.Contains(err.Error(), "backend unavailable") {
 		t.Fatalf("expected backend error, got %v", err)
 	}
 
-	_, err = client.QueryP95CPU(context.Background(), "invalid")
+	_, _, err = client.QueryP95CPU(context.Background(), "invalid")
 	if err == nil || !strings.Contains(err.Error(), "decode payload") {
 		t.Fatalf("expected decode error, got %v", err)
 	}
 
-	value, err := client.QueryP95CPU(context.Background(), "ok")
+	value, fetchedAt, err := client.QueryP95CPU(context.Background(), "ok")
 	if err != nil {
 		t.Fatalf("unexpected success error: %v", err)
+	}
+
+	if fetchedAt.IsZero() {
+		t.Fatalf("expected non-zero timestamp on success")
 	}
 
 	if value != 0.42 {
@@ -79,7 +87,7 @@ func TestMonitoringClientRejectsUninitialisedHTTPClient(t *testing.T) {
 
 	client := &MonitoringClient{endpoint: "http://127.0.0.1", http: nil}
 
-	_, err := client.QueryP95CPU(context.Background(), "resource")
+	_, _, err := client.QueryP95CPU(context.Background(), "resource")
 	if !errors.Is(err, errMonitoringHTTPNotInitialised) {
 		t.Fatalf("expected errMonitoringHTTPNotInitialised, got %v", err)
 	}
