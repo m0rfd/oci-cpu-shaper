@@ -246,6 +246,7 @@ jobs:
 
       - name: Download integration coverage (if available)
         id: download-integration-coverage
+        if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
         continue-on-error: true
         uses: actions/download-artifact@v6
         with:
