@@ -25,8 +25,7 @@ runs:
       uses: actions/setup-go@v6
       with:
         go-version-file: ${{ inputs.go-version-file }}
-        cache: true
-        cache-dependency-path: ${{ inputs.cache-dependency-path }}
+        cache: false
 
     - name: Cache Go build and module downloads
       uses: actions/cache@v4
