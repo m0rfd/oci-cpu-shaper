@@ -3,11 +3,11 @@ name: Docker CI & Release
 on:
   workflow_dispatch:
   pull_request:
-    branches: [ main ]
+    branches: [main]
   merge_group:
   push:
     tags:
-      - 'v*'     # release on v* tags (assumed from main)
+      - "v*" # release on v* tags (assumed from main)
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -40,6 +40,14 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
 
+      - name: Cache golangci-lint binary
+        uses: actions/cache@v4
+        with:
+          path: bin/golangci-lint
+          key: ${{ runner.os }}-golangci-lint-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            ${{ runner.os }}-golangci-lint-
+
       - name: Cache Python tools
         uses: actions/cache@v4
         with:
@@ -61,6 +69,8 @@ jobs:
 
       - name: Run lint
         run: make lint
+        env:
+          GOBIN: ${{ github.workspace }}/bin
 
       - name: Run actionlint for release workflow
         run: make actionlint ACTIONLINT_PATHS=".github/workflows/release.yml"
@@ -142,20 +152,20 @@ jobs:
         continue-on-error: true
         with:
           image-ref: pr-local/${{ github.repository }}:${{ github.sha }}
-          format: 'sarif'
-          output: 'trivy-results-pr.sarif'
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
+          format: "sarif"
+          output: "trivy-results-pr.sarif"
+          vuln-type: "os,library"
+          severity: "CRITICAL,HIGH"
           ignore-unfixed: true
-          exit-code: '1'
-      
+          exit-code: "1"
+
       - name: Upload Trivy SARIF (PR)
         if: always()
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results-pr.sarif
           category: trivy-pr-rootless
-      
+
       - name: Fail PR if Trivy found CRITICAL/HIGH vulns
         if: steps.trivy_scan_pr.outcome == 'failure'
         run: |
@@ -173,8 +183,8 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: read
-      packages: write          # GHCR push (release job)
-      id-token: write          # Cosign keyless (release job)
+      packages: write # GHCR push (release job)
+      id-token: write # Cosign keyless (release job)
 
     steps:
       - name: Checkout
@@ -336,12 +346,12 @@ jobs:
         continue-on-error: true
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
-          format: 'sarif'
-          output: 'trivy-results-rootless.sarif'
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
+          format: "sarif"
+          output: "trivy-results-rootless.sarif"
+          vuln-type: "os,library"
+          severity: "CRITICAL,HIGH"
           ignore-unfixed: true
-          exit-code: '1'   # non-zero when CRITICAL/HIGH found
+          exit-code: "1" # non-zero when CRITICAL/HIGH found
 
       - name: Upload Trivy SARIF to GitHub Security tab
         if: always()
@@ -362,8 +372,8 @@ jobs:
         uses: aquasecurity/trivy-action@0.33.1
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
-          format: 'spdx-json'
-          output: 'sbom-rootless.spdx.json'
+          format: "spdx-json"
+          output: "sbom-rootless.spdx.json"
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v5

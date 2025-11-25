@@ -17,7 +17,7 @@ on:
     branches:
       - main
     tags:
-      - 'v*'
+      - "v*"
   pull_request:
   merge_group:
 
@@ -123,12 +123,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
+      - name: Cache golangci-lint binary
+        uses: actions/cache@v4
+        with:
+          path: bin/golangci-lint
+          key: ${{ runner.os }}-golangci-lint-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            ${{ runner.os }}-golangci-lint-
+
       - name: Run golangci-lint
         run: make lint
+        env:
+          GOBIN: ${{ github.workspace }}/bin
 
       - name: Check Makefile formatting
         run: make lint-makefile
-
 
       - name: Ensure golangci-lint did not leave uncommitted fixes
         run: |

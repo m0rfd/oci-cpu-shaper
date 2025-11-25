@@ -2,6 +2,9 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 MAKEFLAGS += --warn-undefined-variables --no-builtin-rules
 
+GO_MACHINE_ARCH := $(shell uname -m)
+GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
+
 GO ?= go
 GO_REQUIRED_VERSION ?= 1.25.4
 MIN_COVERAGE ?= 96.0
@@ -27,6 +30,13 @@ E2E_PKGS := $(filter-out $(COVERAGE_EXCLUDES),$(E2E_PKGS_RAW))
 COVERAGE_TAG_ARGS := $(if $(strip $(COVERAGE_TAGS)),-tags "$(strip $(COVERAGE_TAGS))",)
 
 GOLANGCI_LINT_VERSION ?= v2.6.1
+GOLANGCI_LINT_OS ?= linux
+GOLANGCI_LINT_VERSION_STRIPPED := $(patsubst v%,%,$(GOLANGCI_LINT_VERSION))
+GOLANGCI_LINT_ARCH := $(GO_DL_ARCH)
+GOLANGCI_LINT_TARBALL := golangci-lint-$(GOLANGCI_LINT_VERSION_STRIPPED)-$(GOLANGCI_LINT_OS)-$(GOLANGCI_LINT_ARCH).tar.gz
+GOLANGCI_LINT_DOWNLOAD_URL := https://github.com/golangci/golangci-lint/releases/download/$(GOLANGCI_LINT_VERSION)/$(GOLANGCI_LINT_TARBALL)
+GOLANGCI_LINT_SHA256_linux_amd64 := c22e188e46aff9b140588abe6828ba271b600ae82b2d6a4f452196a639c17ec0
+GOLANGCI_LINT_SHA256_linux_arm64 := 1c22b899f2dd84f9638e0e0352a319a2867b0bb082c5323ad50d8713b65bb793
 GOVULNCHECK_VERSION ?= v1.1.4
 ACTIONLINT_VERSION ?= v1.7.9
 MBAKE_VERSION ?= 1.4.3
@@ -61,8 +71,6 @@ MBAKE_FORMAT_PATHS ?= Makefile
 
 .PHONY: actionlint agents bench build check clean coverage e2e ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake setup test tools verify-go-version
 
-GO_MACHINE_ARCH := $(shell uname -m)
-GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
 HELP_TARGETS := lint lint-makefile test coverage build check govulncheck integration e2e agents actionlint help clean
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-mbake
@@ -75,10 +83,27 @@ ensure-golangci-lint:
 	if [ -x "$$BIN" ]; then \
 		CURRENT_VERSION="v$$($$BIN version --short 2>/dev/null || true)"; \
 	fi; \
-	if [ "$$CURRENT_VERSION" != "$(GOLANGCI_LINT_VERSION)" ]; then \
-		echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)..."; \
-		curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(GO_BIN_PATH) $(GOLANGCI_LINT_VERSION) > /dev/null 2>&1; \
-	fi
+	if [ "$$CURRENT_VERSION" = "$(GOLANGCI_LINT_VERSION)" ]; then \
+		echo "golangci-lint $$CURRENT_VERSION already installed at $$BIN"; \
+		exit 0; \
+	fi; \
+	if [ "$(GOLANGCI_LINT_OS)" != "linux" ]; then \
+		echo "Unsupported golangci-lint OS: $(GOLANGCI_LINT_OS)"; \
+		exit 1; \
+	fi; \
+	case "$(GOLANGCI_LINT_ARCH)" in \
+		amd64) CHECKSUM="$(GOLANGCI_LINT_SHA256_linux_amd64)" ;; \
+		arm64) CHECKSUM="$(GOLANGCI_LINT_SHA256_linux_arm64)" ;; \
+		*) echo "Unsupported golangci-lint arch: $(GOLANGCI_LINT_ARCH)"; exit 1 ;; \
+	esac; \
+	TMP_DIR="$$(mktemp -d)"; \
+	trap "rm -rf \"$$TMP_DIR\"" EXIT; \
+	echo "Downloading golangci-lint $(GOLANGCI_LINT_VERSION) from $(GOLANGCI_LINT_DOWNLOAD_URL)"; \
+	curl -fsSL "$(GOLANGCI_LINT_DOWNLOAD_URL)" -o "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)"; \
+	printf "%s  %s\n" "$$CHECKSUM" "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)" | sha256sum -c -; \
+	tar -xzf "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)" -C "$$TMP_DIR"; \
+	install -m 0755 "$$TMP_DIR/golangci-lint-$(GOLANGCI_LINT_VERSION_STRIPPED)-$(GOLANGCI_LINT_OS)-$(GOLANGCI_LINT_ARCH)/golangci-lint" "$(GOLANGCI_LINT_BIN)"; \
+	echo "Installed golangci-lint $(GOLANGCI_LINT_VERSION) to $(GOLANGCI_LINT_BIN)"
 
 lint: verify-go-version ensure-golangci-lint
 	@mkdir -p "$(GOLANGCI_LINT_CACHE_DIR)"
