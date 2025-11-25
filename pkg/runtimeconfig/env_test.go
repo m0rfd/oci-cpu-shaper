@@ -147,3 +147,58 @@ func TestEnvBoolEvaluation(t *testing.T) {
 		t.Fatal("expected invalid bool to fall back to false")
 	}
 }
+
+//nolint:paralleltest // uses t.Setenv which cannot run in parallel.
+func TestApplyEnvOverridesInvalidNumbersFallbackToDefaults(t *testing.T) {
+	assertEnvOverridesKeepDefaults(t, map[string]string{
+		envTargetStart:               "   ",
+		envTargetMin:                 "invalid-min",
+		envTargetMax:                 "oops",
+		envStepUp:                    " ",
+		envStepDown:                  "invalid",
+		envFallbackTarget:            "not-a-number",
+		envGoalLow:                   "",
+		envGoalHigh:                  "  ",
+		envRelaxedThreshold:          "bad",
+		envSuppressThreshold:         "not-a-number",
+		envSuppressResume:            "none",
+		envSuppressRunnableThreshold: "oops",
+		envSuppressRunnableResume:    "??",
+		envPoolPauseThreshold:        "oops",
+		envPoolResumeThreshold:       "resume-not-number",
+		// OCI offline should ignore unknown values and keep the fallback.
+		envOCIOffline: "sometimes",
+	})
+}
+
+//nolint:paralleltest // uses t.Setenv which cannot run in parallel.
+func TestApplyEnvOverridesRejectNonPositiveWorkerCount(t *testing.T) {
+	assertEnvOverridesKeepDefaults(t, map[string]string{envPoolWorkers: "-4"})
+	assertEnvOverridesKeepDefaults(t, map[string]string{envPoolWorkers: "0"})
+}
+
+//nolint:paralleltest // uses t.Setenv which cannot run in parallel.
+func TestApplyEnvOverridesRejectMalformedDurations(t *testing.T) {
+	assertEnvOverridesKeepDefaults(t, map[string]string{
+		envSlowInterval:    "   ",
+		envRelaxedInterval: "1xs",
+		envFastInterval:    "duration?",
+	})
+}
+
+func assertEnvOverridesKeepDefaults(t *testing.T, overrides map[string]string) {
+	t.Helper()
+
+	defaultCfg := Default()
+	cfg := defaultCfg
+
+	for key, value := range overrides {
+		t.Setenv(key, value)
+	}
+
+	applyEnvOverrides(&cfg)
+
+	if cfg != defaultCfg {
+		t.Fatalf("expected config to retain defaults with overrides %#v, got %#v", overrides, cfg)
+	}
+}
