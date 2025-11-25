@@ -30,11 +30,12 @@ func TestLogRuntimeConfig(t *testing.T) {
 		},
 		Estimator: runtimeconfig.EstimatorConfig{Interval: 2 * time.Second},
 		Pool: runtimeconfig.PoolConfig{
-			Workers:         4,
-			Quantum:         50 * time.Millisecond,
-			PauseThreshold:  0.85,
-			ResumeThreshold: 0.70,
-			RunnableGuard:   1.3,
+			Workers:           4,
+			AutoSizeFromShape: false,
+			Quantum:           50 * time.Millisecond,
+			PauseThreshold:    0.85,
+			ResumeThreshold:   0.70,
+			RunnableGuard:     1.3,
 		},
 		HTTP: runtimeconfig.HTTPConfig{Bind: "127.0.0.1:9000"},
 		OCI:  runtimeconfig.OCIConfig{Offline: true}, //nolint:exhaustruct
@@ -200,11 +201,12 @@ func TestLogControllerInitialization(t *testing.T) {
 
 	cfg := runtimeconfig.Config{ //nolint:exhaustruct
 		Pool: runtimeconfig.PoolConfig{
-			Workers:         2,
-			Quantum:         25 * time.Millisecond,
-			PauseThreshold:  0.85,
-			ResumeThreshold: 0.70,
-			RunnableGuard:   1.1,
+			Workers:           2,
+			AutoSizeFromShape: false,
+			Quantum:           25 * time.Millisecond,
+			PauseThreshold:    0.85,
+			ResumeThreshold:   0.70,
+			RunnableGuard:     1.1,
 		},
 		Estimator: runtimeconfig.EstimatorConfig{
 			Interval: 750 * time.Millisecond,

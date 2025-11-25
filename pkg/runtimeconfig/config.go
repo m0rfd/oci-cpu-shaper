@@ -42,11 +42,12 @@ type EstimatorConfig struct {
 
 // PoolConfig captures the worker pool sizing knobs.
 type PoolConfig struct {
-	Workers         int
-	Quantum         time.Duration
-	PauseThreshold  float64
-	ResumeThreshold float64
-	RunnableGuard   float64
+	Workers           int
+	AutoSizeFromShape bool
+	Quantum           time.Duration
+	PauseThreshold    float64
+	ResumeThreshold   float64
+	RunnableGuard     float64
 }
 
 // HTTPConfig drives the metrics server listener wiring.
@@ -94,11 +95,12 @@ type estimatorFileConfig struct {
 }
 
 type poolFileConfig struct {
-	Workers         *int           `yaml:"workers"`
-	Quantum         *time.Duration `yaml:"quantum"`
-	PauseThreshold  *float64       `yaml:"pauseThreshold"`
-	ResumeThreshold *float64       `yaml:"resumeThreshold"`
-	RunnableGuard   *float64       `yaml:"runnableGuard"`
+	Workers           *int           `yaml:"workers"`
+	AutoSizeFromShape *bool          `yaml:"autoSizeFromShape"`
+	Quantum           *time.Duration `yaml:"quantum"`
+	PauseThreshold    *float64       `yaml:"pauseThreshold"`
+	ResumeThreshold   *float64       `yaml:"resumeThreshold"`
+	RunnableGuard     *float64       `yaml:"runnableGuard"`
 }
 
 type httpFileConfig struct {

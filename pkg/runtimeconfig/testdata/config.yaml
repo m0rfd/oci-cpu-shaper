@@ -19,6 +19,7 @@ estimator:
   interval: 1s
 pool:
   workers: 2
+  autoSizeFromShape: true
   quantum: 2ms
   pauseThreshold: 0.88
   resumeThreshold: 0.44
