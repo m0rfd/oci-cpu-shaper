@@ -31,6 +31,9 @@ type Pool struct {
 	paused              atomic.Uint32
 }
 
+//nolint:gochecknoglobals // overridable in tests to observe sched_idle warnings
+var defaultWorkerStartErrorHandler = func(error) {}
+
 // DefaultQuantum bounds the busy loop to a responsive interval.
 const DefaultQuantum = time.Millisecond
 
@@ -73,6 +76,10 @@ func NewPool(workers int, quantum time.Duration) (*Pool, error) {
 	poolInstance.SetPauseThresholds(0, 0)
 
 	err := trySchedIdle()
+	if err != nil {
+		poolInstance.workerStartErrorHandler(err)
+	}
+
 	configureWorkerStartHook(poolInstance, err)
 
 	if err != nil {
@@ -124,7 +131,7 @@ func (p *Pool) Target() float64 {
 // A nil handler resets the hook to a no-op.
 func (p *Pool) SetWorkerStartErrorHandler(handler func(error)) {
 	if handler == nil {
-		handler = func(error) {}
+		handler = defaultWorkerStartErrorHandler
 	}
 
 	p.workerStartErrorHandler = handler
