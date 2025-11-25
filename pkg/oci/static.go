@@ -7,6 +7,7 @@ import "context"
 // Tests and CLI wiring still depend on the interface return type.
 //
 
+//nolint:ireturn // interface return keeps static client interchangeable with live clients.
 func NewStaticMetricsClient(
 	value float64,
 ) MetricsClient {

@@ -38,8 +38,6 @@ func (c *AdaptiveController) handleObservation(observation est.Observation) {
 		c.shaper.ObserveHostLoad(utilisation)
 	}
 
-	// Optimization: if suppression is disabled, we don't need to track
-	// internal state related to suppression transitions.
 	if c.cfg.SuppressThreshold <= 0 && c.cfg.SuppressRunnableThreshold <= 0 {
 		return
 	}
