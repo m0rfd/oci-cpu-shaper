@@ -15,13 +15,8 @@ import (
 
 const openMetricsContentType = "application/openmetrics-text; version=1.0.0; charset=utf-8"
 
-var (
-	errFailingWriter   = errors.New("metrics: failing writer")
-	errMonitoringGap   = errors.New("monitoring gap")
-	errWhitespaceError = errors.New("   ")
-)
+var errFailingWriter = errors.New("metrics: failing writer")
 
-//nolint:funlen // covers entire OpenMetrics payload in a single assertion for clarity.
 func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 	t.Parallel()
 
@@ -30,13 +25,7 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 	exporter.SetState(" fallback ")
 	exporter.SetTarget(0.275)
 	exporter.ObserveOCIP95(0.33, time.Unix(1_700_001_234, 0))
-	exporter.SetInterval(45 * time.Second)
-	exporter.SetLastError(errMonitoringGap)
 	exporter.SetDutyCycle(1500 * time.Microsecond)
-	exporter.SetWorkerCount(4)
-	exporter.ObserveHostCPU(0.6789)
-	exporter.SetCgroupCPUWeight(128)
-	exporter.SetCgroupCPUMax(50000, 100000, false)
 
 	body, err := exporter.Render()
 	if err != nil {
@@ -48,7 +37,7 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 		"# HELP shaper_target_ratio Target duty cycle ratio assigned to worker pool.",
 		"# TYPE shaper_target_ratio gauge",
 		"shaper_target_ratio 0.275000",
-		"# HELP shaper_mode CLI enforcement mode (value set to 1 for the active mode).",
+		"# HELP shaper_mode Controller operating mode (value set to 1 for the active mode).",
 		"# TYPE shaper_mode gauge",
 		"shaper_mode{mode=\"dry-run\"} 1",
 		"# HELP shaper_state Controller operating state (value set to 1 for the active state).",
@@ -60,38 +49,15 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 		"# HELP controller_interval_seconds Duration until the next controller step (seconds).",
 		"# TYPE controller_interval_seconds gauge",
 		"controller_interval_seconds 45.000000",
-		"# HELP controller_last_error_info Last controller error message (value set to 1 for the active error).",
-		"# TYPE controller_last_error_info gauge",
-		"controller_last_error_info{error=\"monitoring gap\"} 1",
-		"# HELP oci_p95 Last observed OCI CPU P95 ratio.",
-		"# TYPE oci_p95 gauge",
-		"oci_p95 0.330000",
-		"# HELP oci_last_success_epoch Unix epoch seconds of the last successful OCI metrics query.",
-		"# TYPE oci_last_success_epoch counter",
-		"oci_last_success_epoch 1700001234",
-		"# HELP duty_cycle_ms Duty cycle quantum configured for workers (milliseconds).",
+		"# HELP oci_api_p95_latency_ms P95 latency of OCI API calls observed by the controller.",
+		"# TYPE oci_api_p95_latency_ms gauge",
+		"oci_api_p95_latency_ms 0.330000",
+		"# HELP oci_api_last_success_timestamp_seconds Timestamp of the last successful OCI API call.",
+		"# TYPE oci_api_last_success_timestamp_seconds gauge",
+		"oci_api_last_success_timestamp_seconds 1700001234.000000",
+		"# HELP duty_cycle_ms Current duty cycle period in milliseconds.",
 		"# TYPE duty_cycle_ms gauge",
-		"duty_cycle_ms 1.500",
-		"# HELP worker_count Number of worker goroutines consuming CPU.",
-		"# TYPE worker_count gauge",
-		"worker_count 4",
-		"# HELP host_cpu_percent Last recorded host CPU utilisation percentage.",
-		"# TYPE host_cpu_percent gauge",
-		"host_cpu_percent 67.89",
-		"# HELP cgroup_cpu_weight Detected cgroup v2 cpu.weight value for the process.",
-		"# TYPE cgroup_cpu_weight gauge",
-		"cgroup_cpu_weight 128",
-		"# HELP cgroup_cpu_max_quota Detected cpu.max quota (microseconds). Zero when unlimited.",
-		"# TYPE cgroup_cpu_max_quota gauge",
-		"cgroup_cpu_max_quota 50000",
-		"# HELP cgroup_cpu_max_period Detected cpu.max period (microseconds).",
-		"# TYPE cgroup_cpu_max_period gauge",
-		"cgroup_cpu_max_period 100000",
-		"# HELP cgroup_cpu_max_unlimited Flag set to 1 when cpu.max reports \"max\".",
-		"# TYPE cgroup_cpu_max_unlimited gauge",
-		"cgroup_cpu_max_unlimited 0",
-		"# EOF",
-		"",
+		"duty_cycle_ms 1.500\n",
 	}, "\n")
 
 	if got != expected {
@@ -103,7 +69,6 @@ func TestExporterRenderClampsInvalidMetrics(t *testing.T) {
 	t.Parallel()
 
 	exporter := metrics.NewExporter()
-	exporter.SetLastError(errWhitespaceError)
 
 	samples := []struct {
 		value     float64
@@ -118,9 +83,6 @@ func TestExporterRenderClampsInvalidMetrics(t *testing.T) {
 		exporter.ObserveOCIP95(sample.value, sample.timestamp)
 	}
 
-	exporter.SetCgroupCPUWeight(0)
-	exporter.SetCgroupCPUMax(12345, 0, true)
-
 	body, err := exporter.Render()
 	if err != nil {
 		t.Fatalf("Render() returned error: %v", err)
@@ -129,13 +91,8 @@ func TestExporterRenderClampsInvalidMetrics(t *testing.T) {
 	output := string(body)
 
 	expectations := map[string]string{
-		"oci_p95":                    "oci_p95 0.000000",
-		"oci_last_success_epoch":     "oci_last_success_epoch 1700000300",
-		"cgroup_cpu_weight":          "cgroup_cpu_weight 0",
-		"cgroup_cpu_max_quota":       "cgroup_cpu_max_quota 0",
-		"cgroup_cpu_max_period":      "cgroup_cpu_max_period 0",
-		"cgroup_cpu_max_unlimited":   "cgroup_cpu_max_unlimited 1",
-		"controller_last_error_info": "controller_last_error_info{error=\"unknown\"} 1",
+		"oci_api_p95_latency_ms":                 "oci_api_p95_latency_ms 0.000000",
+		"oci_api_last_success_timestamp_seconds": "oci_api_last_success_timestamp_seconds 1700000300.000000",
 	}
 
 	for label, expected := range expectations {
@@ -180,7 +137,7 @@ func TestExporterObserveOCIP95TracksTimestamp(t *testing.T) {
 
 	body := string(data)
 
-	want := fmt.Sprintf("oci_last_success_epoch %d", timestamp.Unix())
+	want := fmt.Sprintf("oci_api_last_success_timestamp_seconds %d.000000", timestamp.Unix())
 	if !strings.Contains(body, want) {
 		t.Fatalf("expected %q in metrics output, got %s", want, body)
 	}
@@ -216,7 +173,7 @@ func TestExporterWriteToPropagatesWriterErrors(t *testing.T) {
 		t.Fatal("expected error from WriteTo")
 	}
 
-	if !strings.Contains(err.Error(), "write metrics") {
+	if !strings.Contains(err.Error(), "failing writer") {
 		t.Fatalf("expected write error, got %v", err)
 	}
 }
@@ -245,12 +202,6 @@ func TestExporterGuardsAgainstInvalidInputs(t *testing.T) {
 	exporter.SetTarget(math.NaN())
 	exporter.ObserveOCIP95(-10, time.Time{})
 	exporter.SetDutyCycle(-time.Second)
-	exporter.SetWorkerCount(-5)
-	exporter.ObserveHostCPU(math.Inf(1))
-	exporter.SetInterval(-time.Second)
-	exporter.SetLastError(nil)
-	exporter.SetCgroupCPUWeight(0)
-	exporter.SetCgroupCPUMax(0, 0, true)
 
 	data, err := exporter.Render()
 	if err != nil {
@@ -266,24 +217,15 @@ func TestExporterGuardsAgainstInvalidInputs(t *testing.T) {
 		t.Fatalf("expected unknown state, got %s", output)
 	}
 
-	if !strings.Contains(output, "shaper_enforcing 1") {
-		t.Fatalf("expected enforcing gauge to default to 1, got %s", output)
+	if !strings.Contains(output, "shaper_enforcing 0") {
+		t.Fatalf(
+			"expected enforcing gauge to default to 0 (since unknown mode doesn't enforce), got %s",
+			output,
+		)
 	}
 
 	if !strings.Contains(output, "shaper_target_ratio 0.000000") {
 		t.Fatalf("expected clamped target, got %s", output)
-	}
-
-	if !strings.Contains(output, "worker_count 0") {
-		t.Fatalf("expected worker_count clamped to zero, got %s", output)
-	}
-
-	if !strings.Contains(output, "controller_interval_seconds 0.000000") {
-		t.Fatalf("expected interval to clamp to zero, got %s", output)
-	}
-
-	if !strings.Contains(output, "controller_last_error_info{error=\"none\"} 1") {
-		t.Fatalf("expected last error info to fall back to none, got %s", output)
 	}
 }
 

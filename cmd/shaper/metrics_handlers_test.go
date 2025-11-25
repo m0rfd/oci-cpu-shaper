@@ -15,12 +15,9 @@ import (
 )
 
 type fakeMetricsExporter struct {
-	workerCount int
-	dutyCycle   time.Duration
-	serveCount  int
+	dutyCycle  time.Duration
+	serveCount int
 }
-
-func (f *fakeMetricsExporter) SetWorkerCount(count int) { f.workerCount = count }
 
 func (f *fakeMetricsExporter) SetDutyCycle(duration time.Duration) { f.dutyCycle = duration }
 
@@ -65,10 +62,6 @@ func TestConfigureMetricsIntegratesWithWorkerPoolAndLogsWhenMissing(t *testing.T
 		handler := configureMetrics(zap.NewNop(), exporter, pool, nil, nil)
 		if handler == nil {
 			t.Fatal("expected handler to be configured")
-		}
-
-		if exporter.workerCount != pool.workers {
-			t.Fatalf("expected worker count %d, got %d", pool.workers, exporter.workerCount)
 		}
 
 		if exporter.dutyCycle != pool.quantum {
@@ -125,10 +118,6 @@ func TestConfigureMetricsSetsWorkerMetrics(t *testing.T) {
 		t.Fatalf("render metrics: %v", err)
 	}
 
-	if !bytes.Contains(snapshot, []byte("worker_count 3")) {
-		t.Fatalf("expected worker count metric, got %s", snapshot)
-	}
-
 	if !bytes.Contains(snapshot, []byte("duty_cycle_ms 150.000")) {
 		t.Fatalf("expected duty cycle metric, got %s", snapshot)
 	}
@@ -161,8 +150,8 @@ func TestConfigureMetricsRegistersHandlers(t *testing.T) {
 	}
 
 	metricsBody := metricsRecorder.Body.Bytes()
-	if !bytes.Contains(metricsBody, []byte("worker_count 5")) {
-		t.Fatalf("expected metrics to include worker count, got %s", metricsBody)
+	if !bytes.Contains(metricsBody, []byte("duty_cycle_ms 200.000")) {
+		t.Fatalf("expected metrics to include duty cycle, got %s", metricsBody)
 	}
 
 	healthRecorder := serveGETRequest(t, handler, "/healthz")
@@ -309,9 +298,8 @@ func TestConfigureMetricsServesPrometheusText(t *testing.T) {
 		`shaper_mode{mode="enforce"} 1`,
 		`shaper_state{state="normal"} 1`,
 		"shaper_enforcing 1",
-		"worker_count 3",
 		"duty_cycle_ms 2.000",
-		"oci_last_success_epoch 1700000333",
+		"oci_api_last_success_timestamp_seconds 1700000333",
 	} {
 		if !strings.Contains(body, snippet) {
 			t.Fatalf("expected metrics output to contain %q, got:\n%s", snippet, body)

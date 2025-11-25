@@ -14,7 +14,6 @@ import (
 type metricsExporter interface {
 	http.Handler
 
-	SetWorkerCount(count int)
 	SetDutyCycle(duration time.Duration)
 }
 
@@ -47,15 +46,11 @@ func configureMetrics(
 	}
 
 	if pool != nil {
-		workers := pool.Workers()
-		exporter.SetWorkerCount(workers)
-
 		quantum := pool.Quantum()
 		exporter.SetDutyCycle(quantum)
 
 		logger.Debug(
 			"registered worker pool metrics",
-			zap.Int("workerCount", workers),
 			zap.Duration("dutyCycle", quantum),
 		)
 	} else {

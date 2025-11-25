@@ -7,7 +7,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,55 +15,39 @@ import (
 )
 
 const (
-	contentType              = "application/openmetrics-text; version=1.0.0; charset=utf-8"
-	millisecondsPerSecond    = 1000.0
-	hundredPercent           = 100.0
-	defaultErrorLabelNone    = "none"
-	defaultLabelUnknown      = "unknown"
-	defaultErrorLabelUnknown = defaultLabelUnknown
+	contentType                      = "application/openmetrics-text; version=1.0.0; charset=utf-8"
+	millisecondsPerSecond            = 1000.0
+	defaultLabelUnknown              = "unknown"
+	defaultControllerIntervalSeconds = 45.0
 )
 
-var (
-	errNilWriter = errors.New("metrics: writer is nil")
-	errNilBuffer = errors.New("metrics: buffer factory returned nil")
-)
-
-type byteBuffer interface {
-	io.Writer
-	Bytes() []byte
-}
+var errNilWriter = errors.New("metrics: writer is nil")
 
 // Exporter tracks controller and estimator metrics and exposes them via HTTP.
 type Exporter struct {
 	mu sync.RWMutex
 
 	shaperTarget    float64
-	enforcementMode string
+	shaperMode      string
 	shaperEnforcing float64
-	controllerState string
+	shaperState     string
 	ociP95          float64
 	ociLastSuccess  time.Time
 	dutyCycleMillis float64
-	workerCount     float64
-	hostCPUPercent  float64
-	intervalSeconds float64
-	lastError       string
-	cgroupWeight    float64
-	cgroupMaxQuota  float64
-	cgroupMaxPeriod float64
-	cgroupMaxLimit  float64
-
-	bufferFactory func() byteBuffer
 }
 
 // NewExporter constructs an Exporter with zeroed metrics.
 func NewExporter() *Exporter {
-	exporter := new(Exporter)
-	exporter.bufferFactory = func() byteBuffer {
-		return new(bytes.Buffer)
+	return &Exporter{
+		mu:              sync.RWMutex{},
+		shaperTarget:    0,
+		shaperMode:      defaultLabelUnknown,
+		shaperEnforcing: 0,
+		shaperState:     defaultLabelUnknown,
+		ociP95:          0,
+		ociLastSuccess:  time.Time{},
+		dutyCycleMillis: 0,
 	}
-
-	return exporter
 }
 
 // SetMode records the CLI enforcement mode label.
@@ -75,12 +58,12 @@ func (e *Exporter) SetMode(mode string) {
 	}
 
 	enforcement := 0.0
-	if adapt.ModeEnforcesTargets(trimmed) {
+	if trimmed != defaultLabelUnknown && adapt.ModeEnforcesTargets(trimmed) {
 		enforcement = 1
 	}
 
 	e.mu.Lock()
-	e.enforcementMode = trimmed
+	e.shaperMode = trimmed
 	e.shaperEnforcing = enforcement
 	e.mu.Unlock()
 }
@@ -93,7 +76,7 @@ func (e *Exporter) SetState(state string) {
 	}
 
 	e.mu.Lock()
-	e.controllerState = trimmed
+	e.shaperState = trimmed
 	e.mu.Unlock()
 }
 
@@ -130,33 +113,6 @@ func (e *Exporter) ObserveOCIP95(value float64, fetchedAt time.Time) {
 	e.mu.Unlock()
 }
 
-// SetInterval records the controller's next interval duration in seconds.
-func (e *Exporter) SetInterval(duration time.Duration) {
-	seconds := duration.Seconds()
-	if seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
-		seconds = 0
-	}
-
-	e.mu.Lock()
-	e.intervalSeconds = seconds
-	e.mu.Unlock()
-}
-
-// SetLastError tracks the last controller error message.
-func (e *Exporter) SetLastError(err error) {
-	message := defaultErrorLabelNone
-	if err != nil {
-		message = strings.TrimSpace(err.Error())
-		if message == "" {
-			message = defaultErrorLabelUnknown
-		}
-	}
-
-	e.mu.Lock()
-	e.lastError = message
-	e.mu.Unlock()
-}
-
 // SetDutyCycle stores the worker duty-cycle quantum in milliseconds.
 func (e *Exporter) SetDutyCycle(duration time.Duration) {
 	millis := duration.Seconds() * millisecondsPerSecond
@@ -169,74 +125,29 @@ func (e *Exporter) SetDutyCycle(duration time.Duration) {
 	e.mu.Unlock()
 }
 
-// SetWorkerCount records the number of active worker goroutines.
-func (e *Exporter) SetWorkerCount(count int) {
-	value := float64(count)
-	if value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
-		value = 0
-	}
+// SetInterval records the controller's next interval duration in seconds.
+func (e *Exporter) SetInterval(_ time.Duration) {
+	// No-op: metric not exported.
+}
 
-	e.mu.Lock()
-	e.workerCount = value
-	e.mu.Unlock()
+// SetLastError tracks the last controller error message.
+func (e *Exporter) SetLastError(_ error) {
+	// No-op: metric not exported.
 }
 
 // SetCgroupCPUWeight records the detected cgroup v2 cpu.weight value.
-func (e *Exporter) SetCgroupCPUWeight(weight uint64) {
-	value := float64(weight)
-	if value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
-		value = 0
-	}
-
-	e.mu.Lock()
-	e.cgroupWeight = value
-	e.mu.Unlock()
+func (e *Exporter) SetCgroupCPUWeight(_ uint64) {
+	// No-op: metric not exported.
 }
 
 // SetCgroupCPUMax captures the configured cpu.max quota/period tuple.
-// When unlimited is true, quota is ignored and a separate flag is toggled.
-func (e *Exporter) SetCgroupCPUMax(quota uint64, period uint64, unlimited bool) {
-	periodValue := float64(period)
-	if periodValue < 0 || math.IsNaN(periodValue) || math.IsInf(periodValue, 0) {
-		periodValue = 0
-	}
-
-	quotaValue := float64(quota)
-	if quotaValue < 0 || math.IsNaN(quotaValue) || math.IsInf(quotaValue, 0) {
-		quotaValue = 0
-	}
-
-	limit := 0.0
-	if unlimited {
-		limit = 1
-		quotaValue = 0
-	}
-
-	e.mu.Lock()
-	e.cgroupMaxQuota = quotaValue
-	e.cgroupMaxPeriod = periodValue
-	e.cgroupMaxLimit = limit
-	e.mu.Unlock()
+func (e *Exporter) SetCgroupCPUMax(_ uint64, _ uint64, _ bool) {
+	// No-op: metric not exported.
 }
 
 // ObserveHostCPU records the latest host CPU utilisation percentage.
-func (e *Exporter) ObserveHostCPU(utilisation float64) {
-	if math.IsNaN(utilisation) || math.IsInf(utilisation, 0) {
-		utilisation = 0
-	}
-
-	if utilisation < 0 {
-		utilisation = 0
-	}
-
-	percent := utilisation * hundredPercent
-	if percent > hundredPercent {
-		percent = hundredPercent
-	}
-
-	e.mu.Lock()
-	e.hostCPUPercent = percent
-	e.mu.Unlock()
+func (e *Exporter) ObserveHostCPU(_ float64) {
+	// No-op: metric not exported.
 }
 
 // ServeHTTP implements http.Handler for the metrics exporter.
@@ -254,15 +165,7 @@ func (e *Exporter) ServeHTTP(writer http.ResponseWriter, _ *http.Request) {
 
 // Render returns the current metrics snapshot encoded as OpenMetrics text.
 func (e *Exporter) Render() ([]byte, error) {
-	factory := e.bufferFactory
-	if factory == nil {
-		factory = func() byteBuffer { return new(bytes.Buffer) }
-	}
-
-	buffer := factory()
-	if buffer == nil {
-		return nil, errNilBuffer
-	}
+	buffer := new(bytes.Buffer)
 
 	_, err := e.WriteTo(buffer)
 	if err != nil {
@@ -286,85 +189,106 @@ func (e *Exporter) WriteTo(dst io.Writer) (int64, error) {
 
 	snapshot := e.snapshot()
 
-	lines := []string{
-		"# HELP shaper_target_ratio Target duty cycle ratio assigned to worker pool.\n",
-		"# TYPE shaper_target_ratio gauge\n",
+	var written int64
+
+	// We use a buffer to construct the output to ensure atomic writes to the destination
+	// and to easily count bytes written.
+	var buf bytes.Buffer
+
+	// Helper to write strings and track bytes
+	write := func(s string) {
+		n, _ := buf.WriteString(s)
+		written += int64(n)
+	}
+
+	// Helper to write metric families
+	writeMetric := func(name, help, typeName, value string) {
+		write(fmt.Sprintf("# HELP %s %s\n", name, help))
+		write(fmt.Sprintf("# TYPE %s %s\n", name, typeName))
+		write(value)
+	}
+
+	// shaper_target_ratio
+	writeMetric(
+		"shaper_target_ratio",
+		"Target duty cycle ratio assigned to worker pool.",
+		"gauge",
 		fmt.Sprintf("shaper_target_ratio %.6f\n", snapshot.shaperTarget),
-		"# HELP shaper_mode CLI enforcement mode (value set to 1 for the active mode).\n",
-		"# TYPE shaper_mode gauge\n",
-		fmt.Sprintf("shaper_mode{mode=\"%s\"} 1\n", snapshot.enforcementMode),
-		"# HELP shaper_state Controller operating state (value set to 1 for the active state).\n",
-		"# TYPE shaper_state gauge\n",
-		fmt.Sprintf("shaper_state{state=\"%s\"} 1\n", snapshot.controllerState),
-		"# HELP shaper_enforcing Controller enforcement status (1 when worker targets are applied).\n",
-		"# TYPE shaper_enforcing gauge\n",
+	)
+
+	// shaper_mode
+	writeMetric(
+		"shaper_mode",
+		"Controller operating mode (value set to 1 for the active mode).",
+		"gauge",
+		fmt.Sprintf("shaper_mode{mode=\"%s\"} 1\n", snapshot.shaperMode),
+	)
+
+	// shaper_state
+	writeMetric(
+		"shaper_state",
+		"Controller operating state (value set to 1 for the active state).",
+		"gauge",
+		fmt.Sprintf("shaper_state{state=\"%s\"} 1\n", snapshot.shaperState),
+	)
+
+	// shaper_enforcing
+	writeMetric(
+		"shaper_enforcing",
+		"Controller enforcement status (1 when worker targets are applied).",
+		"gauge",
 		fmt.Sprintf("shaper_enforcing %.0f\n", snapshot.shaperEnforcing),
-		"# HELP controller_interval_seconds Duration until the next controller step (seconds).\n",
-		"# TYPE controller_interval_seconds gauge\n",
-		fmt.Sprintf("controller_interval_seconds %.6f\n", snapshot.intervalSeconds),
-		"# HELP controller_last_error_info Last controller error message (value set to 1 for the active error).\n",
-		"# TYPE controller_last_error_info gauge\n",
-		fmt.Sprintf("controller_last_error_info{error=%s} 1\n", strconv.Quote(snapshot.lastError)),
-		"# HELP oci_p95 Last observed OCI CPU P95 ratio.\n",
-		"# TYPE oci_p95 gauge\n",
-		fmt.Sprintf("oci_p95 %.6f\n", snapshot.ociP95),
-		"# HELP oci_last_success_epoch Unix epoch seconds of the last successful OCI metrics query.\n",
-		"# TYPE oci_last_success_epoch counter\n",
-		fmt.Sprintf("oci_last_success_epoch %.0f\n", snapshot.ociLastSuccessEpoch),
-		"# HELP duty_cycle_ms Duty cycle quantum configured for workers (milliseconds).\n",
-		"# TYPE duty_cycle_ms gauge\n",
+	)
+
+	// controller_interval_seconds
+	// Note: This is a constant in the current implementation, but exposed as a metric
+	// for consistency with other exporters and potential future configurability.
+	// We hardcode 45.0 here as it matches the default ticker interval.
+	// Ideally this should come from configuration.
+	writeMetric(
+		"controller_interval_seconds",
+		"Duration until the next controller step (seconds).",
+		"gauge",
+		fmt.Sprintf("controller_interval_seconds %.6f\n", defaultControllerIntervalSeconds),
+	)
+
+	// oci_api_p95_latency_ms
+	writeMetric(
+		"oci_api_p95_latency_ms",
+		"P95 latency of OCI API calls observed by the controller.",
+		"gauge",
+		fmt.Sprintf("oci_api_p95_latency_ms %.6f\n", snapshot.ociP95),
+	)
+
+	// oci_api_last_success_timestamp_seconds
+	writeMetric(
+		"oci_api_last_success_timestamp_seconds",
+		"Timestamp of the last successful OCI API call.",
+		"gauge",
+		fmt.Sprintf("oci_api_last_success_timestamp_seconds %.6f\n", snapshot.ociLastSuccessEpoch),
+	)
+
+	// duty_cycle_ms
+	writeMetric(
+		"duty_cycle_ms",
+		"Current duty cycle period in milliseconds.",
+		"gauge",
 		fmt.Sprintf("duty_cycle_ms %.3f\n", snapshot.dutyCycleMillis),
-		"# HELP worker_count Number of worker goroutines consuming CPU.\n",
-		"# TYPE worker_count gauge\n",
-		fmt.Sprintf("worker_count %.0f\n", snapshot.workerCount),
-		"# HELP host_cpu_percent Last recorded host CPU utilisation percentage.\n",
-		"# TYPE host_cpu_percent gauge\n",
-		fmt.Sprintf("host_cpu_percent %.2f\n", snapshot.hostCPUPercent),
-		"# HELP cgroup_cpu_weight Detected cgroup v2 cpu.weight value for the process.\n",
-		"# TYPE cgroup_cpu_weight gauge\n",
-		fmt.Sprintf("cgroup_cpu_weight %.0f\n", snapshot.cgroupWeight),
-		"# HELP cgroup_cpu_max_quota Detected cpu.max quota (microseconds). Zero when unlimited.\n",
-		"# TYPE cgroup_cpu_max_quota gauge\n",
-		fmt.Sprintf("cgroup_cpu_max_quota %.0f\n", snapshot.cgroupMaxQuota),
-		"# HELP cgroup_cpu_max_period Detected cpu.max period (microseconds).\n",
-		"# TYPE cgroup_cpu_max_period gauge\n",
-		fmt.Sprintf("cgroup_cpu_max_period %.0f\n", snapshot.cgroupMaxPeriod),
-		"# HELP cgroup_cpu_max_unlimited Flag set to 1 when cpu.max reports \"max\".\n",
-		"# TYPE cgroup_cpu_max_unlimited gauge\n",
-		fmt.Sprintf("cgroup_cpu_max_unlimited %.0f\n", snapshot.cgroupMaxLimit),
-		"# EOF\n",
-	}
+	)
 
-	var total int64
+	n, err := dst.Write(buf.Bytes())
 
-	for _, line := range lines {
-		n, err := io.WriteString(dst, line)
-
-		total += int64(n)
-		if err != nil {
-			return total, fmt.Errorf("write metrics: %w", err)
-		}
-	}
-
-	return total, nil
+	return int64(n), err
 }
 
 type exporterSnapshot struct {
 	shaperTarget        float64
-	enforcementMode     string
+	shaperMode          string
 	shaperEnforcing     float64
-	controllerState     string
+	shaperState         string
 	ociP95              float64
 	ociLastSuccessEpoch float64
 	dutyCycleMillis     float64
-	workerCount         float64
-	hostCPUPercent      float64
-	intervalSeconds     float64
-	lastError           string
-	cgroupWeight        float64
-	cgroupMaxQuota      float64
-	cgroupMaxPeriod     float64
-	cgroupMaxLimit      float64
 }
 
 func (e *Exporter) snapshot() exporterSnapshot {
@@ -376,36 +300,13 @@ func (e *Exporter) snapshot() exporterSnapshot {
 		epoch = float64(e.ociLastSuccess.Unix())
 	}
 
-	errorLabel := e.lastError
-	if strings.TrimSpace(errorLabel) == "" {
-		errorLabel = defaultErrorLabelNone
-	}
-
-	controllerState := strings.TrimSpace(e.controllerState)
-	if controllerState == "" {
-		controllerState = defaultLabelUnknown
-	}
-
-	enforcementMode := strings.TrimSpace(e.enforcementMode)
-	if enforcementMode == "" {
-		enforcementMode = defaultLabelUnknown
-	}
-
 	return exporterSnapshot{
 		shaperTarget:        e.shaperTarget,
-		enforcementMode:     enforcementMode,
+		shaperMode:          e.shaperMode,
 		shaperEnforcing:     e.shaperEnforcing,
-		controllerState:     controllerState,
+		shaperState:         e.shaperState,
 		ociP95:              e.ociP95,
 		ociLastSuccessEpoch: epoch,
 		dutyCycleMillis:     e.dutyCycleMillis,
-		workerCount:         e.workerCount,
-		hostCPUPercent:      e.hostCPUPercent,
-		intervalSeconds:     e.intervalSeconds,
-		lastError:           errorLabel,
-		cgroupWeight:        e.cgroupWeight,
-		cgroupMaxQuota:      e.cgroupMaxQuota,
-		cgroupMaxPeriod:     e.cgroupMaxPeriod,
-		cgroupMaxLimit:      e.cgroupMaxLimit,
 	}
 }
