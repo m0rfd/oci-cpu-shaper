@@ -11,25 +11,26 @@ func TestDefaultMetricsClientBuilderUsesInstancePrincipal(t *testing.T) {
 
 	stub := newStubMetricsClient()
 
-	oldBuilder := newInstancePrincipalBuilder
-	newInstancePrincipalBuilder = func(_ ...metricsclient.Option) metricsclient.Builder {
-		t.Helper()
+	oldBuilder := newInstancePrincipalBuilder.swap(
+		func(_ ...metricsclient.Option) metricsclient.Builder {
+			t.Helper()
 
-		return func(compartmentID, region string) (metricsclient.MetricsClient, error) {
-			if compartmentID != testCompartmentID {
-				t.Fatalf("expected compartment %q, got %q", testCompartmentID, compartmentID)
+			return func(compartmentID, region string) (metricsclient.MetricsClient, error) {
+				if compartmentID != testCompartmentID {
+					t.Fatalf("expected compartment %q, got %q", testCompartmentID, compartmentID)
+				}
+
+				if region != testRegion {
+					t.Fatalf("expected region %q, got %q", testRegion, region)
+				}
+
+				return stub, nil
 			}
-
-			if region != testRegion {
-				t.Fatalf("expected region %q, got %q", testRegion, region)
-			}
-
-			return stub, nil
-		}
-	}
+		},
+	)
 
 	t.Cleanup(func() {
-		newInstancePrincipalBuilder = oldBuilder
+		newInstancePrincipalBuilder.swap(oldBuilder)
 	})
 
 	client, err := defaultMetricsClientBuilder()(testCompartmentID, testRegion)

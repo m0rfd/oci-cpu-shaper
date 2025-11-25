@@ -2,6 +2,7 @@ package metricsclient
 
 import (
 	"context"
+	"sync"
 
 	"oci-cpu-shaper/pkg/oci"
 )
@@ -9,10 +10,20 @@ import (
 // Builder constructs MetricsClient instances for the configured compartment and region.
 type Builder func(compartmentID, region string) (oci.MetricsClient, error)
 
-type builderKey struct{}
+type (
+	builderKey      struct{}
+	builderFactory  func() Builder
+	builderProvider struct {
+		factory builderFactory
+		mu      sync.RWMutex
+	}
+)
 
-var defaultBuilderFactory = func() Builder { //nolint:gochecknoglobals // swapped in tests to cover fallback resolution.
-	return InstancePrincipalBuilder()
+var defaultBuilderFactory = builderProvider{ //nolint:gochecknoglobals // swapped in tests to cover fallback resolution.
+	factory: func() Builder {
+		return InstancePrincipalBuilder()
+	},
+	mu: sync.RWMutex{},
 }
 
 // WithBuilder stores a MetricsClient builder on the supplied context.
@@ -41,5 +52,22 @@ func FromContext(ctx context.Context, fallback Builder) Builder {
 		return fallback
 	}
 
-	return defaultBuilderFactory()
+	return defaultBuilderFactory.load()
+}
+
+func (provider *builderProvider) load() Builder {
+	provider.mu.RLock()
+	factory := provider.factory
+	provider.mu.RUnlock()
+
+	return factory()
+}
+
+func (provider *builderProvider) swap(factory builderFactory) builderFactory {
+	provider.mu.Lock()
+	previous := provider.factory
+	provider.factory = factory
+	provider.mu.Unlock()
+
+	return previous
 }
