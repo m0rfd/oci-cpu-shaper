@@ -55,7 +55,7 @@ func TestDefaultConfigAlignsWithAdaptDefaults(t *testing.T) {
 		defaults.SuppressRunnableResume,
 	)
 
-	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, 2*time.Second)
+	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, time.Second)
 
 	assertIntEqual(t, "poolWorkers", cfg.Pool.Workers, 2)
 

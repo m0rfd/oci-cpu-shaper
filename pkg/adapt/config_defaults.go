@@ -26,7 +26,8 @@ const (
 	suppressResumeScale           = 0.8
 )
 
-// DefaultConfig mirrors the initial implementation plan for control loop cadence.
+// DefaultConfig reflects the current controller defaults; keep this aligned with
+// docs/initial-implementation-plan.md.
 func DefaultConfig() Config {
 	return Config{
 		ResourceID:                "",

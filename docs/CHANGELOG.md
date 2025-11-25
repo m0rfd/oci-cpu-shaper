@@ -107,6 +107,12 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   boundaries and responsibilities, and linked `docs/AGENTS.md` plus
   `cmd/shaper/AGENTS.md` back to the architecture section so wiring guidance
   stays current (§§3, 8, 12).
+- Hard-coded `pkg/oci.Client.QueryP95CPU` to the trailing seven-day window and
+  updated the instance-principal adapters, CLI tool, and docs to rely on that
+  fixed scope so Monitoring queries stay aligned with the reclaim period (§5.2).
+- CLI `--mode` now defaults to enforcing/normal operation instead of `dry-run`,
+  updating the help text and docs so operators start with the adaptive
+  controller active unless explicitly opting into monitor-only mode (§§5, 9).
 - Introduced `pkg/oci/metricsclient` for metrics builders/context helpers and shifted the
   CLI defaults to consume it, keeping metrics wiring thin while preserving the e2e
   override path. Updated §3.1 package touchpoints to note the new module (§§3.1, 5, 12).
@@ -114,11 +120,17 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   metadata resolution, metrics bootstrap, and controller start to keep `cmd/shaper`
   wiring small and directly testable. Updated §3.1 to map the new helpers and added
   focused unit suites per stage to preserve the ≥96% coverage contract (§§3.1, 8, 11, 12).
+- Tightened the estimator default interval to 1 second (from 2 seconds) while
+  keeping `SHAPER_FAST_INTERVAL` overrides intact across the YAML/env/CLI
+  layers. Updated samples and docs to reflect the faster cadence (§§5.2, 9, 12).
+- CLI `--mode` now defaults to `enforce` to match the documented production posture; startup logs,
+  `/metrics`/`/healthz` exports, and the Quick Start/CLI docs note the default along with the
+  `dry-run`/`noop` opt-ins (§§5, 9, 10, 11).
 - Raised the Go toolchain to 1.25.4 in `go.mod`, `.tool-versions`, and the container build ARG so CI, local builds, and release
   images track the latest stable release, and refreshed badges/docs to match (§§8, 12, 14).
 - CLI documentation (§9), `runtimeconfig.Default()`, and `adapt.DefaultConfig()` now
   match the Mode A/Mode B manifests exactly (0.22 target start, 0.20–0.32 band, 4 hour
-  relaxed interval, 2 second estimator loop, 0.80/0.68 suppression + pool thresholds,
+  relaxed interval, 1 second estimator loop, 0.80/0.68 suppression + pool thresholds,
   two-worker pool, etc.), keeping the published YAML and binary defaults aligned.
 - Metadata logging now queries IMDS for canonical-region names even when
   `OCI_REGION` overrides are provided, only falling back to the override when

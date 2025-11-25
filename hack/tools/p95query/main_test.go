@@ -31,13 +31,12 @@ type fakeMetricsClient struct {
 func (f *fakeMetricsClient) QueryP95CPU(
 	_ context.Context,
 	instanceOCID string,
-	last7d bool,
 ) (float32, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	f.callCount++
-	f.lastArgs = []any{instanceOCID, last7d}
+	f.lastArgs = []any{instanceOCID}
 
 	if len(f.values) > 0 {
 		return f.values[0], f.err
@@ -94,10 +93,6 @@ func TestParseConfigUsesDefaults(t *testing.T) {
 		t.Fatalf("parseConfig returned error: %v", err)
 	}
 
-	if !cfg.last7d {
-		t.Fatalf("expected last7d default true, got %v", cfg.last7d)
-	}
-
 	if cfg.timeout != defaultTimeout {
 		t.Fatalf("expected default timeout, got %v", cfg.timeout)
 	}
@@ -116,7 +111,6 @@ func TestParseConfigParsesFlags(t *testing.T) {
 		"-region", "us-phoenix-1",
 		"-timeout", "45s",
 		"-allow-empty",
-		"-last7d=false",
 	})
 	if err != nil {
 		t.Fatalf("parseConfig returned error: %v", err)
@@ -141,10 +135,6 @@ func TestParseConfigParsesFlags(t *testing.T) {
 	if !cfg.allowEmpty {
 		t.Fatalf("expected allowEmpty to be true")
 	}
-
-	if cfg.last7d {
-		t.Fatalf("expected last7d to be false")
-	}
 }
 
 func TestRunQueryRequiresInstanceID(t *testing.T) {
@@ -154,7 +144,6 @@ func TestRunQueryRequiresInstanceID(t *testing.T) {
 		instanceID:    "",
 		compartmentID: "",
 		region:        "",
-		last7d:        true,
 		timeout:       defaultTimeout,
 		allowEmpty:    false,
 	})
@@ -170,7 +159,6 @@ func TestRunQueryRequiresCompartmentID(t *testing.T) {
 		instanceID:    "ocid1.instance",
 		compartmentID: "",
 		region:        "",
-		last7d:        true,
 		timeout:       defaultTimeout,
 		allowEmpty:    false,
 	})
@@ -192,7 +180,6 @@ func TestRunQueryLogsValue(t *testing.T) {
 				instanceID:    "ocid1.instance",
 				compartmentID: "ocid1.compartment",
 				region:        "",
-				last7d:        true,
 				timeout:       time.Second,
 				allowEmpty:    false,
 			})
@@ -212,7 +199,7 @@ func TestRunQueryLogsValue(t *testing.T) {
 			t.Fatalf("expected one call, got %d", client.callCount)
 		}
 
-		if client.lastArgs[0] != "ocid1.instance" || client.lastArgs[1] != true {
+		if client.lastArgs[0] != "ocid1.instance" {
 			t.Fatalf("unexpected arguments: %#v", client.lastArgs)
 		}
 	})
@@ -231,7 +218,6 @@ func TestRunQueryAllowsEmptyResults(t *testing.T) {
 				instanceID:    "ocid1.instance",
 				compartmentID: "ocid1.compartment",
 				region:        "",
-				last7d:        true,
 				timeout:       defaultTimeout,
 				allowEmpty:    true,
 			})
@@ -258,7 +244,6 @@ func TestRunQueryWrapsQueryErrors(t *testing.T) {
 			instanceID:    "ocid1.instance",
 			compartmentID: "ocid1.compartment",
 			region:        "",
-			last7d:        true,
 			timeout:       defaultTimeout,
 			allowEmpty:    false,
 		})
@@ -288,7 +273,6 @@ func TestRunQueryWrapsClientErrors(t *testing.T) {
 		instanceID:    "ocid1.instance",
 		compartmentID: "ocid1.compartment",
 		region:        "",
-		last7d:        true,
 		timeout:       defaultTimeout,
 		allowEmpty:    false,
 	})

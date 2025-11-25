@@ -16,7 +16,7 @@ controller:
   suppressRunnableThreshold: 1.20
   suppressRunnableResume: 0.96
 estimator:
-  interval: 2s
+  interval: 1s
 pool:
   workers: 2
   quantum: 1ms

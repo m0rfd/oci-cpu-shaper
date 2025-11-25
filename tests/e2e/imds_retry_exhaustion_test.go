@@ -41,7 +41,7 @@ pool:
 http:
   bind: ""
 oci:
-  fallbackTarget: 0.25
+  fallbackTarget: 0.22
 `)
 
 	cmd := exec.CommandContext(ctx, binary, "--config", configPath, "--shutdown-after=1s", "--log-level=debug")

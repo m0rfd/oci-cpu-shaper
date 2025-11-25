@@ -54,7 +54,7 @@ We support two documented modes. Rootless is first-class but not exclusive.
   * If P95 < 23% → raise target by +2% up to a cap;
     if P95 > 30% → lower −1..−2% (never below 22%).
   * If query fails or returns no data → **fallback mode**: fixed 25% baseline until healthy again.
-  * If P95 ≥ 28% for multiple checks → reduce query cadence to every 6 h to save cycles.
+  * If P95 ≥ 26% for multiple checks → reduce query cadence to every 4 h to save cycles.
   * 1-minute interval is supported with up to 7 days range. ([Oracle Docs][7])
 
 * **Safety alarm (OCI Console):**
@@ -108,19 +108,28 @@ We support two documented modes. Rootless is first-class but not exclusive.
   * Exported pool APIs stay in `pool.go`, the worker loop plus `trySchedIdle()` hook remain in `worker.go`/`pool_rootful.go`, pause thresholds live in `pause.go`, and busy-wait helpers stay in `busywait.go`. Workers spin in short bursts (sleep via `clock_nanosleep`) and must avoid busy loops longer than a few ms even when `-tags rootful` enables the optional SCHED_IDLE downgrade. ([man7.org][8])
 * `pkg/adapt`: slow controller.
 
-  * State machine and run loop remain in `controller.go`, state structs/interfaces live in `state.go`, configuration helpers in `config.go`, suppression math in `suppression.go`, and the dry-run implementation in `noop_controller.go`. Adaptive interval: 1 h default; 6 h when P95 is comfortably above 28%.
+  * State machine and run loop remain in `controller.go`, state structs/interfaces live in `state.go`, configuration helpers in `config.go`, suppression math in `suppression.go`, and the dry-run implementation in `noop_controller.go`. Adaptive interval: 1 h default; 4 h when P95 sits at or above 26%.
 * `pkg/http`: `/metrics` endpoint (`pkg/http/metrics/exporter.go`).
 
 ### 5.2 Config (env or flags). Defaults chosen to avoid manual tuning
 
-* `SHAPER_TARGET_START=0.25`
-* `SHAPER_TARGET_MIN=0.22`
-* `SHAPER_TARGET_MAX=0.40`
-* `SHAPER_STEP_UP=0.02`
-* `SHAPER_STEP_DOWN=0.01`
+Defaults now track the live controller values in `pkg/adapt/config_defaults.go` and flow through `pkg/runtimeconfig/defaults.go`, leaning on a slightly more aggressive-but-safe
+band that stays above the OCI reclaim floor while closing faster when idle and documents the full goal window used by the controller:
+
+* `SHAPER_TARGET_START=0.22`
+* `SHAPER_TARGET_MIN=0.20`
+* `SHAPER_TARGET_MAX=0.32`
+* `SHAPER_STEP_UP=0.01`
+* `SHAPER_STEP_DOWN=0.005`
+* `SHAPER_GOAL_LOW=0.21`
+* `SHAPER_GOAL_HIGH=0.27`
 * `SHAPER_FAST_INTERVAL=1s`
 * `SHAPER_SLOW_INTERVAL=1h`
-* `SHAPER_SLOW_INTERVAL_RELAXED=6h`
+* `SHAPER_SLOW_INTERVAL_RELAXED=4h`
+* `SHAPER_RELAXED_THRESHOLD=0.26`
+* `SHAPER_SUPPRESS_THRESHOLD=0.80`
+* `SHAPER_SUPPRESS_RESUME=0.68`
+* `SHAPER_FALLBACK_TARGET=0.22`
 * `HTTP_ADDR=:9108`
 * No region/OCID input needed; IMDSv2 supplies them.
 
@@ -142,7 +151,7 @@ services:
     # cpus: "0.30"
     network_mode: "host"
     environment:
-      - SHAPER_TARGET_START=0.25
+      - SHAPER_TARGET_START=0.22 # aligns with pkg/adapt/config_defaults.go
     restart: unless-stopped
 ```
 
@@ -246,7 +255,7 @@ while true:
       mode=normal
       if p95 < 0.23: current_target = min(target+STEP_UP, TARGET_MAX)
       if p95 > 0.30: current_target = max(target-STEP_DOWN, TARGET_MIN)
-      if p95 > 0.28 consistently: timer = SHAPER_SLOW_INTERVAL_RELAXED
+      if p95 >= 0.26 consistently: timer = SHAPER_SLOW_INTERVAL_RELAXED
       else: timer = SHAPER_SLOW_INTERVAL
   sleep(timer)
 ```
@@ -259,7 +268,7 @@ while true:
 
 * **CPU**: idle ≤ 0.2% of one core; during shaping, extra CPU = target duty cycle only.
 * **Memory**: RSS ≤ 15 MiB.
-* **Monitoring**: one HTTP call per slow interval; back off to every 6 h when healthy.
+* **Monitoring**: one HTTP call per slow interval; back off to every 4 h when the P95 remains at or above the relaxed threshold.
 
 Sampling and emission of `CpuUtilization` are per minute derived from 10-second samples; our 1-hour cadence is more than enough. ([Oracle Docs][2])
 
