@@ -1,7 +1,7 @@
 # §3 Execution Flow Reference
 
 ## §1 Goals and Use Cases
-- Maintain at least 23% host CPU P95 over a rolling 7-day window so Oracle's Always Free reclaim guardrails never fire, while avoiding fragile manual tuning knobs. (§§1–2 of `docs/initial-implementation-plan.md`.)
+- Maintain host CPU P95 in the **22–27% band** over a rolling 7-day window so Oracle's Always Free reclaim guardrails never fire while avoiding fragile manual tuning knobs. (§§1–2 of `docs/initial-implementation-plan.md`.)
 - Default to Mode A (rootless, fair-share) but allow Mode B (rootful + best-effort `SCHED_IDLE`) to keep background shaping responsive without stealing CPU from real workloads. (§§2, 3.1.)
 - Stay container-friendly: IMDSv2 supplies region/OCID metadata, Instance Principals read Monitoring metrics, and the controller adapts autonomously without console changes. (§§2–5.)
 

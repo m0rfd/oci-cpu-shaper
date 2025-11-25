@@ -14,7 +14,7 @@ CpuUtilization[1d]{resourceId="<instance_ocid>"}.percentile(0.95) < 20
 - **Pending duration:** `1h` balances responsiveness against transient dips; tighten as comfort grows.
 - **Destinations:** Email or PagerDuty topics reachable by the on-call team.
 
-Oracle’s reclaim detector still evaluates seven-day P95 windows (see §3), so keep the shaper’s targets at ≥23% to provide buffer between the one-day alarm interval and the underlying policy.
+Oracle’s reclaim detector still evaluates seven-day P95 windows (see §3), so keep the shaper’s targets in the **22–27% band** to preserve headroom over the one-day alarm interval while staying close to the minimal safe utilisation.
 
 The alarm should target the exact instance OCID retrieved from IMDSv2 so notifications stay scoped to each node.[^oci-mql] When multiple Always Free runners sit in the same tenancy, enable split-by `resourceId` in the console and add each OCID to the dimension filter. OCI then sends a single alarm that fires per instance dimension, keeping the notification surface manageable while maintaining per-node visibility.
 

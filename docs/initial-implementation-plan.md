@@ -12,7 +12,7 @@
 
 ## 1) Goals
 
-* Keep 7-day **P95 CPU ≥ 23%** target (headroom over the 20% threshold).
+* Keep 7-day **P95 CPU in the 22–27% band** to clear the 20% reclaim floor without overshooting.
 * **Minimal interference**: yield instantly to real workloads; prefer fair-share over capabilities.
 * **Containerized**; rootless and rootful both supported. Primary responsiveness lever: **`--cpu-shares`** (cgroup v2 → `cpu.weight`). Optional ceiling via `--cpus`.
 * **No fragile knobs**. Safe defaults. Runs months unattended. Low RSS and CPU overhead. Document everything.
@@ -47,14 +47,13 @@ We support two documented modes. Rootless is first-class but not exclusive.
   * Duty-cycle workers using short quanta (e.g., 1–5 ms busy, sleep remainder) toward a **current target**.
   * If system load is high or runnable tasks detected, drop activity to zero instantly.
 
-  * **Slow OCI loop (every 1 h by default, adaptive):**
+* **Slow OCI loop (every 1 h by default, adaptive):**
 
 * Query MQL over **last 7 days**:
   `CpuUtilization[1m]{resourceId="<instance_ocid>"}.percentile(0.95)` and calculate the P95 locally
-  * If P95 < 23% → raise target by +2% up to a cap;
-    if P95 > 30% → lower −1..−2% (never below 22%).
-  * If query fails or returns no data → **fallback mode**: fixed 25% baseline until healthy again.
-  * If P95 ≥ 26% for multiple checks → reduce query cadence to every 4 h to save cycles.
+  * Start from the **0.22** baseline, clamp within the **0.20–0.32** window, and adjust toward the **0.21–0.27 goal band**: if P95 < 0.21 increase target by **+0.01**, if P95 > 0.27 decrease by **−0.005**.
+  * If query fails or returns no data → **fallback mode** reuses the **0.22** baseline while keeping the same clamps.
+  * If P95 ≥ 0.26 for **two consecutive checks** → reduce query cadence to every **4 h** to save cycles; otherwise stay on the **1 h** interval.
   * 1-minute interval is supported with up to 7 days range. ([Oracle Docs][7])
 
 * **Safety alarm (OCI Console):**
@@ -360,7 +359,7 @@ Sampling and emission of `CpuUtilization` are per minute derived from 10-second 
 2. **Enable Monitoring plugin** or ensure egress/Service Gateway. ([Oracle Docs][2])
 3. **Run** on each instance with **Mode A** compose shown.
 4. **Create 7-day P95 alarm** in Console. ([Oracle Docs][7])
-5. After 24–48 h, open **Service Metrics** and verify `CpuUtilization` P95 ≥ 23%. If not, lower `cpu_shares` further or add optional `cpus: "0.30"` until alarm margin is stable.
+5. After 24–48 h, open **Service Metrics** and verify `CpuUtilization` P95 sits in the **22–27% range** so the 20% reclaim floor stays clear. If not, lower `cpu_shares` further or add optional `cpus: "0.30"` until the margin stabilises.
 
 ---
 
