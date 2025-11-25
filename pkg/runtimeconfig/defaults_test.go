@@ -14,6 +14,16 @@ func TestDefaultConfigAlignsWithAdaptDefaults(t *testing.T) {
 	cfg := Default()
 	defaults := adaptDefault()
 
+	assertDefaultControllerFields(t, cfg, defaults)
+	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, time.Second)
+	assertIntEqual(t, "poolWorkers", cfg.Pool.Workers, 2)
+	assertDefaultPoolFields(t, cfg, defaults)
+	assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9108")
+}
+
+func assertDefaultControllerFields(t *testing.T, cfg Config, defaults adapt.Config) {
+	t.Helper()
+
 	assertFloatEqual(t, "targetStart", cfg.Controller.TargetStart, defaults.TargetStart)
 	assertFloatEqual(t, "targetMin", cfg.Controller.TargetMin, defaults.TargetMin)
 	assertFloatEqual(t, "targetMax", cfg.Controller.TargetMax, defaults.TargetMax)
@@ -60,14 +70,19 @@ func TestDefaultConfigAlignsWithAdaptDefaults(t *testing.T) {
 		cfg.Controller.SuppressRunnableResume,
 		defaults.SuppressRunnableResume,
 	)
+}
 
-	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, time.Second)
-
-	assertIntEqual(t, "poolWorkers", cfg.Pool.Workers, 2)
+func assertDefaultPoolFields(t *testing.T, cfg Config, defaults adapt.Config) {
+	t.Helper()
 
 	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, defaults.SuppressThreshold)
 	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, defaults.SuppressResume)
-	assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9108")
+	assertFloatEqual(
+		t,
+		"poolRunnableGuard",
+		cfg.Pool.RunnableGuard,
+		defaults.SuppressRunnableThreshold,
+	)
 }
 
 func TestConfigToAdaptConfig(t *testing.T) {

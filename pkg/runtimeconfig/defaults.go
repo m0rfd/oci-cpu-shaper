@@ -42,6 +42,7 @@ func Default() Config {
 	cfg.Pool.Quantum = shape.DefaultQuantum
 	cfg.Pool.PauseThreshold = defaults.SuppressThreshold
 	cfg.Pool.ResumeThreshold = defaults.SuppressResume
+	cfg.Pool.RunnableGuard = defaults.SuppressRunnableThreshold
 
 	cfg.HTTP.Bind = ":9108"
 

@@ -48,6 +48,9 @@ func logRuntimeConfig(logger *zap.Logger, cfg runtimeconfig.Config) {
 		zap.Float64("controllerGoalHigh", cfg.Controller.GoalHigh),
 		zap.Float64("suppressThreshold", cfg.Controller.SuppressThreshold),
 		zap.Float64("suppressResume", cfg.Controller.SuppressResume),
+		zap.Float64("suppressRunnableThreshold", cfg.Controller.SuppressRunnableThreshold),
+		zap.Float64("suppressRunnableResume", cfg.Controller.SuppressRunnableResume),
+		zap.Float64("poolRunnableGuard", cfg.Pool.RunnableGuard),
 		zap.Bool("offline", cfg.OCI.Offline),
 		zap.Bool("httpEnabled", bind != ""),
 	}

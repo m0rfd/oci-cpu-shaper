@@ -43,6 +43,7 @@ type PoolConfig struct {
 	Quantum         time.Duration
 	PauseThreshold  float64
 	ResumeThreshold float64
+	RunnableGuard   float64
 }
 
 // HTTPConfig drives the metrics server listener wiring.
@@ -94,6 +95,7 @@ type poolFileConfig struct {
 	Quantum         *time.Duration `yaml:"quantum"`
 	PauseThreshold  *float64       `yaml:"pauseThreshold"`
 	ResumeThreshold *float64       `yaml:"resumeThreshold"`
+	RunnableGuard   *float64       `yaml:"runnableGuard"`
 }
 
 type httpFileConfig struct {

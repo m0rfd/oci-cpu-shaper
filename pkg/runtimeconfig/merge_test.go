@@ -64,6 +64,7 @@ pool:
   quantum: 33ms
   pauseThreshold: 0.8
   resumeThreshold: 0.5
+  runnableGuard: 1.25
 http:
   bind: " :9999 "
 oci:
@@ -98,6 +99,7 @@ func assertMergeOverrides(t *testing.T, cfg Config) {
 	assertDurationEqual(t, "poolQuantum", cfg.Pool.Quantum, 33*time.Millisecond)
 	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, 0.8)
 	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, 0.5)
+	assertFloatEqual(t, "poolRunnableGuard", cfg.Pool.RunnableGuard, 1.25)
 	assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9999")
 	assertStringEqual(t, "compartmentId", cfg.OCI.CompartmentID, "ocid1.compartment.oc1..merge")
 	assertStringEqual(t, "region", cfg.OCI.Region, "us-phoenix-1")

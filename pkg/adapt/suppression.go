@@ -12,12 +12,15 @@ func (c *AdaptiveController) updateHostLoadLocked(utilisation float64) {
 	c.hostLoad += (utilisation - c.hostLoad) / float64(hostLoadSmoothing)
 }
 
-func (c *AdaptiveController) transitionSuppressionLocked() bool {
+func (c *AdaptiveController) transitionSuppressionLocked(guarded bool) bool {
 	previous := c.suppressed
 
-	if !c.suppressed && (c.shouldSuppressForUtilisation() || c.shouldSuppressForRunnables()) {
+	switch {
+	case guarded:
 		c.suppressed = true
-	} else if c.suppressed && c.shouldResumeFromSuppression() {
+	case !c.suppressed && (c.shouldSuppressForUtilisation() || c.shouldSuppressForRunnables()):
+		c.suppressed = true
+	case c.suppressed && c.shouldResumeFromSuppression():
 		c.suppressed = false
 	}
 
