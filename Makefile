@@ -59,7 +59,7 @@ MBAKE_BIN ?= $(HOME)/.local/bin/mbake
 MBAKE ?= $(MBAKE_BIN)
 MBAKE_FORMAT_PATHS ?= Makefile
 
-.PHONY: lint test build check tools ensure-golangci-lint ensure-actionlint agents coverage govulncheck integration e2e actionlint lint-workflows bench setup maintenance ensure-go ensure-dev-deps go-mod-download install-git-hooks verify-go-version ensure-mbake mbake help clean
+.PHONY: actionlint agents bench build check clean coverage e2e ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake go-mod-download govulncheck help install-git-hooks integration lint lint-fix lint-workflows maintenance mbake setup test tools verify-go-version
 
 GO_MACHINE_ARCH := $(shell uname -m)
 GO_DL_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),amd64,$(if $(filter aarch64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
