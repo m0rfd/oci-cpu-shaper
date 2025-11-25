@@ -10,6 +10,7 @@ concurrency:
 env:
   SHELLCHECK_VERSION: "0.10.0"
   PYFLAKES_VERSION: "3.2.0"
+  ACTIONLINT_VERSION: "v1.7.9"
 
 defaults:
   run:
@@ -162,6 +163,7 @@ jobs:
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+      GOBIN: ${{ github.workspace }}/bin
     strategy:
       matrix:
         workflow:
@@ -177,6 +179,15 @@ jobs:
       - name: Set up Go with cache
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
+
+      - name: Cache actionlint binary
+        id: actionlint-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GOBIN }}/actionlint
+          key: ${{ runner.os }}-actionlint-${{ env.ACTIONLINT_VERSION }}
+          restore-keys: |
+            ${{ runner.os }}-actionlint-
 
       - name: Restore lint tool cache
         id: lint-tool-cache
