@@ -3,12 +3,13 @@ package metricsclient
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"oci-cpu-shaper/pkg/oci"
 )
 
 type p95CPUQuerier interface {
-	QueryP95CPU(ctx context.Context, resourceID string) (float32, error)
+	QueryP95CPU(ctx context.Context, resourceID string) (float64, time.Time, error)
 }
 
 type instancePrincipalConstructor func(compartmentID, region string, factory *oci.ClientFactory) (p95CPUQuerier, error)
@@ -96,17 +97,17 @@ type instancePrincipalMetricsClient struct {
 func (m *instancePrincipalMetricsClient) QueryP95CPU(
 	ctx context.Context,
 	resourceID string,
-) (float64, error) {
+) (float64, time.Time, error) {
 	if m == nil || m.client == nil {
-		return 0, fmt.Errorf("query p95 cpu: %w", ErrDelegateNil)
+		return 0, time.Time{}, fmt.Errorf("query p95 cpu: %w", ErrDelegateNil)
 	}
 
-	value, err := m.client.QueryP95CPU(ctx, resourceID)
+	value, fetchedAt, err := m.client.QueryP95CPU(ctx, resourceID)
 	if err != nil {
-		return 0, fmt.Errorf("query p95 cpu: %w", err)
+		return 0, time.Time{}, fmt.Errorf("query p95 cpu: %w", err)
 	}
 
-	return float64(value), nil
+	return value, fetchedAt, nil
 }
 
 type wrappedError string

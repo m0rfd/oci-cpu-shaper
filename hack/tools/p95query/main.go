@@ -41,7 +41,7 @@ func main() {
 }
 
 type metricsQuerier interface {
-	QueryP95CPU(ctx context.Context, instanceOCID string) (float32, error)
+	QueryP95CPU(ctx context.Context, instanceOCID string) (float64, time.Time, error)
 }
 
 //nolint:gochecknoglobals // test seam for injecting fake clients
@@ -103,7 +103,7 @@ func runQuery(cfg queryConfig) error {
 		return fmt.Errorf("build instance principal client: %w", err)
 	}
 
-	value, err := client.QueryP95CPU(ctx, cfg.instanceID)
+	value, _, err := client.QueryP95CPU(ctx, cfg.instanceID)
 	if err != nil {
 		if errors.Is(err, oci.ErrNoMetricsData) && cfg.allowEmpty {
 			log.Printf("no metrics returned for %s", cfg.instanceID)

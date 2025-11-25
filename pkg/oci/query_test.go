@@ -14,6 +14,7 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/monitoring"
 )
 
+//nolint:funlen // Covers paging and window assertions in a single flow.
 func TestQueryP95CPUFetchesWindowSamples(t *testing.T) {
 	t.Parallel()
 
@@ -58,10 +59,15 @@ func TestQueryP95CPUFetchesWindowSamples(t *testing.T) {
 	client, err := newTestClient(verifying, compartmentID, func() time.Time { return now })
 	requireNoError(t, err, "create client")
 
-	value, err := client.QueryP95CPU(context.Background(), instanceID)
+	value, fetchedAt, err := client.QueryP95CPU(context.Background(), instanceID)
 	requireNoError(t, err, "QueryP95CPU")
 
-	requireEqual(t, value, float32(18.75), "unexpected value")
+	requireEqual(t, value, float64(18.75), "unexpected value")
+
+	expectedTimestamp := now.Add(-5 * time.Minute)
+	if !fetchedAt.Equal(expectedTimestamp) {
+		t.Fatalf("expected latest timestamp %v, got %v", expectedTimestamp, fetchedAt)
+	}
 
 	verifying.mu.Lock()
 	defer verifying.mu.Unlock()
@@ -96,7 +102,7 @@ func TestQueryP95CPUHandlesMissingData(t *testing.T) {
 	)
 	requireNoError(t, err, "create client")
 
-	_, err = client.QueryP95CPU(context.Background(), "ocid1.instance.oc1.phx.empty")
+	_, _, err = client.QueryP95CPU(context.Background(), "ocid1.instance.oc1.phx.empty")
 	if !errors.Is(err, ErrNoMetricsData) {
 		t.Fatalf("expected ErrNoMetricsData, got %v", err)
 	}
@@ -114,7 +120,7 @@ func TestQueryP95CPUPropagatesErrors(t *testing.T) {
 	client, err := newTestClient(verifying, "ocid1.compartment.oc1..exampleuniqueID", time.Now)
 	requireNoError(t, err, "create client")
 
-	_, err = client.QueryP95CPU(context.Background(), "ocid1.instance.oc1.phx.failure")
+	_, _, err = client.QueryP95CPU(context.Background(), "ocid1.instance.oc1.phx.failure")
 	if err == nil || !strings.Contains(err.Error(), "summarize metrics") {
 		t.Fatalf("expected wrapped error, got %v", err)
 	}
@@ -209,14 +215,19 @@ func TestCollectLatestDatapointAggregatesAcrossPages(t *testing.T) {
 		now,
 	)
 
-	value, found, err := client.collectLatestDatapoint(context.Background(), request)
+	value, fetchedAt, found, err := client.collectLatestDatapoint(context.Background(), request)
 	requireNoError(t, err, "collect datapoint")
 
 	if !found {
 		t.Fatalf("expected to find datapoint")
 	}
 
-	requireEqual(t, value, float32(18.75), "window percentile")
+	requireEqual(t, value, float64(18.75), "window percentile")
+
+	expectedTimestamp := now.Add(-15 * time.Minute)
+	if !fetchedAt.Equal(expectedTimestamp) {
+		t.Fatalf("expected latest timestamp %v, got %v", expectedTimestamp, fetchedAt)
+	}
 
 	if stub.calls != 2 {
 		t.Fatalf("expected 2 API calls, got %d", stub.calls)
@@ -250,14 +261,19 @@ func TestCollectLatestDatapointComputesPercentileAcrossWindow(t *testing.T) {
 		now,
 	)
 
-	value, found, err := client.collectLatestDatapoint(context.Background(), request)
+	value, fetchedAt, found, err := client.collectLatestDatapoint(context.Background(), request)
 	requireNoError(t, err, "collect datapoint")
 
 	if !found {
 		t.Fatalf("expected percentile to be computed")
 	}
 
-	requireEqual(t, value, float32(80.0), "window percentile")
+	requireEqual(t, value, float64(80.0), "window percentile")
+
+	expectedTimestamp := now.Add(-45 * time.Minute)
+	if !fetchedAt.Equal(expectedTimestamp) {
+		t.Fatalf("expected latest timestamp %v, got %v", expectedTimestamp, fetchedAt)
+	}
 }
 
 func TestCollectLatestDatapointHandlesEmptyResponses(t *testing.T) {
@@ -279,7 +295,7 @@ func TestCollectLatestDatapointHandlesEmptyResponses(t *testing.T) {
 		time.Now(),
 	)
 
-	_, found, err := client.collectLatestDatapoint(context.Background(), request)
+	_, _, found, err := client.collectLatestDatapoint(context.Background(), request)
 	requireNoError(t, err, "collect datapoint")
 
 	if found {
@@ -302,9 +318,18 @@ func TestCollectLatestDatapointPropagatesErrors(t *testing.T) {
 		time.Now(),
 	)
 
-	_, _, err = client.collectLatestDatapoint(context.Background(), request)
+	value, fetchedAt, found, err := client.collectLatestDatapoint(context.Background(), request)
 	if err == nil || !strings.Contains(err.Error(), "summarize metrics") {
 		t.Fatalf("expected wrapped error, got %v", err)
+	}
+
+	if value != 0 || !fetchedAt.IsZero() || found {
+		t.Fatalf(
+			"expected zeroed datapoint on error, got value %.2f timestamp %v found %t",
+			value,
+			fetchedAt,
+			found,
+		)
 	}
 }
 

@@ -22,7 +22,7 @@ var (
 
 type fakeMetricsClient struct {
 	mu        sync.Mutex
-	values    []float32
+	values    []float64
 	lastArgs  []any
 	err       error
 	callCount int
@@ -31,7 +31,7 @@ type fakeMetricsClient struct {
 func (f *fakeMetricsClient) QueryP95CPU(
 	_ context.Context,
 	instanceOCID string,
-) (float32, error) {
+) (float64, time.Time, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -39,10 +39,10 @@ func (f *fakeMetricsClient) QueryP95CPU(
 	f.lastArgs = []any{instanceOCID}
 
 	if len(f.values) > 0 {
-		return f.values[0], f.err
+		return f.values[0], time.Time{}, f.err
 	}
 
-	return 0, f.err
+	return 0, time.Time{}, f.err
 }
 
 func withMetricsClient(t *testing.T, client metricsQuerier, execute func()) {
@@ -171,7 +171,7 @@ func TestRunQueryLogsValue(t *testing.T) {
 	t.Parallel()
 
 	client := &fakeMetricsClient{ //nolint:exhaustruct
-		values: []float32{12.5},
+		values: []float64{12.5},
 	}
 
 	withMetricsClient(t, client, func() {

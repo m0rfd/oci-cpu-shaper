@@ -24,12 +24,16 @@ func TestMonitoringClientNoContentReturnsErrNoMetricsData(t *testing.T) {
 		t.Fatalf("NewMonitoringClient returned error: %v", err)
 	}
 
-	value, err := client.QueryP95CPU(context.Background(), "ocid1.instance.oc1..example")
+	value, fetchedAt, err := client.QueryP95CPU(context.Background(), "ocid1.instance.oc1..example")
 	if !errors.Is(err, oci.ErrNoMetricsData) {
 		t.Fatalf("expected ErrNoMetricsData, got %v", err)
 	}
 
 	if value != 0 {
 		t.Fatalf("expected zero value on ErrNoMetricsData, got %.2f", value)
+	}
+
+	if !fetchedAt.IsZero() {
+		t.Fatalf("expected zero timestamp on ErrNoMetricsData, got %v", fetchedAt)
 	}
 }

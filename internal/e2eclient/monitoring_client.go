@@ -58,14 +58,17 @@ func NewMonitoringClient(
 	}, nil
 }
 
-func (c *MonitoringClient) QueryP95CPU(ctx context.Context, resourceID string) (float64, error) {
+func (c *MonitoringClient) QueryP95CPU(
+	ctx context.Context,
+	resourceID string,
+) (float64, time.Time, error) {
 	if c == nil || c.http == nil {
-		return 0, errMonitoringHTTPNotInitialised
+		return 0, time.Time{}, errMonitoringHTTPNotInitialised
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint, http.NoBody)
 	if err != nil {
-		return 0, fmt.Errorf("monitoring client: build request: %w", err)
+		return 0, time.Time{}, fmt.Errorf("monitoring client: build request: %w", err)
 	}
 
 	query := url.Values{}
@@ -74,7 +77,7 @@ func (c *MonitoringClient) QueryP95CPU(ctx context.Context, resourceID string) (
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("monitoring client: execute request: %w", err)
+		return 0, time.Time{}, fmt.Errorf("monitoring client: execute request: %w", err)
 	}
 
 	defer func() {
@@ -82,24 +85,32 @@ func (c *MonitoringClient) QueryP95CPU(ctx context.Context, resourceID string) (
 	}()
 
 	if resp.StatusCode == http.StatusNoContent {
-		return 0, oci.ErrNoMetricsData
+		return 0, time.Time{}, oci.ErrNoMetricsData
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, responseBodyLimit))
 		if len(body) == 0 {
-			return 0, fmt.Errorf("%w: %d", errMonitoringUnexpectedStatus, resp.StatusCode)
+			return 0, time.Time{}, fmt.Errorf(
+				"%w: %d",
+				errMonitoringUnexpectedStatus,
+				resp.StatusCode,
+			)
 		}
 
-		return 0, fmt.Errorf("%w: %s", errMonitoringResponseBody, strings.TrimSpace(string(body)))
+		return 0, time.Time{}, fmt.Errorf(
+			"%w: %s",
+			errMonitoringResponseBody,
+			strings.TrimSpace(string(body)),
+		)
 	}
 
 	var payload monitoringPayload
 
 	decodeErr := json.NewDecoder(resp.Body).Decode(&payload)
 	if decodeErr != nil {
-		return 0, fmt.Errorf("monitoring client: decode payload: %w", decodeErr)
+		return 0, time.Time{}, fmt.Errorf("monitoring client: decode payload: %w", decodeErr)
 	}
 
-	return payload.Value, nil
+	return payload.Value, time.Now().UTC(), nil
 }

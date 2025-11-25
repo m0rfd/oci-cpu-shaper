@@ -12,7 +12,7 @@ import (
 func TestConsumeEstimatorSuppression(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}}) //nolint:exhaustruct
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 	cfg.SuppressThreshold = 0.8
@@ -68,7 +68,7 @@ func TestConsumeEstimatorSuppression(t *testing.T) {
 func TestConsumeEstimatorRunnableSuppression(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}}) //nolint:exhaustruct
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 	cfg.SuppressThreshold = 0
@@ -104,7 +104,7 @@ func TestConsumeEstimatorRunnableSuppression(t *testing.T) {
 func TestSuppressionGuardBypassesHostSmoothing(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}}) //nolint:exhaustruct
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 	cfg.SuppressSmoothingSamples = 10
@@ -155,7 +155,7 @@ func TestSuppressionGuardBypassesHostSmoothing(t *testing.T) {
 func TestConsumeEstimatorHandlesErrors(t *testing.T) {
 	t.Parallel()
 
-	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}}) //nolint:exhaustruct
 	shaper := newFakeShaper()
 	cfg := DefaultConfig()
 
