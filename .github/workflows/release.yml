@@ -1,5 +1,8 @@
 name: Docker CI & Release
 
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
   pull_request:
@@ -47,6 +50,14 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
 
+      - name: Cache golangci-lint workspace
+        uses: actions/cache@v4
+        with:
+          path: .cache/golangci
+          key: ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/.golangci.yml', '**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-
+
       - name: Cache golangci-lint binary
         uses: actions/cache@v4
         with:
@@ -55,11 +66,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-golangci-lint-
 
+      - name: Cache actionlint binary
+        uses: actions/cache@v4
+        with:
+          path: bin/actionlint
+          key: ${{ runner.os }}-actionlint-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            ${{ runner.os }}-actionlint-${{ steps.setup-go.outputs.go-version }}-
+            ${{ runner.os }}-actionlint-
+
       - name: Cache Python tools
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-pyflakes-${{ env.PYFLAKES_VERSION }}
+          key: ${{ runner.os }}-pip-tools-pyflakes-${{ env.PYFLAKES_VERSION }}-mbake-${{ hashFiles('Makefile') }}
           restore-keys: |
             ${{ runner.os }}-pip-
 
@@ -98,6 +118,8 @@ jobs:
 
       - name: Run actionlint for release workflow
         run: make actionlint ACTIONLINT_PATHS=".github/workflows/release.yml"
+        env:
+          GOBIN: ${{ github.workspace }}/bin
 
       - name: Check Makefile formatting
         run: make lint-makefile
@@ -209,6 +231,7 @@ jobs:
       contents: read
       packages: write # GHCR push (release job)
       id-token: write # Cosign keyless (release job)
+      security-events: write # Trivy SARIF upload
 
     steps:
       - name: Checkout
