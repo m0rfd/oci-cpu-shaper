@@ -133,10 +133,6 @@ jobs:
             "INTEGRATION_COVERAGE_PROFILE=$INTEGRATION_COVERAGE_PROFILE"
           )
 
-          if [ "$integration_available" != "1" ]; then
-            coverage_env+=("INTEGRATION_PKGS=")
-          fi
-
           env "${coverage_env[@]}" make coverage
 
   build-and-test:
@@ -147,9 +143,20 @@ jobs:
       contents: read
       security-events: write
 
+    env:
+      GOCACHE: ${{ github.workspace }}/.cache/go
+      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Set up Go with cache
+        id: setup-go
+        uses: ./.github/actions/setup-go-with-cache
+
+      - name: Run checks before container build
+        run: make check
 
       - name: Compute build metadata
         id: build_meta

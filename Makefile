@@ -43,15 +43,18 @@ GOVULNCHECK_VERSION ?= v1.1.4
 ACTIONLINT_VERSION ?= v1.7.9
 MBAKE_VERSION ?= 1.4.3
 
+GO_BIN_PATH := $(strip $(GOBIN))
+ifeq ($(GO_BIN_PATH),)
 GO_BIN_PATH := $(shell \
         if command -v $(GO) >/dev/null 2>&1; then \
                 GOBIN_VALUE="$$($(GO) env GOBIN)"; \
                 if [ -n "$$GOBIN_VALUE" ]; then \
                         echo "$$GOBIN_VALUE"; \
-else \
+                else \
                         echo "$$($(GO) env GOPATH)/bin"; \
                 fi; \
         fi)
+endif
 ifeq ($(GO_BIN_PATH),)
 GO_BIN_PATH := $(HOME)/go/bin
 endif
@@ -129,29 +132,29 @@ lint-fix: verify-go-version ensure-golangci-lint mbake
 
 help:
 	@printf "Available targets:\n"
-	@for target in $(HELP_TARGETS); do \ \
-		case $$target in \ \
-			lint) desc="Run golangci-lint";; \ \
-			lint-makefile) desc="Run mbake validate and check";; \ \
-			lint-workflows) desc="Run actionlint against GitHub workflows";; \ \
-			lint-fix) desc="Run golangci-lint with autofix";; \ \
-			test) desc="Run unit tests (excludes integration/e2e)";; \ \
-			coverage) desc="Run coverage with minimum threshold enforcement";; \ \
-			build) desc="Compile all modules with cache isolation";; \ \
-			check) desc="Run lint, coverage, tests, and agent checks";; \ \
-			govulncheck) desc="Scan dependencies with govulncheck";; \ \
-			integration) desc="Execute integration suite (requires Docker + cgroup v2)";; \ \
-			e2e) desc="Execute end-to-end suite";; \ \
-			agents) desc="Validate agent instructions";; \ \
-			actionlint) desc="Lint GitHub Actions workflows";; \ \
-			clean) desc="Remove build caches and coverage artifacts";; \ \
-			help) desc="Show this help";; \ \
-			*) desc="";; \ \
-		esac; \ \
-	printf "  %-14s %s\n" "$$target" "$$desc"; \ \
+	@for target in $(HELP_TARGETS); do \
+		case $$target in \
+			lint) desc="Run golangci-lint";; \
+			lint-makefile) desc="Run mbake validate and check";; \
+			lint-workflows) desc="Run actionlint against GitHub workflows";; \
+			lint-fix) desc="Run golangci-lint with autofix";; \
+			test) desc="Run unit tests (excludes integration/e2e)";; \
+			coverage) desc="Run coverage with minimum threshold enforcement";; \
+			build) desc="Compile all modules with cache isolation";; \
+			check) desc="Run lint, coverage, tests, and agent checks";; \
+			govulncheck) desc="Scan dependencies with govulncheck";; \
+			integration) desc="Execute integration suite (requires Docker + cgroup v2)";; \
+			e2e) desc="Execute end-to-end suite";; \
+			agents) desc="Validate agent instructions";; \
+			actionlint) desc="Lint GitHub Actions workflows";; \
+			clean) desc="Remove build caches and coverage artifacts";; \
+			help) desc="Show this help";; \
+			*) desc="";; \
+		esac; \
+		printf "  %-14s %s\n" "$$target" "$$desc"; \
 	done
 
-ensure-actionlint:
+ensure-actionlint: verify-go-version
 	@set -euo pipefail; \
 	mkdir -p "$(GO_BIN_PATH)"; \
 	BIN="$(ACTIONLINT_BIN)"; \
@@ -235,14 +238,19 @@ coverage: verify-go-version
 				rm -f "$$integration_profile"; \
 			fi; \
 		fi; \
-		if [ -n "$(strip $(E2E_PKGS))" ]; then \
-			e2e_profile="coverage-e2e.out"; \
-			if GOCACHE="$(GOCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $(E2E_PKGS); then \
-				tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
+		e2e_pkgs="$(strip $(E2E_PKGS))"; \
+		if [ -n "$$e2e_pkgs" ]; then \
+			if [ "$(strip $(RUN_E2E_TESTS))" = "1" ]; then \
+				e2e_profile="coverage-e2e.out"; \
+				if GOCACHE="$(GOCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $$e2e_pkgs; then \
+					tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
+				else \
+					echo "Skipping e2e coverage due to test failures"; \
+				fi; \
+				rm -f "$$e2e_profile"; \
 			else \
-				echo "Skipping e2e coverage due to test failures"; \
+				echo "Skipping e2e coverage; set RUN_E2E_TESTS=1 to enable."; \
 			fi; \
-			rm -f "$$e2e_profile"; \
 		fi; \
 		$(GO) tool cover -func=$(COVERAGE_PROFILE) | tee $(COVERAGE_SUMMARY); \
 		"$(ROOT_DIR)/hack/coverage_summary_check.sh" "$(COVERAGE_SUMMARY)" "$(MIN_COVERAGE)"; \
@@ -373,7 +381,7 @@ e2e:
 	mkdir -p "$(GOCACHE_DIR)"; \
 	GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=e2e -v $$e2e_pkgs
 
-setup: ensure-dev-deps ensure-go maintenance
+setup: install-git-hooks ensure-dev-deps ensure-go maintenance
 	@set -euo pipefail; \
 	if ! command -v go >/dev/null 2>&1; then \
 	echo "Go installation failed; check logs above"; \
@@ -466,15 +474,28 @@ lint-autofix: lint-fix
 
 install-git-hooks:
 	@set -euo pipefail; \
-	if [ ! -d .git ]; then \
-		echo "No .git directory; skipping hook installation."; \
+	git_dir=".git"; \
+	if [ -f "$$git_dir" ]; then \
+		git_dir="$$(sed -n 's/^gitdir: //p' "$$git_dir")"; \
+	fi; \
+	if [ -z "$$git_dir" ] || [ ! -d "$$git_dir" ]; then \
+		echo "No git metadata found; skipping hook installation."; \
 		exit 0; \
 	fi; \
 	script_path="hack/githooks/pre-commit"; \
-	hook_path=".git/hooks/pre-commit"; \
+	hook_path="$$git_dir/hooks/pre-commit"; \
 	if [ ! -f "$$script_path" ]; then \
 		echo "Hook template $$script_path not found" >&2; \
 		exit 1; \
 	fi; \
+	mkdir -p "$$(dirname "$$hook_path")"; \
+	if [ -f "$$hook_path" ] && cmp -s "$$script_path" "$$hook_path"; then \
+		echo "Pre-commit hook already up to date."; \
+		exit 0; \
+	fi; \
 	install -m 0755 "$$script_path" "$$hook_path"; \
-	echo "Installed pre-commit hook with auto-staging autofix."
+	if [ -f "$$hook_path" ]; then \
+		echo "Refreshed pre-commit hook from $$script_path."; \
+	else \
+		echo "Installed pre-commit hook with auto-staging autofix."; \
+	fi
