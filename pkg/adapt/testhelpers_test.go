@@ -65,14 +65,19 @@ func (f *fakeMetrics) QueryP95CPU(ctx context.Context, _ string) (float64, error
 	return result.value, result.err
 }
 
+type hostSignal struct {
+	utilisation float64
+	runnable    float64
+}
+
 type fakeShaper struct {
-	target    float64
-	calls     []float64
-	hostLoads []float64
+	target     float64
+	calls      []float64
+	hostSignal []hostSignal
 }
 
 func newFakeShaper() *fakeShaper {
-	return &fakeShaper{target: 0, calls: make([]float64, 0), hostLoads: make([]float64, 0)}
+	return &fakeShaper{target: 0, calls: make([]float64, 0), hostSignal: make([]hostSignal, 0)}
 }
 
 func (f *fakeShaper) SetTarget(v float64) {
@@ -82,8 +87,8 @@ func (f *fakeShaper) SetTarget(v float64) {
 
 func (f *fakeShaper) Target() float64 { return f.target }
 
-func (f *fakeShaper) ObserveHostLoad(util float64) {
-	f.hostLoads = append(f.hostLoads, util)
+func (f *fakeShaper) ObserveHostLoad(util, runnable float64) {
+	f.hostSignal = append(f.hostSignal, hostSignal{utilisation: util, runnable: runnable})
 }
 
 type fakeEstimator struct {

@@ -46,7 +46,7 @@ func (r *recordingDutyCycler) Target() float64 {
 	return r.target
 }
 
-func (r *recordingDutyCycler) ObserveHostLoad(float64) {
+func (r *recordingDutyCycler) ObserveHostLoad(float64, float64) {
 	if r == nil {
 		return
 	}

@@ -53,7 +53,7 @@ func TestAdaptiveControllerDryRunRecordsTargets(t *testing.T) {
 		)
 	}
 
-	recorder.ObserveHostLoad(0.85)
+	recorder.ObserveHostLoad(0.85, 0)
 
 	if len(shaper.calls) != 0 {
 		t.Fatalf(
@@ -99,10 +99,10 @@ func TestRecordingDutyCyclerObserveHostLoadNoop(t *testing.T) {
 	t.Parallel()
 
 	var nilRecorder *recordingDutyCycler
-	nilRecorder.ObserveHostLoad(0.7)
+	nilRecorder.ObserveHostLoad(0.7, 0.5)
 
 	recorder := &recordingDutyCycler{mu: sync.Mutex{}, target: 0}
-	recorder.ObserveHostLoad(0.9)
+	recorder.ObserveHostLoad(0.9, 0)
 }
 
 func TestNewModeAwareDutyCyclerHandlesNilShaper(t *testing.T) {
@@ -119,7 +119,7 @@ func TestRecordingDutyCyclerNilReceiver(t *testing.T) {
 	var recorder *recordingDutyCycler
 
 	recorder.SetTarget(0.55)
-	recorder.ObserveHostLoad(0.75)
+	recorder.ObserveHostLoad(0.75, 0.1)
 
 	if target := recorder.Target(); target != 0 {
 		t.Fatalf("expected nil recorder target to remain zero, got %.2f", target)
