@@ -101,8 +101,14 @@ func (c *AdaptiveController) nextIntervalLocked(p95 float64) time.Duration {
 		return c.cfg.Interval
 	}
 
+	nextInterval := c.cfg.Interval
+
 	if p95 >= c.cfg.RelaxedThreshold {
 		c.relaxedSuccesses++
+
+		if c.relaxedSuccesses >= c.cfg.RelaxedConfirmations {
+			nextInterval = c.cfg.RelaxedInterval
+		}
 	} else {
 		c.relaxedSuccesses = 0
 	}
@@ -112,9 +118,5 @@ func (c *AdaptiveController) nextIntervalLocked(p95 float64) time.Duration {
 		c.recorder.SetRelaxedSuccesses(c.relaxedSuccesses)
 	}
 
-	if c.relaxedSuccesses >= c.cfg.RelaxedConfirmations {
-		return c.cfg.RelaxedInterval
-	}
-
-	return c.cfg.Interval
+	return nextInterval
 }
