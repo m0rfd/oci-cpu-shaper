@@ -35,6 +35,8 @@ Flags remain intentionally minimal so orchestration tools can template them alon
 
 `--mode` defaults to `enforce` so production-ready deployments do not need to pass the flag. Operators can opt into a metrics-only posture with `--mode dry-run` (or `SHAPER_MODE=dry-run` in Compose/Quadlet env files) and can bypass controller wiring entirely for diagnostics with `--mode noop`.
 
+Mode parsing now normalises blank inputs and the legacy `normal` label to the canonical `enforce` value before wiring the controller or emitting `shaper_mode` metrics, keeping flag/env/YAML inputs aligned with the exported labels.
+
 The CLI also installs `SIGINT`/`SIGTERM` handlers that wrap the run loop in a
 `context.WithCancel`. Delivering either signal now cancels the controller,
 worker pool, and HTTP server contexts just like the time-bounded shutdown,

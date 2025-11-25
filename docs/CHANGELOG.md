@@ -121,6 +121,10 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
 - CLI `--mode` now defaults to enforcing/normal operation instead of `dry-run`,
   updating the help text and docs so operators start with the adaptive
   controller active unless explicitly opting into monitor-only mode (§§5, 9).
+- Controller mode naming now uses the canonical `enforce` label across adapt
+  defaults, CLI parsing, and `shaper_mode` metrics; legacy `normal` values
+  normalize to the canonical label so documentation and tests reference a
+  single enforcement name (§§5, 9, 12).
 - Introduced `pkg/oci/metricsclient` for metrics builders/context helpers and shifted the
   CLI defaults to consume it, keeping metrics wiring thin while preserving the e2e
   override path. Updated §3.1 package touchpoints to note the new module (§§3.1, 5, 12).

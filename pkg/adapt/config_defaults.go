@@ -1,12 +1,11 @@
 package adapt
 
-import (
-	"strings"
-	"time"
-)
+import "time"
 
 const (
-	defaultModeLabel              = "normal"
+	enforceModeLabel              = "enforce"
+	legacyEnforceModeLabel        = "normal"
+	defaultModeLabel              = enforceModeLabel
 	dryRunModeLabel               = "dry-run"
 	noopModeLabel                 = "noop"
 	defaultTargetStart            = 0.22
@@ -55,10 +54,7 @@ func DefaultConfig() Config {
 // ModeEnforcesTargets reports whether the provided controller mode should mutate
 // the worker pool duty cycle.
 func ModeEnforcesTargets(mode string) bool {
-	trimmed := strings.ToLower(strings.TrimSpace(mode))
-	if trimmed == "" {
-		trimmed = defaultModeLabel
-	}
+	trimmed := normalizeModeLabel(mode)
 
 	switch trimmed {
 	case dryRunModeLabel, noopModeLabel:
