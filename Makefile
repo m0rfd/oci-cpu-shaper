@@ -151,7 +151,7 @@ help:
 	printf "  %-14s %s\n" "$$target" "$$desc"; \ \
 	done
 
-ensure-actionlint:
+ensure-actionlint: verify-go-version
 	@set -euo pipefail; \
 	mkdir -p "$(GO_BIN_PATH)"; \
 	BIN="$(ACTIONLINT_BIN)"; \
@@ -383,7 +383,7 @@ e2e:
 	mkdir -p "$(GOCACHE_DIR)"; \
 	GOCACHE="$(GOCACHE_DIR)" $(GO) test -tags=e2e -v $$e2e_pkgs
 
-setup: ensure-dev-deps ensure-go maintenance
+setup: install-git-hooks ensure-dev-deps ensure-go maintenance
 	@set -euo pipefail; \
 	if ! command -v go >/dev/null 2>&1; then \
 	echo "Go installation failed; check logs above"; \
@@ -476,15 +476,28 @@ lint-autofix: lint-fix
 
 install-git-hooks:
 	@set -euo pipefail; \
-	if [ ! -d .git ]; then \
-		echo "No .git directory; skipping hook installation."; \
+	git_dir=".git"; \
+	if [ -f "$$git_dir" ]; then \
+		git_dir="$$(sed -n 's/^gitdir: //p' "$$git_dir")"; \
+	fi; \
+	if [ -z "$$git_dir" ] || [ ! -d "$$git_dir" ]; then \
+		echo "No git metadata found; skipping hook installation."; \
 		exit 0; \
 	fi; \
 	script_path="hack/githooks/pre-commit"; \
-	hook_path=".git/hooks/pre-commit"; \
+	hook_path="$$git_dir/hooks/pre-commit"; \
 	if [ ! -f "$$script_path" ]; then \
 		echo "Hook template $$script_path not found" >&2; \
 		exit 1; \
 	fi; \
+	mkdir -p "$$(dirname "$$hook_path")"; \
+	if [ -f "$$hook_path" ] && cmp -s "$$script_path" "$$hook_path"; then \
+		echo "Pre-commit hook already up to date."; \
+		exit 0; \
+	fi; \
 	install -m 0755 "$$script_path" "$$hook_path"; \
-	echo "Installed pre-commit hook with auto-staging autofix."
+	if [ -f "$$hook_path" ]; then \
+		echo "Refreshed pre-commit hook from $$script_path."; \
+	else \
+		echo "Installed pre-commit hook with auto-staging autofix."; \
+	fi
