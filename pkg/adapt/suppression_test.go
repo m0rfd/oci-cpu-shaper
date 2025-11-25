@@ -101,6 +101,57 @@ func TestConsumeEstimatorRunnableSuppression(t *testing.T) {
 	}
 }
 
+func TestSuppressionGuardBypassesHostSmoothing(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}})
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+	cfg.SuppressSmoothingSamples = 10
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	feedObservation(controller, 0, 0.3, nil)
+
+	feedObservation(controller, 1, 0.95, nil)
+
+	if controller.State() != StateSuppressed {
+		t.Fatalf("expected utilisation spike to suppress controller, got %v", controller.State())
+	}
+
+	if math.Abs(controller.hostLoad-0.95) > 1e-9 {
+		t.Fatalf("expected host load to jump to spike, got %.3f", controller.hostLoad)
+	}
+
+	feedObservation(controller, 2, 0.10, nil)
+
+	if controller.State() != StateSuppressed {
+		t.Fatalf(
+			"expected suppression to persist while host load decays, got %v",
+			controller.State(),
+		)
+	}
+
+	for i := 0; i < 4 && controller.State() == StateSuppressed; i++ {
+		feedObservation(controller, int64(3+i), 0.1, nil)
+	}
+
+	if controller.State() != StateFallback {
+		t.Fatalf("expected controller to resume after cooldown, got %v", controller.State())
+	}
+
+	if diff := math.Abs(controller.Target() - cfg.FallbackTarget); diff > 1e-9 {
+		t.Fatalf(
+			"expected fallback target %.2f after cooldown, got %.2f",
+			cfg.FallbackTarget,
+			controller.Target(),
+		)
+	}
+}
+
 func TestConsumeEstimatorHandlesErrors(t *testing.T) {
 	t.Parallel()
 

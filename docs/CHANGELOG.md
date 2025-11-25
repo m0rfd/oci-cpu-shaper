@@ -104,6 +104,7 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 
 ### Changed
 _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% threshold impact (§11)._
+- Documented the controller interval selection (normal, relaxed, fallback) plus the relaxed confirmation hysteresis and refreshed the metrics/`/healthz` field names in §§4–5 so the docs mirror the current defaults and telemetry exports.
 - Relaxed controller cadence now waits for two consecutive above-threshold P95 samples before switching to the four-hour loop.
   New `controller.relaxedConfirmations`/`SHAPER_RELAXED_CONFIRMATIONS` knobs carry a default of `2`, update the sample configs,
   and ship unit coverage for the hysteresis counter so the ≥96% statement floor remains intact (§§3.1, 5.2, 9, 11).
@@ -122,6 +123,10 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
 - CLI `--mode` now defaults to enforcing/normal operation instead of `dry-run`,
   updating the help text and docs so operators start with the adaptive
   controller active unless explicitly opting into monitor-only mode (§§5, 9).
+- Controller mode naming now uses the canonical `enforce` label across adapt
+  defaults, CLI parsing, and `shaper_mode` metrics; legacy `normal` values
+  normalize to the canonical label so documentation and tests reference a
+  single enforcement name (§§5, 9, 12).
 - Introduced `pkg/oci/metricsclient` for metrics builders/context helpers and shifted the
   CLI defaults to consume it, keeping metrics wiring thin while preserving the e2e
   override path. Updated §3.1 package touchpoints to note the new module (§§3.1, 5, 12).

@@ -71,6 +71,12 @@ func assertDefaultControllerFields(t *testing.T, cfg Config, defaults adapt.Conf
 		cfg.Controller.SuppressRunnableResume,
 		defaults.SuppressRunnableResume,
 	)
+	assertIntEqual(
+		t,
+		"suppressSmoothingSamples",
+		cfg.Controller.SuppressSmoothingSamples,
+		defaults.SuppressSmoothingSamples,
+	)
 }
 
 func assertDefaultPoolFields(t *testing.T, cfg Config, defaults adapt.Config) {
@@ -107,6 +113,7 @@ func TestConfigToAdaptConfig(t *testing.T) {
 			SuppressResume:            0.6,
 			SuppressRunnableThreshold: 1.4,
 			SuppressRunnableResume:    1.1,
+			SuppressSmoothingSamples:  3,
 		},
 	}
 
@@ -205,11 +212,18 @@ func assertAdaptIntFields(t *testing.T, controllerCfg ControllerConfig, adaptCfg
 		name string
 		got  int
 		want int
-	}{{
-		name: "relaxedConfirmations",
-		got:  adaptCfg.RelaxedConfirmations,
-		want: controllerCfg.RelaxedConfirmations,
-	}}
+	}{
+		{
+			name: "relaxedConfirmations",
+			got:  adaptCfg.RelaxedConfirmations,
+			want: controllerCfg.RelaxedConfirmations,
+		},
+		{
+			name: "suppressSmoothingSamples",
+			got:  adaptCfg.SuppressSmoothingSamples,
+			want: controllerCfg.SuppressSmoothingSamples,
+		},
+	}
 
 	for _, tt := range intChecks {
 		t.Run(tt.name, func(t *testing.T) {

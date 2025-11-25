@@ -30,6 +30,11 @@ func validateControllerConfig(cfg Config) error {
 		return err
 	}
 
+	err = validateSuppressSmoothing(cfg)
+	if err != nil {
+		return err
+	}
+
 	err = validateGoalBounds(cfg)
 	if err != nil {
 		return err
@@ -110,6 +115,29 @@ func validateRelaxedConfirmations(cfg Config) error {
 			ErrInvalidConfig,
 			cfg.RelaxedConfirmations,
 			maxRelaxedConfirmations,
+		)
+	}
+
+	return nil
+}
+
+func validateSuppressSmoothing(cfg Config) error {
+	const maxSuppressSmoothing = 100
+
+	if cfg.SuppressSmoothingSamples < 0 {
+		return fmt.Errorf(
+			"%w: controller.suppressSmoothingSamples (%d) must be zero (no smoothing) or greater",
+			ErrInvalidConfig,
+			cfg.SuppressSmoothingSamples,
+		)
+	}
+
+	if cfg.SuppressSmoothingSamples > maxSuppressSmoothing {
+		return fmt.Errorf(
+			"%w: controller.suppressSmoothingSamples (%d) must not exceed %d (would delay suppression excessively)",
+			ErrInvalidConfig,
+			cfg.SuppressSmoothingSamples,
+			maxSuppressSmoothing,
 		)
 	}
 

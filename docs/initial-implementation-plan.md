@@ -65,7 +65,7 @@ We support two documented modes. Rootless is first-class but not exclusive.
 
 * Minimal HTTP `/metrics` in Prometheus text format:
 
-  * `shaper_target_ratio`, `shaper_mode` (normal|fallback), `oci_p95`, `oci_last_success_epoch`, `duty_cycle_ms`, `worker_count`, `host_cpu_percent`.
+* `shaper_target_ratio`, `shaper_mode` (`noop`|`dry-run`|`enforce`), `oci_p95`, `oci_last_success_epoch`, `duty_cycle_ms`, `worker_count`, `host_cpu_percent`.
 * No push. No external dependencies.
 
 ### 3.3 Instance discovery
@@ -134,6 +134,7 @@ band that stays above the OCI reclaim floor while closing faster when idle and d
 * `SHAPER_SUPPRESS_RUNNABLE_RESUME=0.96`
 * `SHAPER_WORKER_COUNT=2`
 * `SHAPER_WORKER_AUTOSIZE=false` (opt-in IMDS `shapeConfig.OCPUs` sizing clamped between 1 and 32 workers)
+* `SHAPER_SUPPRESS_SMOOTHING_SAMPLES=5`
 * `HTTP_ADDR=:9108`
 * No region/OCID input needed; IMDSv2 supplies them.
 

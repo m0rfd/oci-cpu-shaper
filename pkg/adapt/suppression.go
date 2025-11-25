@@ -1,15 +1,13 @@
 package adapt
 
-const hostLoadSmoothing = 5
-
-func (c *AdaptiveController) updateHostLoadLocked(utilisation float64) {
-	if c.hostLoad == 0 {
+func (c *AdaptiveController) updateHostLoadLocked(utilisation float64, guardExceeded bool) {
+	if c.hostLoad == 0 || guardExceeded || c.cfg.SuppressSmoothingSamples <= 1 {
 		c.hostLoad = utilisation
 
 		return
 	}
 
-	c.hostLoad += (utilisation - c.hostLoad) / float64(hostLoadSmoothing)
+	c.hostLoad += (utilisation - c.hostLoad) / float64(c.cfg.SuppressSmoothingSamples)
 }
 
 func (c *AdaptiveController) transitionSuppressionLocked(guarded bool) bool {

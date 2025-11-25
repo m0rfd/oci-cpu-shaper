@@ -57,6 +57,60 @@ func TestControllerStateTransitions(t *testing.T) {
 	}
 }
 
+func TestControllerRelaxedIntervalSingleConfirmation(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.RelaxedConfirmations = 1
+
+	scenario := controllerScenario{
+		name: "single-high-switches-to-relaxed",
+		cfg:  &cfg,
+		results: []metricResult{
+			{value: cfg.RelaxedThreshold, err: nil},
+		},
+		expectations: []stepExpectation{
+			{
+				state:        StateNormal,
+				target:       cfg.TargetStart,
+				nextInterval: cfg.RelaxedInterval,
+			},
+		},
+	}
+
+	runControllerScenario(t, scenario)
+}
+
+func TestControllerRelaxedIntervalRequiresConsecutiveConfirmations(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.RelaxedConfirmations = 2
+
+	scenario := controllerScenario{
+		name: "first-high-keeps-normal-interval",
+		cfg:  &cfg,
+		results: []metricResult{
+			{value: cfg.RelaxedThreshold, err: nil},
+			{value: cfg.RelaxedThreshold, err: nil},
+		},
+		expectations: []stepExpectation{
+			{
+				state:        StateNormal,
+				target:       cfg.TargetStart,
+				nextInterval: cfg.Interval,
+			},
+			{
+				state:        StateNormal,
+				target:       cfg.TargetStart,
+				nextInterval: cfg.RelaxedInterval,
+			},
+		},
+	}
+
+	runControllerScenario(t, scenario)
+}
+
 func controllerStateScenarios(
 	defaults Config,
 	fastInterval time.Duration,

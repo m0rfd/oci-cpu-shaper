@@ -84,6 +84,22 @@ func TestEnvIntRejectsNonPositive(t *testing.T) {
 	}
 }
 
+func TestEnvIntAllowZero(t *testing.T) {
+	keyZero := "OCI_CPU_SHAPER_TEST_INT_ALLOW_ZERO"
+	t.Setenv(keyZero, "0")
+
+	if got := envIntAllowZero(keyZero, 3); got != 0 {
+		t.Fatalf("expected zero to be accepted, got %d", got)
+	}
+
+	keyNegative := "OCI_CPU_SHAPER_TEST_INT_ALLOW_ZERO_NEGATIVE"
+	t.Setenv(keyNegative, "-2")
+
+	if got := envIntAllowZero(keyNegative, 4); got != 4 {
+		t.Fatalf("expected negative to fall back, got %d", got)
+	}
+}
+
 func TestEnvStringTrimsAndFallback(t *testing.T) {
 	keyBlank := "OCI_CPU_SHAPER_TEST_STRING_BLANK"
 	t.Setenv(keyBlank, "   ")
@@ -164,6 +180,7 @@ func TestApplyEnvOverridesInvalidNumbersFallbackToDefaults(t *testing.T) {
 		envSuppressResume:            "none",
 		envSuppressRunnableThreshold: "oops",
 		envSuppressRunnableResume:    "??",
+		envSuppressSmoothingSamples:  "nah",
 		envPoolPauseThreshold:        "oops",
 		envPoolResumeThreshold:       "resume-not-number",
 		// OCI offline should ignore unknown values and keep the fallback.

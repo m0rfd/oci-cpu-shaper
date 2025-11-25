@@ -34,6 +34,7 @@ func Default() Config {
 	cfg.Controller.SuppressResume = defaults.SuppressResume
 	cfg.Controller.SuppressRunnableThreshold = defaults.SuppressRunnableThreshold
 	cfg.Controller.SuppressRunnableResume = defaults.SuppressRunnableResume
+	cfg.Controller.SuppressSmoothingSamples = defaults.SuppressSmoothingSamples
 
 	cfg.Estimator.Interval = defaultEstimatorInterval
 
@@ -71,5 +72,6 @@ func (cfg Config) ToAdaptConfig() adapt.Config {
 		SuppressResume:            cfg.Controller.SuppressResume,
 		SuppressRunnableThreshold: cfg.Controller.SuppressRunnableThreshold,
 		SuppressRunnableResume:    cfg.Controller.SuppressRunnableResume,
+		SuppressSmoothingSamples:  cfg.Controller.SuppressSmoothingSamples,
 	}
 }

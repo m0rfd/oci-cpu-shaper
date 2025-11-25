@@ -89,6 +89,14 @@ func TestEnsureIntKeepsNegative(t *testing.T) {
 	}
 }
 
+func TestEnsureIntAllowZeroPreservesZero(t *testing.T) {
+	t.Parallel()
+
+	if got := ensureIntAllowZero(0, 5); got != 0 {
+		t.Fatalf("expected zero smoothing samples to be preserved, got %d", got)
+	}
+}
+
 func TestNormalizeConfigAdjustsSuppressResume(t *testing.T) {
 	t.Parallel()
 
@@ -111,6 +119,30 @@ func TestNormalizeConfigAdjustsSuppressResume(t *testing.T) {
 			"expected suppress resume %.2f, got %.2f",
 			expectedResume,
 			normalized.SuppressResume,
+		)
+	}
+}
+
+func TestNormalizeConfigMapsLegacyNormalMode(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Mode = legacyEnforceModeLabel
+
+	normalized, mode, err := normalizeConfig(cfg)
+	if err != nil {
+		t.Fatalf("normalizeConfig returned error: %v", err)
+	}
+
+	if mode != enforceModeLabel {
+		t.Fatalf("expected legacy mode to normalize to %q, got %q", enforceModeLabel, mode)
+	}
+
+	if normalized.Mode != enforceModeLabel {
+		t.Fatalf(
+			"expected normalized config mode to be %q, got %q",
+			enforceModeLabel,
+			normalized.Mode,
 		)
 	}
 }

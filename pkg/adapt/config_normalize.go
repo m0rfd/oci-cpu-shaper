@@ -42,6 +42,10 @@ func coerceConfig(cfg Config) (Config, string) {
 		cfg.SuppressRunnableResume,
 		defaults.SuppressRunnableResume,
 	)
+	cfg.SuppressSmoothingSamples = ensureIntAllowZero(
+		cfg.SuppressSmoothingSamples,
+		defaults.SuppressSmoothingSamples,
+	)
 
 	cfg.SuppressThreshold = clamp(cfg.SuppressThreshold, 0, 1)
 
@@ -66,12 +70,19 @@ func coerceConfig(cfg Config) (Config, string) {
 		cfg.SuppressRunnableResume = cfg.SuppressRunnableThreshold * suppressResumeScale
 	}
 
-	mode := strings.TrimSpace(cfg.Mode)
-	if mode == "" {
-		mode = defaultModeLabel
-	}
+	mode := normalizeModeLabel(cfg.Mode)
+	cfg.Mode = mode
 
 	return cfg, mode
+}
+
+func normalizeModeLabel(mode string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(mode))
+	if trimmed == "" || trimmed == legacyEnforceModeLabel {
+		return enforceModeLabel
+	}
+
+	return trimmed
 }
 
 func ensureDuration(value, fallback time.Duration) time.Duration {
@@ -104,4 +115,12 @@ func ensureInt(value, fallback int) int {
 	}
 
 	return value
+}
+
+func ensureIntAllowZero(value, fallback int) int {
+	if value == 0 {
+		return 0
+	}
+
+	return ensureInt(value, fallback)
 }

@@ -35,6 +35,8 @@ Flags remain intentionally minimal so orchestration tools can template them alon
 
 `--mode` defaults to `enforce` so production-ready deployments do not need to pass the flag. Operators can opt into a metrics-only posture with `--mode dry-run` (or `SHAPER_MODE=dry-run` in Compose/Quadlet env files) and can bypass controller wiring entirely for diagnostics with `--mode noop`.
 
+Mode parsing now normalises blank inputs and the legacy `normal` label to the canonical `enforce` value before wiring the controller or emitting `shaper_mode` metrics, keeping flag/env/YAML inputs aligned with the exported labels.
+
 The CLI also installs `SIGINT`/`SIGTERM` handlers that wrap the run loop in a
 `context.WithCancel`. Delivering either signal now cancels the controller,
 worker pool, and HTTP server contexts just like the time-bounded shutdown,
@@ -69,6 +71,7 @@ controller:
   suppressResume: 0.68
   suppressRunnableThreshold: 1.20
   suppressRunnableResume: 0.96
+  suppressSmoothingSamples: 5
 estimator:
   interval: 1s
 pool:
@@ -94,7 +97,7 @@ oci:
   samples remain usable in source control. Operators should extend the manifest
   with their own `compartmentId`, `region`, and optional `instanceId` values
   before entering enforce mode.
-- `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed four-hour interval once OCI P95 stays at or above 0.26 for two consecutive polls (tuned via `controller.relaxedConfirmations`/`SHAPER_RELAXED_CONFIRMATIONS`). The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) now reflect the 0.80/0.68 hysteresis that decides when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools, while `suppressRunnableThreshold`/`suppressRunnableResume` clamp the loop immediately when runnable tasks exceed ~1.2 per CPU and only resume once the run queue cools. Set `controller.suppressThreshold` to `0` (or any non-positive value) to disable utilisation-based suppression entirely; the resume threshold is ignored in that case. The same runnable guard now flows into the worker pool so both the controller target and the workers pause in lock-step when the per-CPU run queue crosses the configured limit.
+- `controller.*` mirrors the slow-loop thresholds from §3.1, including the one-hour cadence and relaxed four-hour interval once OCI P95 stays at or above 0.26 for two consecutive polls (tuned via `controller.relaxedConfirmations`/`SHAPER_RELAXED_CONFIRMATIONS`). The fast-loop suppression settings (`suppressThreshold`, `suppressResume`) now reflect the 0.80/0.68 hysteresis that decides when estimator-driven contention drops the worker pool to zero and when work resumes after the host cools, while `suppressRunnableThreshold`/`suppressRunnableResume` clamp the loop immediately when runnable tasks exceed ~1.2 per CPU and only resume once the run queue cools. Set `controller.suppressThreshold` to `0` (or any non-positive value) to disable utilisation-based suppression entirely; the resume threshold is ignored in that case. `controller.suppressSmoothingSamples` controls how aggressively the fast loop smooths host utilisation between guard checks—set it to `1` (or `0` via env) to bypass smoothing and react immediately to threshold spikes. The same runnable guard now flows into the worker pool so both the controller target and the workers pause in lock-step when the per-CPU run queue crosses the configured limit.
 - The loader now enforces the documented ratios and cadences: `targetMin` must remain below `targetMax`, every slow-loop target and goal must fall within that band, and the `interval`, `relaxedInterval`, `stepUp`, `stepDown`, `pool.quantum`, and `pool.workers` values must be positive. Invalid manifests abort startup with an exit status of `2` so operators can fix the config before the controller touches system state (§§3.1, 5.2).
 - Configuration processing now flows through four dedicated stages, all implemented in `pkg/runtimeconfig`: an immutable defaults builder, a YAML merge helper, environment overrides, and validators. Each stage is unit-tested individually so overrides and safety rails stay predictable, and env vars always win over file-sourced values without mutating the stored defaults (§5.2).
 - Validation now enforces that every slow-loop target or goal remains below both suppression thresholds, so manifests that would immediately re-trigger the fast loop are rejected with an exit status of `2` and a descriptive error message (§§3.1, 5.2).
@@ -123,6 +126,7 @@ The CLI honours the following environment variables, matching the naming in §5.
 | `SHAPER_FAST_INTERVAL` | Host CPU sampling cadence for the estimator. | `1s` |
 | `SHAPER_SUPPRESS_THRESHOLD` / `SHAPER_SUPPRESS_RESUME` | Utilisation-based fast-loop suppression thresholds that gate the zero-target mode. Assign `SHAPER_SUPPRESS_THRESHOLD=0` (or any non-positive value) to disable utilisation suppression; the resume override is ignored when that path is off. | `0.80` / `0.68` |
 | `SHAPER_SUPPRESS_RUNNABLE_THRESHOLD` / `SHAPER_SUPPRESS_RUNNABLE_RESUME` | Runnable-per-CPU band that pauses the controller immediately when the run queue spikes. Assign either to `0` to disable runnable-based suppression independently of utilisation thresholds. | `1.20` / `0.96` |
+| `SHAPER_SUPPRESS_SMOOTHING_SAMPLES` | Host utilisation smoothing window applied before suppression; set to `0` or `1` to react immediately to threshold spikes. | `5` |
 | `SHAPER_WORKER_COUNT` | Number of duty-cycle workers (`>=1`). | `2` |
 | `SHAPER_WORKER_AUTOSIZE` | Derive the worker count from IMDS `shapeConfig.OCPUs`, clamped between 1 and 32 workers. | `false` |
 | `SHAPER_POOL_PAUSE_THRESHOLD` / `SHAPER_POOL_RESUME_THRESHOLD` | Host CPU hysteresis that pauses/resumes the worker pool when the estimator detects contention. | `0.80` / `0.68` |

@@ -65,6 +65,13 @@ func (f *fakeMetrics) QueryP95CPU(ctx context.Context, _ string) (float64, error
 	return result.value, result.err
 }
 
+func (f *fakeMetrics) CallCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.callIndex
+}
+
 type hostSignal struct {
 	utilisation float64
 	runnable    float64

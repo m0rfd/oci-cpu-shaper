@@ -16,6 +16,11 @@ func TestModeEnforcesTargets(t *testing.T) {
 	}{
 		{name: "dry-run disabled", mode: dryRunModeLabel, enforcing: false},
 		{name: "empty defaults to enforcing", mode: "", enforcing: true},
+		{
+			name:      "legacy normal defaults to enforcing",
+			mode:      legacyEnforceModeLabel,
+			enforcing: true,
+		},
 		{name: "explicit enforce", mode: "enforce", enforcing: true},
 		{name: "case insensitive", mode: " EnFoRcE ", enforcing: true},
 		{name: "unknown modes enforce", mode: "observe", enforcing: true},

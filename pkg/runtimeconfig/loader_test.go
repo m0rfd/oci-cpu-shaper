@@ -122,6 +122,7 @@ func TestLoadConfigAppliesFileOverrides(t *testing.T) {
 	assertFloatEqual(t, "suppressResume", cfg.Controller.SuppressResume, 0.6)
 	assertFloatEqual(t, "suppressRunnableThreshold", cfg.Controller.SuppressRunnableThreshold, 1.05)
 	assertFloatEqual(t, "suppressRunnableResume", cfg.Controller.SuppressRunnableResume, 0.8)
+	assertIntEqual(t, "suppressSmoothingSamples", cfg.Controller.SuppressSmoothingSamples, 6)
 	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, 0.88)
 	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, 0.44)
 	assertFloatEqual(t, "poolRunnableGuard", cfg.Pool.RunnableGuard, 1.1)
@@ -163,6 +164,7 @@ func setEnvOverrides(t *testing.T) {
 	t.Setenv(envSuppressResume, "0.51")
 	t.Setenv(envSuppressRunnableThreshold, "1.3")
 	t.Setenv(envSuppressRunnableResume, "0.7")
+	t.Setenv(envSuppressSmoothingSamples, "0")
 }
 
 func assertEnvOverrides(t *testing.T, cfg Config) {
@@ -183,6 +185,7 @@ func assertEnvOverrides(t *testing.T, cfg Config) {
 		1.3,
 	)
 	assertFloatEqual(t, "suppressRunnableResume", cfg.Controller.SuppressRunnableResume, 0.7)
+	assertIntEqual(t, "suppressSmoothingSamples", cfg.Controller.SuppressSmoothingSamples, 0)
 	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, 0.81)
 	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, 0.49)
 	assertFloatEqual(t, "poolRunnableGuard", cfg.Pool.RunnableGuard, 1.7)
