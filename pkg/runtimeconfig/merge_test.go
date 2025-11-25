@@ -62,6 +62,7 @@ estimator:
   interval: 750ms
 pool:
   workers: 3
+  autoSizeFromShape: true
   quantum: 33ms
   pauseThreshold: 0.8
   resumeThreshold: 0.5
@@ -98,6 +99,7 @@ func assertMergeOverrides(t *testing.T, cfg Config) {
 	assertIntEqual(t, "suppressSmoothingSamples", cfg.Controller.SuppressSmoothingSamples, 7)
 	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, 750*time.Millisecond)
 	assertIntEqual(t, "poolWorkers", cfg.Pool.Workers, 3)
+	assertBoolEqual(t, "poolAutoSizeFromShape", cfg.Pool.AutoSizeFromShape, true)
 	assertDurationEqual(t, "poolQuantum", cfg.Pool.Quantum, 33*time.Millisecond)
 	assertFloatEqual(t, "poolPauseThreshold", cfg.Pool.PauseThreshold, 0.8)
 	assertFloatEqual(t, "poolResumeThreshold", cfg.Pool.ResumeThreshold, 0.5)

@@ -62,6 +62,7 @@ func mergeEstimatorConfig(dst *EstimatorConfig, src estimatorFileConfig) {
 
 func mergePoolConfig(dst *PoolConfig, src poolFileConfig) {
 	assignInt(&dst.Workers, src.Workers)
+	assignBool(&dst.AutoSizeFromShape, src.AutoSizeFromShape)
 	assignDuration(&dst.Quantum, src.Quantum)
 	assignFloat(&dst.PauseThreshold, src.PauseThreshold)
 	assignFloat(&dst.ResumeThreshold, src.ResumeThreshold)

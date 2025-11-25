@@ -32,6 +32,7 @@ func TestLoadConfigUsesDefaultsWhenFileMissing(t *testing.T) {
 	assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9108")
 	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, time.Second)
 	assertIntEqual(t, "poolWorkers", cfg.Pool.Workers, 2)
+	assertBoolEqual(t, "poolAutoSizeFromShape", cfg.Pool.AutoSizeFromShape, false)
 	assertBoolEqual(t, "offline", cfg.OCI.Offline, false)
 	assertStringEqual(t, "region", cfg.OCI.Region, "")
 	assertFloatEqual(
@@ -107,6 +108,7 @@ func TestLoadConfigAppliesFileOverrides(t *testing.T) {
 	assertFloatEqual(t, "targetStart", cfg.Controller.TargetStart, 0.26)
 	assertDurationEqual(t, "controllerInterval", cfg.Controller.Interval, 30*time.Minute)
 	assertIntEqual(t, "poolWorkers", cfg.Pool.Workers, 2)
+	assertBoolEqual(t, "poolAutoSizeFromShape", cfg.Pool.AutoSizeFromShape, true)
 	assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9200")
 	assertStringEqual(
 		t,
@@ -149,6 +151,7 @@ func setEnvOverrides(t *testing.T) {
 	t.Setenv(envRelaxedConfirmations, "5")
 	t.Setenv(envFastInterval, "250ms")
 	t.Setenv(envPoolWorkers, "4")
+	t.Setenv(envPoolAutoSize, "TRUE")
 	t.Setenv(envPoolPauseThreshold, "0.81")
 	t.Setenv(envPoolResumeThreshold, "0.49")
 	t.Setenv(envPoolRunnableGuard, "1.7")
@@ -188,6 +191,7 @@ func assertEnvOverrides(t *testing.T, cfg Config) {
 	assertFloatEqual(t, "poolRunnableGuard", cfg.Pool.RunnableGuard, 1.7)
 	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, 250*time.Millisecond)
 	assertIntEqual(t, "workers", cfg.Pool.Workers, 4)
+	assertBoolEqual(t, "poolAutoSizeFromShape", cfg.Pool.AutoSizeFromShape, true)
 	assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9300")
 	assertStringEqual(t, "compartmentID", cfg.OCI.CompartmentID, testCompartmentOverride)
 	assertStringEqual(t, "region", cfg.OCI.Region, testRegionOverride)

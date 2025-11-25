@@ -17,6 +17,7 @@ func TestDefaultConfigAlignsWithAdaptDefaults(t *testing.T) {
 	assertDefaultControllerFields(t, cfg, defaults)
 	assertDurationEqual(t, "estimatorInterval", cfg.Estimator.Interval, time.Second)
 	assertIntEqual(t, "poolWorkers", cfg.Pool.Workers, 2)
+	assertBoolEqual(t, "poolAutoSizeFromShape", cfg.Pool.AutoSizeFromShape, false)
 	assertDefaultPoolFields(t, cfg, defaults)
 	assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9108")
 }

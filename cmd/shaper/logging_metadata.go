@@ -37,6 +37,7 @@ func logRuntimeConfig(logger *zap.Logger, cfg runtimeconfig.Config) {
 	bind := strings.TrimSpace(cfg.HTTP.Bind)
 	fields := []zap.Field{
 		zap.Int("workerCount", cfg.Pool.Workers),
+		zap.Bool("workerAutoSizeFromShape", cfg.Pool.AutoSizeFromShape),
 		zap.Duration("workerQuantum", cfg.Pool.Quantum),
 		zap.Duration("estimatorInterval", cfg.Estimator.Interval),
 		zap.Duration("controllerInterval", cfg.Controller.Interval),
@@ -119,6 +120,7 @@ func logControllerInitialization(
 		zap.String("controllerState", controller.State().String()),
 		zap.Bool("offline", cfg.OCI.Offline),
 		zap.Int("workerCount", cfg.Pool.Workers),
+		zap.Bool("workerAutoSizeFromShape", cfg.Pool.AutoSizeFromShape),
 		zap.Duration("workerQuantum", cfg.Pool.Quantum),
 		zap.Duration("estimatorInterval", cfg.Estimator.Interval),
 		zap.Bool("metricsEnabled", exporter != nil),

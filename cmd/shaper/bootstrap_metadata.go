@@ -29,10 +29,28 @@ func stageMetadata(
 		return empty, exitCodeRuntimeError, false
 	}
 
+	updatedCfg, sizingResult, sizingErr := applyPoolSizingFromShape(
+		ctx,
+		cfg,
+		boot.opts.mode,
+		imdsClient,
+	)
+	if sizingErr != nil {
+		boot.logger.Error("failed to size worker pool from shape", zap.Error(sizingErr))
+
+		var empty metadataBootstrap
+
+		return empty, exitCodeRuntimeError, false
+	}
+
+	logPoolSizing(boot.logger, sizingResult)
+
+	cfg = updatedCfg
+
 	logMetadataResolution(boot.logger, boot.opts.mode, metadata, cfg.OCI.Offline)
 
 	return metadataBootstrap{
-		cfg:        cfg,
+		cfg:        updatedCfg,
 		metadata:   metadata,
 		imdsClient: imdsClient,
 	}, exitCodeSuccess, true

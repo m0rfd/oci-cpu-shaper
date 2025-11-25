@@ -52,7 +52,7 @@ suppression hysteresis cools.
 - `controller_helpers.go`: converts runtime config into adaptive-controller inputs and keeps controller state machines out of the CLI.
 - `metrics_client_default_*.go`: selects the metrics builder from `pkg/oci/metricsclient` (or the e2e shim) so the CLI only wires builders/offline paths.
 - `logger_factory.go`: constructs zap loggers with the configured level and encoder settings.
-- `metadata_resolver.go`: resolves IMDS/OCI metadata for runtime config and validates controller prerequisites. IMDS HTTP
+- `metadata_resolver.go`: resolves IMDS/OCI metadata for runtime config, applies optional shape-aware worker sizing, and validates controller prerequisites. IMDS HTTP
   behaviors stay in `pkg/imds` while the CLI factory/resolution logic is covered by focused suites (`metadata_imds_factory_test.go`
   for endpoint overrides, `metadata_logging_imds_test.go` for logIMDSMetadata success/warn/offline paths, and
   `metadata_logging_runtime_test.go` for runtime metadata/config logging) to keep responsibilities separated.

@@ -4,6 +4,7 @@
 
 ### Added
 _Note coverage-impacting additions: mention new test suites or tooling that shift the CI ≥96% statement coverage budget (§11)._
+- Optional worker-pool auto-sizing toggle (`pool.autoSizeFromShape`/`SHAPER_WORKER_AUTOSIZE`) that reads IMDS `shapeConfig.OCPUs`, clamps the result between 1 and 32 workers, and wires the derived count into controller startup with new unit coverage in `cmd/shaper` and `pkg/runtimeconfig` (§§3.1, 5.2, 9, 11).
 - Overview architecture now diagrams the runtime config pipeline, controller layers, and metrics surfaces, and README repository
   structure calls out the shared `pkg/runtimeconfig` package so §0, §3.1, and §5.2 references stay aligned.
 - Execution-flow reference (`docs/05-execution-flow.txt`) summarising the CLI,

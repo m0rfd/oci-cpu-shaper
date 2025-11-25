@@ -18,6 +18,7 @@ const (
 	envFastInterval              = "SHAPER_FAST_INTERVAL"
 	envRelaxedConfirmations      = "SHAPER_RELAXED_CONFIRMATIONS"
 	envPoolWorkers               = "SHAPER_WORKER_COUNT"
+	envPoolAutoSize              = "SHAPER_WORKER_AUTOSIZE"
 	envHTTPBind                  = "HTTP_ADDR"
 	envCompartmentID             = "OCI_COMPARTMENT_ID"
 	envOCIRegion                 = "OCI_REGION"
@@ -76,6 +77,7 @@ func applyEnvOverrides(cfg *Config) {
 	cfg.Estimator.Interval = envDuration(envFastInterval, cfg.Estimator.Interval)
 
 	cfg.Pool.Workers = envInt(envPoolWorkers, cfg.Pool.Workers)
+	cfg.Pool.AutoSizeFromShape = envBool(envPoolAutoSize, cfg.Pool.AutoSizeFromShape)
 	cfg.Pool.PauseThreshold = envFloat(envPoolPauseThreshold, cfg.Pool.PauseThreshold)
 	cfg.Pool.ResumeThreshold = envFloat(envPoolResumeThreshold, cfg.Pool.ResumeThreshold)
 	cfg.Pool.RunnableGuard = envFloat(envPoolRunnableGuard, cfg.Pool.RunnableGuard)
