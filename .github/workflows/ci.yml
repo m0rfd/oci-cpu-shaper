@@ -232,6 +232,7 @@ jobs:
       - unit-test
       - lint
       - govulncheck
+      - integration
     runs-on: ubuntu-latest
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
@@ -246,7 +247,7 @@ jobs:
 
       - name: Download integration coverage (if available)
         id: download-integration-coverage
-        continue-on-error: true
+        if: needs.integration.result == 'success' && needs.integration.outputs.integration-succeeded == 'true'
         uses: actions/download-artifact@v6
         with:
           name: integration-coverage
@@ -321,6 +322,7 @@ jobs:
     needs:
       - lint
       - unit-test
+      - integration
     runs-on: ubuntu-latest
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
@@ -444,12 +446,13 @@ jobs:
     name: integration tests (cgroup v2)
     # Integration suite usually finishes within ~1-2m; cap at 5m for retries.
     timeout-minutes: 5
-    continue-on-error: true
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     permissions:
       contents: read
       actions: write
     runs-on: ubuntu-latest
+    outputs:
+      integration-succeeded: ${{ steps.integration-status.outputs.succeeded }}
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
@@ -504,6 +507,10 @@ jobs:
           set -o nounset
           set -o pipefail
           make integration
+
+      - name: Record integration status
+        id: integration-status
+        run: echo "succeeded=true" >> "$GITHUB_OUTPUT"
 
       - name: Upload integration logs
         uses: actions/upload-artifact@v5
