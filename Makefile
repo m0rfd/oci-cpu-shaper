@@ -151,7 +151,7 @@ help:
 	printf "  %-14s %s\n" "$$target" "$$desc"; \ \
 	done
 
-ensure-actionlint:
+ensure-actionlint: verify-go-version
 	@set -euo pipefail; \
 	mkdir -p "$(GO_BIN_PATH)"; \
 	BIN="$(ACTIONLINT_BIN)"; \
