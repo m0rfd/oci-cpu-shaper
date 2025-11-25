@@ -15,8 +15,9 @@ import (
 const (
 	monitoringNamespace = "oci_computeagent"
 	// OCI Monitoring does not support `.window()` for SummarizeMetricsData, so we fetch one-minute
-	// CPU utilization samples over the 7-day range and compute the percentile locally.
-	metricQueryTemplate     = "CpuUtilization[1m]{resourceId = \"%s\"}.mean()"
+	// 95th percentile CPU utilization samples over the 7-day range and compute the percentile across
+	// the full window locally.
+	metricQueryTemplate     = "CpuUtilization[1m]{resourceId = \"%s\"}.percentile(0.95)"
 	metricName              = "CpuUtilization"
 	maxOneMinuteWindowHours = 7 * 24
 	percentileTarget        = 0.95

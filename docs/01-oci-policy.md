@@ -36,7 +36,7 @@ After applying the policy, confirm that instance principals can authenticate bef
     ```bash
     oci monitoring metric-data summarize-metrics-data \
       --namespace oci_computeagent \
-      --query-text "CpuUtilization[1m]{resourceId='<instance_ocid>'}.mean()" \
+      --query-text "CpuUtilization[1m]{resourceId='<instance_ocid>'}.percentile(0.95)" \
       --start-time "$(date -u -Iseconds -d '-7 days')" \
       --end-time "$(date -u -Iseconds)" \
       --compartment-id <compartment_ocid>

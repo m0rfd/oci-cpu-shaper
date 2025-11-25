@@ -114,7 +114,7 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   updated the instance-principal adapters, CLI tool, and docs to rely on that
   fixed scope so Monitoring queries stay aligned with the reclaim period (§5.2).
 - `pkg/oci.Client.QueryP95CPU` now folds all SummarizeMetricsData results into
-  a single seven-day percentile after fetching one-minute CpuUtilization means,
+  a single seven-day percentile after fetching one-minute CpuUtilization P95s,
   updating the controller/state docs and Monitoring references so operators
   understand the percentile input driving adaptive targets—even without MQL
   `.window()` support in `summarize-metrics-data` (§§3, 5, 12).

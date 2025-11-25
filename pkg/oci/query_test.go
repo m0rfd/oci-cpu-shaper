@@ -21,7 +21,7 @@ func TestQueryP95CPUFetchesWindowSamples(t *testing.T) {
 	compartmentID := "ocid1.compartment.oc1..exampleuniqueID"
 	now := time.Date(2025, time.January, 2, 15, 4, 5, 0, time.UTC)
 
-	expectedQuery := "CpuUtilization[1m]{resourceId = \"" + instanceID + "\"}.mean()"
+	expectedQuery := "CpuUtilization[1m]{resourceId = \"" + instanceID + "\"}.percentile(0.95)"
 
 	server := newIPv4TestServer(
 		t,
