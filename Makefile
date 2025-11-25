@@ -43,15 +43,18 @@ GOVULNCHECK_VERSION ?= v1.1.4
 ACTIONLINT_VERSION ?= v1.7.9
 MBAKE_VERSION ?= 1.4.3
 
+GO_BIN_PATH := $(strip $(GOBIN))
+ifeq ($(GO_BIN_PATH),)
 GO_BIN_PATH := $(shell \
         if command -v $(GO) >/dev/null 2>&1; then \
                 GOBIN_VALUE="$$($(GO) env GOBIN)"; \
                 if [ -n "$$GOBIN_VALUE" ]; then \
                         echo "$$GOBIN_VALUE"; \
-else \
+                else \
                         echo "$$($(GO) env GOPATH)/bin"; \
                 fi; \
         fi)
+endif
 ifeq ($(GO_BIN_PATH),)
 GO_BIN_PATH := $(HOME)/go/bin
 endif
