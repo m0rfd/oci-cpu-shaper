@@ -71,7 +71,7 @@ MBAKE_FORMAT_PATHS ?= Makefile
 
 .PHONY: actionlint agents bench build check clean coverage e2e ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake setup test tools verify-go-version
 
-HELP_TARGETS := lint lint-makefile test coverage build check govulncheck integration e2e agents actionlint help clean
+HELP_TARGETS := lint lint-makefile lint-workflows test coverage build check govulncheck integration e2e agents actionlint help clean
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-mbake
 
@@ -129,6 +129,7 @@ help:
 		case $$target in \ \
 			lint) desc="Run golangci-lint";; \ \
 			lint-makefile) desc="Run mbake validate and check";; \ \
+			lint-workflows) desc="Run actionlint against GitHub workflows";; \ \
 			lint-fix) desc="Run golangci-lint with autofix";; \ \
 			test) desc="Run unit tests (excludes integration/e2e)";; \ \
 			coverage) desc="Run coverage with minimum threshold enforcement";; \ \
@@ -143,7 +144,7 @@ help:
 			help) desc="Show this help";; \ \
 			*) desc="";; \ \
 		esac; \ \
-		printf "  %-14s %s\n" "$$target" "$$desc"; \ \
+	printf "  %-14s %s\n" "$$target" "$$desc"; \ \
 	done
 
 ensure-actionlint:
@@ -276,7 +277,7 @@ govulncheck: verify-go-version
         GOCACHE="$(GOCACHE_DIR)" GOVULNCHECK_CACHE="$(GOVULNCHECK_CACHE_DIR)" \
         $(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
-check: lint lint-makefile test agents
+check: lint lint-makefile lint-workflows test agents
 
 actionlint: ensure-actionlint
 	@set -euo pipefail; \

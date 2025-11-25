@@ -16,6 +16,12 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  SHELLCHECK_VERSION: "0.10.0"
+  PYFLAKES_VERSION: "3.2.0"
+
+defaults:
+  run:
+    shell: bash
 
 # ---------------------------
 # Job 1: PR build & test only
@@ -24,6 +30,7 @@ env:
 jobs:
   verify-tag:
     name: Verify tag (lint, test, coverage)
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -52,20 +59,37 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-pyflakes-3.2.0
+          key: ${{ runner.os }}-pip-pyflakes-${{ env.PYFLAKES_VERSION }}
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: Install actionlint dependencies
+      - name: Restore lint tool cache
+        id: lint-tool-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local
+            ~/.cache/pip
+          key: ${{ runner.os }}-lint-tools-shellcheck-${{ env.SHELLCHECK_VERSION }}-pyflakes-${{ env.PYFLAKES_VERSION }}
+
+      - name: Install lint tools (cache miss)
+        if: steps.lint-tool-cache.outputs.cache-hit != 'true'
         run: |
           set -o errexit
           set -o nounset
           set -o pipefail
 
-          sudo apt-get update
-          sudo apt-get install --yes shellcheck python3-pip
-          python3 -m pip install --user pyflakes==3.2.0
-          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+          mkdir -p "$HOME/.local/bin"
+          curl -sSLo /tmp/shellcheck.tar.xz "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          tar -C /tmp -xJf /tmp/shellcheck.tar.xz
+          cp "/tmp/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" "$HOME/.local/bin/shellcheck"
+          chmod +x "$HOME/.local/bin/shellcheck"
+
+          python3 -m pip install --upgrade --user pip
+          python3 -m pip install --user "pyflakes==${PYFLAKES_VERSION}"
+
+      - name: Add lint tools to PATH
+        run: echo "$HOME/.local/bin" >>"$GITHUB_PATH"
 
       - name: Run lint
         run: make lint
