@@ -55,6 +55,9 @@ jobs:
     name: lint tooling
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
       - name: Set up lint tools
         uses: ./.github/actions/setup-lint-tools
 
