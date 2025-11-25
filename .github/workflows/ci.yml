@@ -248,8 +248,9 @@ jobs:
         id: download-integration-coverage
         if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && needs.integration.result == 'success' && needs.integration.outputs.integration-succeeded == 'true'
         continue-on-error: true
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           name: integration-coverage
           path: artifacts
 
