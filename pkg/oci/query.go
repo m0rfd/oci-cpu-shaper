@@ -13,8 +13,11 @@ import (
 )
 
 const (
-	monitoringNamespace     = "oci_computeagent"
-	metricQueryTemplate     = "CpuUtilization[1m]{resourceId = \"%s\"}.window(7d).percentile(%.2f)"
+	monitoringNamespace = "oci_computeagent"
+	// OCI Monitoring does not support `.window()` for SummarizeMetricsData, so we fetch one-minute
+	// 95th percentile CPU utilization samples over the 7-day range and compute the percentile across
+	// the full window locally.
+	metricQueryTemplate     = "CpuUtilization[1m]{resourceId = \"%s\"}.percentile(0.95)"
 	metricName              = "CpuUtilization"
 	maxOneMinuteWindowHours = 7 * 24
 	percentileTarget        = 0.95
@@ -65,7 +68,7 @@ func buildSummarizeRequest(
 	start, end time.Time,
 ) monitoring.SummarizeMetricsDataRequest {
 	namespace := monitoringNamespace
-	query := fmt.Sprintf(metricQueryTemplate, escapeDimensionValue(instanceOCID), percentileTarget)
+	query := fmt.Sprintf(metricQueryTemplate, escapeDimensionValue(instanceOCID))
 	startTime := common.SDKTime{Time: start}
 	endTime := common.SDKTime{Time: end}
 

@@ -72,7 +72,7 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - Deterministic 24-hour-equivalent worker-pool load harness (`go test -tags=load ./pkg/shape -run TestPoolLoad24hEquivalent`) that logs CPU/RSS telemetry to `artifacts/load/pool-24h.log` and enforces the §10 budgets alongside nightly/manual CI coverage via `.github/workflows/load.yml` (§§10, 11.4).
 - Duty-cycle benchmark suite (`BenchmarkPoolDutyCycle`) plus the `hack/check_benchmarks.sh` guard script that record CPU usage, per-tick drift, and scheduler fairness across multiple quantums and targets, failing whenever the §10 duty-cycle or §5 scheduler limits regress (§§5, 10, 11).
 - Always Free Terraform stack under `deploy/terraform/self-hosted-runner/` that provisions a hardened GitHub Actions runner with instance-principal access scoped to test compartments, including cloud-init hardening and IAM automation (§§5, 8, 15).
-- Terraform alarm module under `deploy/terraform/alarms/` that creates the seven-day P95 Always Free reclaim guardrail with parameterised OCIDs, opinionated tagging, and Notification wiring, plus documentation of the exact `.window(7d).percentile(0.95)` MQL expression in §7 (§§3, 5, 7).
+- Terraform alarm module under `deploy/terraform/alarms/` that creates the seven-day P95 Always Free reclaim guardrail with parameterised OCIDs, opinionated tagging, and Notification wiring, plus documentation of the exact percentile calculation and MQL inputs in §7 (§§3, 5, 7).
 - Scheduled `self-hosted` workflow exercising IMDS lookups, live `QueryP95CPU` calls via `hack/tools/p95query`, Docker cgroup v2 behaviour, and a rootful CPU weight validation that builds the image in situ, runs the high/low weight hog containers, and publishes `/sys/fs/cgroup` logs as artifacts on the OCI runner (§§4, 6, 11, 15).
 - Guardrail verification CLI (`hack/tools/alarmguard`) wired into the `self-hosted` workflow so instance-principal checks fail CI whenever the Always Free P95 alarm is missing, disabled, or misconfigured (§§5, 7, 11, 15).
 - Runner maintenance and secrets rotation guidance in §15 of `docs/08-development.md`, covering patch cadence, token refresh, and repository variables linked to the new workflow (§§8, 12, 15).
@@ -114,9 +114,10 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   updated the instance-principal adapters, CLI tool, and docs to rely on that
   fixed scope so Monitoring queries stay aligned with the reclaim period (§5.2).
 - `pkg/oci.Client.QueryP95CPU` now folds all SummarizeMetricsData results into
-  a single seven-day percentile (via `.window(7d).percentile(0.95)`), updating
-  the controller/state docs and Monitoring references so operators understand
-  the percentile input driving adaptive targets (§§3, 5, 12).
+  a single seven-day percentile after fetching one-minute CpuUtilization P95s,
+  updating the controller/state docs and Monitoring references so operators
+  understand the percentile input driving adaptive targets—even without MQL
+  `.window()` support in `summarize-metrics-data` (§§3, 5, 12).
 - CLI `--mode` now defaults to enforcing/normal operation instead of `dry-run`,
   updating the help text and docs so operators start with the adaptive
   controller active unless explicitly opting into monitor-only mode (§§5, 9).
