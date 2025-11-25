@@ -203,6 +203,49 @@ func buildHighUtilisationScenario(defaults Config) controllerScenario {
 	return scenario
 }
 
+func TestRelaxedIntervalWaitsForStabilityAfterSuppression(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Interval = time.Minute
+	cfg.RelaxedInterval = time.Hour
+
+	metrics := newFakeMetrics([]metricResult{
+		{value: cfg.RelaxedThreshold, err: nil},
+		{value: cfg.RelaxedThreshold + 0.01, err: nil},
+		{value: cfg.RelaxedThreshold + 0.02, err: nil},
+	})
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, newFakeShaper(), nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	controller.mu.Lock()
+	controller.suppressed = true
+	controller.relaxedSuccesses = cfg.RelaxedConfirmations
+	controller.mu.Unlock()
+
+	stepper, ok := any(controller).(controllerStepper)
+	if !ok {
+		t.Fatalf("controller does not expose stepper interface")
+	}
+
+	interval := stepper.step(context.Background())
+	requireEqual(t, "suppressed interval", interval, cfg.Interval)
+	requireEqual(t, "relaxed successes while suppressed", controller.RelaxedSuccesses(), 0)
+
+	controller.mu.Lock()
+	controller.suppressed = false
+	controller.mu.Unlock()
+
+	interval = stepper.step(context.Background())
+	requireEqual(t, "post-resume interval", interval, cfg.Interval)
+
+	interval = stepper.step(context.Background())
+	requireEqual(t, "relaxed interval after stability", interval, cfg.RelaxedInterval)
+}
+
 func runControllerScenario(t *testing.T, scenario controllerScenario) {
 	t.Helper()
 

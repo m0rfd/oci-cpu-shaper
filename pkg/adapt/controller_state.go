@@ -58,6 +58,14 @@ func (c *AdaptiveController) RelaxedSuccesses() int {
 	return c.relaxedSuccesses
 }
 
+func (c *AdaptiveController) resetRelaxedSuccessesLocked() {
+	c.relaxedSuccesses = 0
+
+	if c.recorder != nil {
+		c.recorder.SetRelaxedSuccesses(c.relaxedSuccesses)
+	}
+}
+
 func (c *AdaptiveController) applyTargetLocked(target float64) {
 	c.target = target
 	c.shaper.SetTarget(target)
