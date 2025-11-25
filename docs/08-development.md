@@ -17,7 +17,8 @@ The repository includes a `Makefile` that wraps the most common development task
 | Command | Purpose |
 |---------|---------|
 | `make tools` | Install pinned developer tooling (e.g., `golangci-lint` v2.6.1, Go 1.25.4 via `mise`/`asdf`). |
-| `make lint` | Run `golangci-lint` with the configuration in `.golangci.yml` (auto-fixes formatting and lint findings where supported). This target also sets `GOLANGCI_LINT_CACHE` to `.cache/golangci`, so prefer `make lint` over calling `golangci-lint run` directly when working inside restricted sandboxes. |
+| `make lint` | Run `golangci-lint` checks. |
+| `make lint-fix` | Run `golangci-lint` with autofix enabled. Prefer this when working locally. |
 | `make test` | Execute `go test -race ./...` across every package. |
 | `make check` | Run linting and race-enabled tests in one step. |
 | `make coverage` | Generate a race-enabled coverage profile for production packages, save `coverage.out`/`coverage.txt`, and print the total percentage (CI enforces ≥96%). |
@@ -42,10 +43,10 @@ The Makefile defines `GOCACHE_DIR` (`.cache/go`) and `GOLANGCI_LINT_CACHE_DIR` (
 
 ### §14 Lint Auto-Fix Workflow
 
-- `.golangci.yml` enables `issues.fix: true` and formatter integration (`gofmt`, `gofumpt`, `gci`, `golines`), so each `make lint` or `golangci-lint run` invocation rewrites files automatically when a supported diagnostic can be corrected.
+- `.golangci.yml` enables formatter integration (`gofmt`, `gofumpt`, `gci`, `golines`). Run `make lint-fix` to automatically rewrite files when a supported diagnostic can be corrected.
 - When running the linter manually, prefer `golangci-lint run --fix` to mirror CI and the Makefile helper; re-run until the command exits cleanly.
 - Inspect `git status` after linting and stage the generated edits before committing so reviewers see both the intentional changes and any formatter updates together (§14).
-- Auto-fixes often adjust imports and line wrapping; rerunning `make lint` after resolving merge conflicts keeps the workspace aligned with CI and avoids last-minute surprises.
+- Auto-fixes often adjust imports and line wrapping; running `make lint-fix` after resolving merge conflicts keeps the workspace aligned with CI and avoids last-minute surprises.
 
 Running the `test` target enables the Go race detector by default, helping detect data races early during development. Use `make coverage` before pushing to confirm your changes keep statement coverage at or above the CI threshold; the command writes `coverage.out`, mirrors the console summary into `coverage.txt`, and reports the aggregate percentage across production code by skipping developer tooling packages such as `cmd/agentscheck`. CI currently requires at least 95 percent statement coverage, and the latest filtered run reports 95.1 percent. Override `COVERAGE_EXCLUDES` when invoking the target if you introduce additional non-production packages that should be omitted from the calculation. The `test` job in `.github/workflows/ci.yml` runs the same make target with the `MIN_COVERAGE` guard and publishes both coverage files as build artifacts so reviewers can audit the report without re-running the suite locally.
 
@@ -53,7 +54,7 @@ Running the `test` target enables the Go race detector by default, helping detec
 
 1. Update code and add or adjust tests.
 2. Execute `make check` to run linting and race-enabled tests together (or `make lint` / `make test` individually); because linting applies auto-fixes, review `git status` afterward and stage the generated edits.
-3. Re-run `go test ./... -race` and `make lint` (or `make check`) until they pass—features and fixes must never ship while any test or lint job is failing (§11).
+3. Re-run `go test ./... -race` and `make lint` (or `make check`) until they pass—features and fixes must never ship while any test or lint job is failing (§11). Use `make lint-fix` to resolve format issues.
 4. Run `make govulncheck` to confirm the dependency graph and local packages are free of published vulnerabilities before opening a pull request (§14).
 5. Optionally execute `make build` to confirm the binary compiles successfully.
 

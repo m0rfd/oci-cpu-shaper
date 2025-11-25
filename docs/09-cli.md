@@ -166,7 +166,7 @@ Configuration validation shares this behaviour: when thresholds conflict with th
 
 Smoke tests introduced in §11 now cover the dependency-injected entrypoint as well as adaptive-controller wiring, ensuring that enforce/dry-run builds start the OCI client, estimator sampler, and worker pool while `noop` preserves the bypass path for validation scenarios. Offline mode keeps this wiring intact by substituting the static metrics client so container smoke tests can run without live tenancy credentials, and new unit coverage exercises the IMDS-backed region/compartment resolver plus its failure modes to keep the ≥96% statement coverage guarantee intact.
 
-Local contributors can validate the CLI wiring the same way: run `make lint` and `make test` before checking in changes and finish with `make coverage MIN_COVERAGE=96` to confirm the documentation’s QA promise remains true.
+Local contributors can validate the CLI wiring the same way: run `make lint` (or `make lint-fix` to autofix) and `make test` before checking in changes and finish with `make coverage MIN_COVERAGE=96` to confirm the documentation’s QA promise remains true.
 
 Rootful binaries built with `-tags rootful` now issue their
 `sched_setscheduler(0, SCHED_IDLE, ...)` request as soon as the worker pool is

@@ -143,7 +143,7 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   true canonical region (§§2, 9).
 - The CI golangci-lint job now fails when `.golangci.yml`'s auto-fixable
   formatters (gci, gofmt, gofumpt, goimports, golines, swaggo) mutate files
-  during `make lint`; the workflow prints the diff and reminds contributors to
+  during `make lint` (or `make lint-fix`); the workflow prints the diff and reminds contributors to
   commit the fixes instead of allowing silent changes to slip through (§§8, 11,
   14).
 - Controller configuration now accepts `controller.suppressThreshold=0` (or
@@ -223,7 +223,7 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
 - Release workflow now builds and pushes both distroless `rootless` and rootful image targets with dedicated tags plus per-variant SBOM artifacts so operators can pull the UID profile their deployment requires (§§6, 14).
 - Refreshed §§4–9 documentation to describe the Prometheus endpoint, offline/static metrics client behaviour, and updated `QueryP95CPU` interface so operators see the current exporter wiring and Monitoring contract.
 - Local lint tooling is standardised on `golangci-lint` v2.6.1 with pinned installation in CI and the developer Makefile helper, keeping contributor environments aligned (§14).
-- `make lint`/`make test` now create repository-local caches (`.cache/golangci` and `.cache/go`) and set `GOLANGCI_LINT_CACHE`/`GOCACHE` accordingly so the tools never write to protected runner directories; prefer using the Makefile helpers instead of invoking the linters or `go test` manually to keep sandbox runs stable (§14).
+- `make lint`/`make lint-fix`/`make test` now create repository-local caches (`.cache/golangci` and `.cache/go`) and set `GOLANGCI_LINT_CACHE`/`GOCACHE` accordingly so the tools never write to protected runner directories; prefer using the Makefile helpers instead of invoking the linters or `go test` manually to keep sandbox runs stable (§14).
 - `.tool-versions` now pins `golangci-lint` v2.6.1 so `mise`/`asdf` environments surface the same linting behaviour developers see in CI (§14).
 - `golangci-lint` now runs with depguard allow-listing for module imports and `issues.fix: true`, letting formatters auto-apply fixes while docs instruct contributors to stage the generated edits (§14).
 - Overview, README, and Monitoring documentation now link to the IAM, reclaim, cgroup, alarm, and Quick Start guides so operators can navigate the consolidated Always Free playbook (§§0, 5, 10).
