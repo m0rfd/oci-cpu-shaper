@@ -21,6 +21,7 @@ pool:
   quantum: 2ms
   pauseThreshold: 0.88
   resumeThreshold: 0.44
+  runnableGuard: 1.1
 http:
   bind: ":9200"
 oci:

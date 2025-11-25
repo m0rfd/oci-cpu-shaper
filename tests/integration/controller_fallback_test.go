@@ -166,4 +166,4 @@ func (r *recordingShaper) Target() float64 {
 	return r.target
 }
 
-func (r *recordingShaper) ObserveHostLoad(float64) {}
+func (r *recordingShaper) ObserveHostLoad(float64, float64) {}

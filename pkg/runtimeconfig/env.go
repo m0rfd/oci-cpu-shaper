@@ -32,6 +32,7 @@ const (
 	envSuppressRunnableResume    = "SHAPER_SUPPRESS_RUNNABLE_RESUME"
 	envPoolPauseThreshold        = "SHAPER_POOL_PAUSE_THRESHOLD"
 	envPoolResumeThreshold       = "SHAPER_POOL_RESUME_THRESHOLD"
+	envPoolRunnableGuard         = "SHAPER_POOL_RUNNABLE_GUARD"
 )
 
 var lookupEnv = os.LookupEnv //nolint:gochecknoglobals // overridden in tests
@@ -67,6 +68,7 @@ func applyEnvOverrides(cfg *Config) {
 	cfg.Pool.Workers = envInt(envPoolWorkers, cfg.Pool.Workers)
 	cfg.Pool.PauseThreshold = envFloat(envPoolPauseThreshold, cfg.Pool.PauseThreshold)
 	cfg.Pool.ResumeThreshold = envFloat(envPoolResumeThreshold, cfg.Pool.ResumeThreshold)
+	cfg.Pool.RunnableGuard = envFloat(envPoolRunnableGuard, cfg.Pool.RunnableGuard)
 
 	cfg.HTTP.Bind = envStringAllowEmpty(envHTTPBind, cfg.HTTP.Bind)
 

@@ -63,6 +63,7 @@ func mergePoolConfig(dst *PoolConfig, src poolFileConfig) {
 	assignDuration(&dst.Quantum, src.Quantum)
 	assignFloat(&dst.PauseThreshold, src.PauseThreshold)
 	assignFloat(&dst.ResumeThreshold, src.ResumeThreshold)
+	assignFloat(&dst.RunnableGuard, src.RunnableGuard)
 }
 
 func mergeHTTPConfig(dst *HTTPConfig, src httpFileConfig) {
