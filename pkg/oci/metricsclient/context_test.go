@@ -135,8 +135,7 @@ func TestFromContextSkipsNilBuilder(t *testing.T) {
 
 //nolint:paralleltest // swaps default builder factory for fallback coverage.
 func TestFromContextUsesDefaultBuilderFactory(t *testing.T) {
-	previous := defaultBuilderFactory
-	defaultBuilderFactory = func() Builder {
+	restore := defaultBuilderFactory.swap(func() Builder {
 		return func(id, rgn string) (MetricsClient, error) {
 			if id != compartmentID {
 				return nil, errUnexpectedCompartment
@@ -148,11 +147,9 @@ func TestFromContextUsesDefaultBuilderFactory(t *testing.T) {
 
 			return new(stubMetricsAdapter), nil
 		}
-	}
-
-	t.Cleanup(func() {
-		defaultBuilderFactory = previous
 	})
+
+	t.Cleanup(restore)
 
 	builder := FromContext(context.Background(), nil)
 
