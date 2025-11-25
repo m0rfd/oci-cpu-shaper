@@ -112,7 +112,7 @@ func TestConsumeEstimatorStopsOnClose(t *testing.T) {
 		t.Fatal("consumeEstimator did not exit after channel close")
 	}
 
-	if len(shaper.hostLoads) == 0 {
+	if len(shaper.hostSignal) == 0 {
 		t.Fatal("expected host load to be observed after consuming estimator values")
 	}
 }

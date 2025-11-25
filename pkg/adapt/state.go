@@ -46,7 +46,7 @@ type Controller interface {
 type DutyCycler interface {
 	SetTarget(target float64)
 	Target() float64
-	ObserveHostLoad(utilisation float64)
+	ObserveHostLoad(utilisation, runnable float64)
 }
 
 // MetricsRecorder captures controller observability signals.

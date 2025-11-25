@@ -60,7 +60,7 @@ func TestConsumeEstimatorSuppression(t *testing.T) {
 		)
 	}
 
-	if len(shaper.hostLoads) == 0 {
+	if len(shaper.hostSignal) == 0 {
 		t.Fatal("expected shaper to observe host load samples")
 	}
 }

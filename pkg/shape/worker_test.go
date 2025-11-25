@@ -120,7 +120,7 @@ func TestPoolPausesWorkerActivityWhenThresholdExceeded(t *testing.T) {
 
 	waitForBusyCount(t, manual, &busyCount, 1)
 
-	pool.ObserveHostLoad(0.9)
+	pool.ObserveHostLoad(0.9, 0)
 	manual.tick()
 	time.Sleep(2 * time.Millisecond)
 
@@ -137,7 +137,7 @@ func TestPoolPausesWorkerActivityWhenThresholdExceeded(t *testing.T) {
 		)
 	}
 
-	pool.ObserveHostLoad(0.3)
+	pool.ObserveHostLoad(0.3, 0)
 	waitForBusyCount(t, manual, &busyCount, pausedCount+1)
 }
 
