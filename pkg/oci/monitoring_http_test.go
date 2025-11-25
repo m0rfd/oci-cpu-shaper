@@ -236,7 +236,7 @@ func TestCollectLatestDatapointSkipsWhitespaceNextPageHeaders(t *testing.T) {
 		t.Fatalf("expected datapoint to be found")
 	}
 
-	requireEqual(t, value, float32(20.0), "latest datapoint")
+	requireEqual(t, value, float32(20.0), "window percentile")
 
 	if *requestCount != 1 {
 		t.Fatalf("expected one page to be fetched, got %d", *requestCount)

@@ -47,10 +47,10 @@ We support two documented modes. Rootless is first-class but not exclusive.
   * Duty-cycle workers using short quanta (e.g., 1–5 ms busy, sleep remainder) toward a **current target**.
   * If system load is high or runnable tasks detected, drop activity to zero instantly.
 
-* **Slow OCI loop (every 1 h by default, adaptive):**
+  * **Slow OCI loop (every 1 h by default, adaptive):**
 
-  * Query MQL over **last 7 days**:
-    `CpuUtilization[1m]{resourceId="<instance_ocid>"}.percentile(0.95)`
+    * Query MQL over **last 7 days**:
+      `CpuUtilization[1m]{resourceId="<instance_ocid>"}.window(7d).percentile(0.95)`
   * If P95 < 23% → raise target by +2% up to a cap;
     if P95 > 30% → lower −1..−2% (never below 22%).
   * If query fails or returns no data → **fallback mode**: fixed 25% baseline until healthy again.
@@ -99,9 +99,9 @@ We support two documented modes. Rootless is first-class but not exclusive.
 * `pkg/imds`: IMDSv2 client.
 
   * `client_config.go` wires constructor options and endpoint overrides; `operations.go` exposes typed getters such as `GetInstance()`/`GetShapeConfig()`; `transport.go` owns the HTTP/retry helpers that enforce the documented 404/429/5xx backoff guidance. ([Oracle Docs][3])
-* `pkg/oci`: Monitoring client using Instance Principals.
+  * `pkg/oci`: Monitoring client using Instance Principals.
 
-  * `client.go` constructs the client (and holds Instance Principal wiring), `query.go` keeps the `CpuUtilization[1m]{resourceId="<ocid>"}.percentile(0.95)` helpers plus pagination folds, `sdk_client.go` isolates the OCI SDK adapter, and `static.go` carries the offline fixtures for tests. Handle 7-day time range limits. ([Oracle Docs][7])
+    * `client.go` constructs the client (and holds Instance Principal wiring), `query.go` keeps the `CpuUtilization[1m]{resourceId="<ocid>"}.window(7d).percentile(0.95)` helpers plus pagination folds, `sdk_client.go` isolates the OCI SDK adapter, and `static.go` carries the offline fixtures for tests. Handle 7-day time range limits. ([Oracle Docs][7])
 * `pkg/est`: `/proc/stat` reader → current host CPU% (1s moving window).
 * `pkg/shape`: worker pool and duty cycle logic.
 

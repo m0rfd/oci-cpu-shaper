@@ -55,7 +55,7 @@ controller.Run(ctx) -----------------> slow loop ticker (default 1h)
 - `cgroup_inspection.go`: probes the local cgroup v2 CPU settings so metrics and `/healthz` reflect sandbox limits.
 
 ## §5 Package Touchpoints
-- `pkg/oci`: Instance-principal Monitoring client issues the MQL percentile query and paginates results, returning the freshest datapoint. (`Client.QueryP95CPU`.)
+- `pkg/oci`: Instance-principal Monitoring client issues the MQL percentile query and paginates results, folding the seven-day window into a single percentile. (`Client.QueryP95CPU`.)
 - `pkg/oci/metricsclient`: Builds/wraps metrics clients, exposes context helpers for dependency injection, and surfaces the instance-principal wrapper used by the CLI defaults.
 - `pkg/imds`: HTTP client reads region, compartment OCID, and instance ID with retried IMDSv2 requests; CLI falls back to offline overrides when needed.
 - `pkg/adapt`: State machine tracks `normal`, `fallback`, and `suppressed`, records errors for `/healthz`, and surfaces target/mode/state for `/metrics`.

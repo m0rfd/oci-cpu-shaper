@@ -14,14 +14,14 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/monitoring"
 )
 
-func TestQueryP95CPUFetchesLatestDatapoint(t *testing.T) {
+func TestQueryP95CPUFetchesWindowPercentile(t *testing.T) {
 	t.Parallel()
 
 	instanceID := "ocid1.instance.oc1.phx.exampleuniqueID"
 	compartmentID := "ocid1.compartment.oc1..exampleuniqueID"
 	now := time.Date(2025, time.January, 2, 15, 4, 5, 0, time.UTC)
 
-	expectedQuery := "CpuUtilization[1m]{resourceId = \"" + instanceID + "\"}.percentile(0.95)"
+	expectedQuery := "CpuUtilization[1m]{resourceId = \"" + instanceID + "\"}.window(7d).percentile(0.95)"
 
 	server := newIPv4TestServer(
 		t,
@@ -156,7 +156,11 @@ func TestBuildSummarizeRequestEscapesInstanceOCID(t *testing.T) {
 		t.Fatalf("request missing query: %#v", details)
 	}
 
-	expectedQuery := fmt.Sprintf(metricQueryTemplate, escapeDimensionValue(instanceID))
+	expectedQuery := fmt.Sprintf(
+		metricQueryTemplate,
+		escapeDimensionValue(instanceID),
+		percentileTarget,
+	)
 	requireEqual(t, *details.Query, expectedQuery, "escaped query")
 
 	if details.StartTime == nil || details.EndTime == nil {
@@ -207,11 +211,48 @@ func TestCollectLatestDatapointAggregatesAcrossPages(t *testing.T) {
 		t.Fatalf("expected to find datapoint")
 	}
 
-	requireEqual(t, value, float32(18.75), "latest datapoint")
+	requireEqual(t, value, float32(18.75), "window percentile")
 
 	if stub.calls != 2 {
 		t.Fatalf("expected 2 API calls, got %d", stub.calls)
 	}
+}
+
+func TestCollectLatestDatapointComputesPercentileAcrossWindow(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2024, time.December, 1, 12, 0, 0, 0, time.UTC)
+
+	responses := []monitoring.SummarizeMetricsDataResponse{
+		metricResponse(
+			metricData("ocid.instance", "ocid.compartment", now.Add(-6*24*time.Hour), 10.0),
+			metricData("ocid.instance", "ocid.compartment", now.Add(-45*time.Minute), 80.0),
+		),
+		metricResponse(
+			metricData("ocid.instance", "ocid.compartment", now, 5.0),
+		),
+	}
+
+	stub := newStubMetricsClient(responses, nil, nil)
+
+	client, err := newTestClient(stub, "ocid.compartment", func() time.Time { return now })
+	requireNoError(t, err, "create client")
+
+	request := buildSummarizeRequest(
+		"ocid.compartment",
+		"ocid.instance",
+		now.Add(-7*24*time.Hour),
+		now,
+	)
+
+	value, found, err := client.collectLatestDatapoint(context.Background(), request)
+	requireNoError(t, err, "collect datapoint")
+
+	if !found {
+		t.Fatalf("expected percentile to be computed")
+	}
+
+	requireEqual(t, value, float32(80.0), "window percentile")
 }
 
 func TestCollectLatestDatapointHandlesEmptyResponses(t *testing.T) {

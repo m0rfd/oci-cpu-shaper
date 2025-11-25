@@ -110,6 +110,10 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
 - Hard-coded `pkg/oci.Client.QueryP95CPU` to the trailing seven-day window and
   updated the instance-principal adapters, CLI tool, and docs to rely on that
   fixed scope so Monitoring queries stay aligned with the reclaim period (§5.2).
+- `pkg/oci.Client.QueryP95CPU` now folds all SummarizeMetricsData results into
+  a single seven-day percentile (via `.window(7d).percentile(0.95)`), updating
+  the controller/state docs and Monitoring references so operators understand
+  the percentile input driving adaptive targets (§§3, 5, 12).
 - CLI `--mode` now defaults to enforcing/normal operation instead of `dry-run`,
   updating the help text and docs so operators start with the adaptive
   controller active unless explicitly opting into monitor-only mode (§§5, 9).

@@ -24,7 +24,7 @@ func (c *AdaptiveController) LastError() error {
 	return c.lastErr
 }
 
-// LastP95 returns the last successful OCI P95 value.
+// LastP95 returns the last successful seven-day OCI P95 value.
 func (c *AdaptiveController) LastP95() float64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()

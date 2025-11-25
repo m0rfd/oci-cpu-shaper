@@ -36,7 +36,7 @@ After applying the policy, confirm that instance principals can authenticate bef
    ```bash
    oci monitoring metric-data summarize-metrics-data \
      --namespace oci_computeagent \
-     --query-text "CpuUtilization[1m]{resourceId='<instance_ocid>'}.percentile(0.95)" \
+      --query-text "CpuUtilization[1m]{resourceId='<instance_ocid>'}.window(7d).percentile(0.95)" \
      --compartment-id <compartment_ocid>
    ```
 3. A successful response returns JSON datapoints; authorization failures return `NotAuthorizedOrNotFound` errors.
