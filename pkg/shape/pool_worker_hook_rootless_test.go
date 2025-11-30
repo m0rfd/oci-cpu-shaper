@@ -4,6 +4,8 @@
 package shape
 
 import (
+	"errors"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -51,4 +53,39 @@ func TestConfigureWorkerStartHookRootlessNoop(t *testing.T) {
 	if busyCalls.Load() == 0 && sleepCalls.Load() == 0 {
 		t.Fatalf("expected worker activity after start hook noop")
 	}
+}
+
+func TestConfigureWorkerStartHookRootlessPoolConstructionNoop(t *testing.T) {
+	t.Parallel()
+
+	pool, err := NewPool(1, DefaultQuantum)
+	if err != nil {
+		t.Fatalf("unexpected error creating pool: %v", err)
+	}
+
+	originalHookPtr := functionPointer(pool.workerStartHook)
+	originalHandlerPtr := functionPointer(pool.workerStartErrorHandler)
+	originalRootfulErr := pool.rootfulInitErr
+
+	configureWorkerStartHook(pool, assertableError("noop"))
+
+	if functionPointer(pool.workerStartHook) != originalHookPtr {
+		t.Fatalf("worker start hook should remain unchanged in rootless builds")
+	}
+
+	if functionPointer(pool.workerStartErrorHandler) != originalHandlerPtr {
+		t.Fatalf("worker start error handler should remain unchanged in rootless builds")
+	}
+
+	if !errors.Is(pool.rootfulInitErr, originalRootfulErr) {
+		t.Fatalf("rootful init error should remain unchanged in rootless builds")
+	}
+}
+
+func functionPointer(fn any) uintptr {
+	if fn == nil {
+		return 0
+	}
+
+	return reflect.ValueOf(fn).Pointer()
 }
