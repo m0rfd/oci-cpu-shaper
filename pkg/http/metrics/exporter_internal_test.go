@@ -54,13 +54,46 @@ func TestExporterServeHTTPHandlesRenderErrors(t *testing.T) {
 func TestExporterRenderRejectsNilBufferFactory(t *testing.T) {
 	t.Parallel()
 
-	exporter := NewExporter()
-	exporter.bufferFactory = func() byteBuffer { return nil }
+	t.Run("rejects nil buffer factory", func(t *testing.T) {
+		t.Parallel()
 
-	_, err := exporter.Render()
-	if !errors.Is(err, errNilBuffer) {
-		t.Fatalf("expected errNilBuffer, got %v", err)
-	}
+		exporter := NewExporter()
+		exporter.bufferFactory = func() byteBuffer { return nil }
+
+		_, err := exporter.Render()
+		if !errors.Is(err, errNilBuffer) {
+			t.Fatalf("expected errNilBuffer, got %v", err)
+		}
+	})
+
+	t.Run("clones output when factory falls back", func(t *testing.T) {
+		t.Parallel()
+
+		exporter := NewExporter()
+
+		first, err := exporter.Render()
+		if err != nil {
+			t.Fatalf("Render() returned error: %v", err)
+		}
+
+		if len(first) == 0 || first[0] != '#' {
+			t.Fatalf("expected metrics payload to start with '#', got %q", string(first))
+		}
+
+		first[0] = 'x'
+
+		second, err := exporter.Render()
+		if err != nil {
+			t.Fatalf("Render() returned error on second call: %v", err)
+		}
+
+		if len(second) == 0 || second[0] != '#' {
+			t.Fatalf(
+				"expected fresh render to remain unchanged after mutation, got %q",
+				string(second),
+			)
+		}
+	})
 }
 
 func TestExporterWriteToRejectsNilWriter(t *testing.T) {
