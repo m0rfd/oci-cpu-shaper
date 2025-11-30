@@ -578,3 +578,19 @@ func TestSDKMonitoringClientSummarizeMetricsDataWrapsCallErrors(t *testing.T) {
 		t.Fatalf("expected wrapped call error, got %v", err)
 	}
 }
+
+func TestPercentileClampsOvershoot(t *testing.T) {
+	t.Parallel()
+
+	value := percentile([]float64{42.0}, 1.5)
+
+	requireEqual(t, value, float64(42.0), "clamped percentile")
+}
+
+func TestPercentileSortsBeforeSelecting(t *testing.T) {
+	t.Parallel()
+
+	value := percentile([]float64{9.0, 1.0, 5.0}, 0.5)
+
+	requireEqual(t, value, float64(5.0), "sorted percentile")
+}
