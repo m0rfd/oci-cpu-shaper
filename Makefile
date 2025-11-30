@@ -524,6 +524,10 @@ install-git-hooks:
 
 verify-git-hooks:
 	@set -euo pipefail; \
+	if [ "$${CI:-}" = "true" ]; then \
+		echo "Running in CI; skipping hook verification."; \
+		exit 0; \
+	fi; \
 	git_common_dir="$$(git rev-parse --git-common-dir 2>/dev/null || true)"; \
 	if [ -z "$$git_common_dir" ]; then \
 		git_common_dir=".git"; \
