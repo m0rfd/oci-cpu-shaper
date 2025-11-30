@@ -66,10 +66,10 @@ jobs:
       - name: Cache golangci-lint binary
         uses: actions/cache@v4
         with:
-          path: bin/golangci-lint
-          key: ${{ runner.os }}-${{ runner.arch }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('Makefile') }}
+          path: ${{ env.GOBIN }}/golangci-lint
+          key: ${{ runner.os }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ hashFiles('Makefile') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ steps.setup-go.outputs.go-version }}-
+            ${{ runner.os }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-
 
       - name: Set up lint tools
         uses: ./.github/actions/setup-lint-tools
