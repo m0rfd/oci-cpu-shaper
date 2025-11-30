@@ -21,6 +21,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
   SHELLCHECK_VERSION: "0.10.0"
   PYFLAKES_VERSION: "3.2.0"
+  ACTIONLINT_VERSION: "v1.7.9"
 
 defaults:
   run:
@@ -41,6 +42,7 @@ jobs:
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+      GOBIN: ${{ github.workspace }}/bin
 
     steps:
       - name: Checkout
@@ -72,15 +74,23 @@ jobs:
       - name: Set up lint tools
         uses: ./.github/actions/setup-lint-tools
 
+      - name: Cache actionlint binary
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GOBIN }}/actionlint
+          key: ${{ runner.os }}-${{ runner.arch }}-actionlint-${{ env.ACTIONLINT_VERSION }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-actionlint-${{ env.ACTIONLINT_VERSION }}-
+
       - name: Run lint
         run: make lint
         env:
-          GOBIN: ${{ github.workspace }}/bin
+          GOBIN: ${{ env.GOBIN }}
 
       - name: Run actionlint for release workflow
         run: make actionlint ACTIONLINT_PATHS=".github/workflows/release.yml"
         env:
-          GOBIN: ${{ github.workspace }}/bin
+          GOBIN: ${{ env.GOBIN }}
 
       - name: Check Makefile formatting
         run: make lint-makefile
