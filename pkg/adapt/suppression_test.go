@@ -53,14 +53,14 @@ func TestConsumeEstimatorSuppression(t *testing.T) {
 		)
 	}
 
-	if len(shaper.calls) < 2 {
+	if len(shaper.Calls()) < 2 {
 		t.Fatalf(
 			"expected shaper to be called for suppression transitions, got %d calls",
-			len(shaper.calls),
+			len(shaper.Calls()),
 		)
 	}
 
-	if len(shaper.hostSignal) == 0 {
+	if len(shaper.HostSignals()) == 0 {
 		t.Fatal("expected shaper to observe host load samples")
 	}
 }

@@ -34,7 +34,7 @@ func TestHandleObservationClearsEstimatorError(t *testing.T) {
 		t.Fatal("expected estimator error to be cleared after successful observation")
 	}
 
-	if len(shaper.hostSignal) == 0 {
+	if len(shaper.HostSignals()) == 0 {
 		t.Fatal("expected host load to be forwarded to the shaper")
 	}
 }
@@ -58,11 +58,13 @@ func TestHandleObservationGuardSuppression(t *testing.T) {
 		t.Fatalf("expected guard-triggered suppression, got %s", controller.State())
 	}
 
-	if shaper.target != 0 {
-		t.Fatalf("expected guard to drop target to zero, got %.2f", shaper.target)
+	if shaper.TargetValue() != 0 {
+		t.Fatalf("expected guard to drop target to zero, got %.2f", shaper.TargetValue())
 	}
 
-	lastSignal := shaper.hostSignal[len(shaper.hostSignal)-1]
+	signals := shaper.HostSignals()
+
+	lastSignal := signals[len(signals)-1]
 	if lastSignal.runnable == 0 {
 		t.Fatal("expected runnable signal to be forwarded to shaper")
 	}
@@ -105,8 +107,8 @@ func TestHandleObservationGuardSuppressionDisabled(t *testing.T) {
 		t.Fatalf("expected target to drop to zero, got %.2f", controller.Target())
 	}
 
-	if shaper.target != 0 {
-		t.Fatalf("expected shaper to receive zero target, got %.2f", shaper.target)
+	if shaper.TargetValue() != 0 {
+		t.Fatalf("expected shaper to receive zero target, got %.2f", shaper.TargetValue())
 	}
 
 	if recorder.state != StateSuppressed.String() {
@@ -192,11 +194,12 @@ func TestHandleObservationNormalizesRunnable(t *testing.T) {
 				)
 			}
 
-			if len(shaper.hostSignal) != 1 {
-				t.Fatalf("expected shaper to receive 1 observation, got %d", len(shaper.hostSignal))
+			signals := shaper.HostSignals()
+			if len(signals) != 1 {
+				t.Fatalf("expected shaper to receive 1 observation, got %d", len(signals))
 			}
 
-			lastSignal := shaper.hostSignal[0]
+			lastSignal := signals[0]
 			if lastSignal.runnable != 0 {
 				t.Fatalf("expected shaper runnable to be normalized, got %.2f", lastSignal.runnable)
 			}

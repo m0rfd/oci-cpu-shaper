@@ -31,14 +31,14 @@ func TestAdaptiveControllerDryRunRecordsTargets(t *testing.T) {
 		t.Fatalf("expected dry-run to wrap duty cycler, got %T", controller.shaper)
 	}
 
-	if len(shaper.calls) != 0 {
-		t.Fatalf("expected dry-run to avoid touching shaper, got %d calls", len(shaper.calls))
+	if len(shaper.Calls()) != 0 {
+		t.Fatalf("expected dry-run to avoid touching shaper, got %d calls", len(shaper.Calls()))
 	}
 
 	controller.step(context.Background())
 
-	if len(shaper.calls) != 0 {
-		t.Fatalf("expected dry-run to skip shaper updates, got %d calls", len(shaper.calls))
+	if len(shaper.Calls()) != 0 {
+		t.Fatalf("expected dry-run to skip shaper updates, got %d calls", len(shaper.Calls()))
 	}
 
 	if recorder.Target() == 0 {
@@ -55,10 +55,10 @@ func TestAdaptiveControllerDryRunRecordsTargets(t *testing.T) {
 
 	recorder.ObserveHostLoad(0.85, 0)
 
-	if len(shaper.calls) != 0 {
+	if len(shaper.Calls()) != 0 {
 		t.Fatalf(
 			"expected dry-run recorder to ignore host load observations, got %d calls",
-			len(shaper.calls),
+			len(shaper.Calls()),
 		)
 	}
 }
@@ -81,16 +81,16 @@ func TestAdaptiveControllerEnforceModeMutatesDutyCycler(t *testing.T) {
 		t.Fatal("expected enforcing mode to use original duty cycler")
 	}
 
-	if len(shaper.calls) == 0 {
+	if len(shaper.Calls()) == 0 {
 		t.Fatal("expected enforcing mode to configure fallback target")
 	}
 
 	controller.step(context.Background())
 
-	if len(shaper.calls) < 2 {
+	if len(shaper.Calls()) < 2 {
 		t.Fatalf(
 			"expected enforcing mode to update shaper on step, got %d calls",
-			len(shaper.calls),
+			len(shaper.Calls()),
 		)
 	}
 }
