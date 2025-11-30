@@ -85,9 +85,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.GOBIN }}/golangci-lint
-          key: ${{ runner.os }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ hashFiles('Makefile') }}
+          key: ${{ runner.os }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('Makefile') }}
           restore-keys: |
-            ${{ runner.os }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-
+            ${{ runner.os }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Run make check
         run: make check
