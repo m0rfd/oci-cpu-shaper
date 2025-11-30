@@ -174,6 +174,96 @@ func TestApplySuppressionTargetsLockedMaintainsZeroWhenSuppressed(t *testing.T) 
 	}
 }
 
+func TestResumeFromSuppressionIgnoresRunnablesWhenThresholdDisabled(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}}) //nolint:exhaustruct
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	controller.mu.Lock()
+	controller.suppressed = true
+	controller.target = 0
+	controller.desired = 0.26
+	controller.hostLoad = controller.cfg.SuppressResume * 0.5
+	controller.hostRunnable = controller.cfg.SuppressRunnableResume * 1.5
+	controller.cfg.SuppressRunnableThreshold = 0
+	controller.cfg.SuppressRunnableResume = 0
+	previous := controller.transitionSuppressionLocked(false)
+	controller.applySuppressionTargetsLocked(previous)
+	restored := controller.target
+	controller.mu.Unlock()
+
+	if controller.suppressed {
+		t.Fatal("expected controller to resume after cooldown with runnable threshold disabled")
+	}
+
+	if restored != controller.desired {
+		t.Fatalf(
+			"expected suppression exit to restore desired target %.2f, got %.2f",
+			controller.desired,
+			restored,
+		)
+	}
+
+	if shaper.Target() != restored {
+		t.Fatalf(
+			"expected shaper to receive restored target %.2f, got %.2f",
+			restored,
+			shaper.Target(),
+		)
+	}
+}
+
+func TestResumeFromSuppressionAtRunnableResumeBoundary(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}}) //nolint:exhaustruct
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	controller.mu.Lock()
+	controller.suppressed = true
+	controller.target = 0
+	controller.desired = 0
+	controller.hostLoad = controller.cfg.SuppressResume * 0.75
+	controller.hostRunnable = controller.cfg.SuppressRunnableResume
+	previous := controller.transitionSuppressionLocked(false)
+	controller.applySuppressionTargetsLocked(previous)
+	restored := controller.target
+	controller.mu.Unlock()
+
+	if controller.suppressed {
+		t.Fatal("expected controller to resume when runnables cool to resume threshold")
+	}
+
+	if restored != controller.cfg.TargetStart {
+		t.Fatalf(
+			"expected suppression exit to restore start target %.2f, got %.2f",
+			controller.cfg.TargetStart,
+			restored,
+		)
+	}
+
+	if shaper.Target() != restored {
+		t.Fatalf(
+			"expected shaper to receive restored target %.2f, got %.2f",
+			restored,
+			shaper.Target(),
+		)
+	}
+}
+
 func TestRelaxedSuccessesGetter(t *testing.T) {
 	t.Parallel()
 
