@@ -179,6 +179,14 @@ jobs:
       - name: Set up lint tools
         uses: ./.github/actions/setup-lint-tools
 
+      - name: Cache actionlint binary
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GOBIN }}/actionlint
+          key: ${{ runner.os }}-${{ runner.arch }}-actionlint-${{ env.ACTIONLINT_VERSION }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-actionlint-${{ env.ACTIONLINT_VERSION }}-
+
       - name: Run actionlint
         run: make actionlint ACTIONLINT_PATHS=".github/workflows/${{ matrix.workflow }}"
 
