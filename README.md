@@ -116,6 +116,8 @@ Refer to the documentation in the `docs/` directory for deeper architectural and
 
 Images published to `ghcr.io/<owner>/oci-cpu-shaper` are signed with Cosign using GitHub Actions’ OIDC keyless flow, and the workflow uploads detached signatures plus SBOM attestations as release assets for both `rootless` and `rootful` variants. Download the files that match the release tag you are deploying and verify either the image or the Syft-generated SPDX attestation:
 
+The workflow pins Cosign to `v3.0.2` via `sigstore/cosign-installer` so the signing and verification flags below stay stable across releases; adjust the pin when upgrading Cosign.
+
 ```bash
 TAG="v1.2.3"
 VARIANT="rootless" # or rootful
