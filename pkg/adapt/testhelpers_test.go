@@ -156,22 +156,24 @@ type controllerStepper interface {
 }
 
 type stubMetricsRecorder struct {
-	mu          sync.Mutex
-	mode        string
-	modeCalls   int
-	state       string
-	stateCalls  int
-	target      float64
-	targetCalls int
-	ociValue    float64
-	ociTime     time.Time
-	ociCalls    int
-	host        float64
-	hostCalls   int
-	interval    time.Duration
-	intervalSet int
-	lastError   error
-	errorCalls  int
+	mu           sync.Mutex
+	mode         string
+	modeCalls    int
+	state        string
+	stateCalls   int
+	target       float64
+	targetCalls  int
+	ociValue     float64
+	ociTime      time.Time
+	ociCalls     int
+	host         float64
+	hostCalls    int
+	interval     time.Duration
+	intervalSet  int
+	lastError    error
+	errorCalls   int
+	relaxed      int
+	relaxedCalls int
 }
 
 func newStubMetricsRecorder() *stubMetricsRecorder { return new(stubMetricsRecorder) }
@@ -233,8 +235,19 @@ func (s *stubMetricsRecorder) SetLastError(err error) {
 	s.errorCalls++
 }
 
-func (s *stubMetricsRecorder) SetRelaxedSuccesses(_ int) {
-	// Stub implementation
+func (s *stubMetricsRecorder) SetRelaxedSuccesses(count int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.relaxed = count
+	s.relaxedCalls++
+}
+
+func (s *stubMetricsRecorder) relaxedSuccesses() (int, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.relaxed, s.relaxedCalls
 }
 
 func requireEqual[T comparable](t *testing.T, name string, got, want T) {
