@@ -73,6 +73,20 @@ func TestLogRuntimeConfig(t *testing.T) {
 	requireLogFieldString(t, entry, "httpBind", "127.0.0.1:9000")
 }
 
+func TestLogRuntimeConfigNoopWithoutLogger(t *testing.T) {
+	t.Parallel()
+
+	_, observed := newObservedLogger(zap.InfoLevel)
+
+	cfg := runtimeconfig.Default()
+
+	logRuntimeConfig(nil, cfg)
+
+	if entries := observed.All(); len(entries) != 0 {
+		t.Fatalf("expected no log entries when logger is nil, got %+v", entries)
+	}
+}
+
 func TestLogRuntimeConfigMarksHTTPOff(t *testing.T) {
 	t.Parallel()
 
