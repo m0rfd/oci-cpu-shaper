@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"oci-cpu-shaper/pkg/adapt"
@@ -17,6 +18,7 @@ var (
 	errEstimatorStalled   = errors.New("estimator stalled")
 	errMissingWeight      = errors.New("missing weight")
 	errMissingMax         = errors.New("missing max")
+	errEncodeSnapshot     = errors.New("encode snapshot")
 )
 
 type stubController struct {
@@ -30,6 +32,13 @@ func (s *stubController) Mode() string              { return s.mode }
 func (s *stubController) State() adapt.State        { return s.state }
 func (s *stubController) LastError() error          { return s.ociErr }
 func (s *stubController) LastEstimatorError() error { return s.estErr }
+
+type marshalErrorController struct{}
+
+func (marshalErrorController) Mode() string              { return string([]byte{0xff}) }
+func (marshalErrorController) State() adapt.State        { return adapt.StateNormal }
+func (marshalErrorController) LastError() error          { return nil }
+func (marshalErrorController) LastEstimatorError() error { return nil }
 
 func TestHandlerReturnsSnapshot(t *testing.T) {
 	t.Parallel()
@@ -94,16 +103,35 @@ func TestHandlerReturnsSnapshot(t *testing.T) {
 func TestHandlerWithoutControllerReturnsServiceUnavailable(t *testing.T) {
 	t.Parallel()
 
-	handler := status.NewHandler(nil, nil)
+	t.Run("nil handler", func(t *testing.T) {
+		t.Parallel()
 
-	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+		var handler *status.Handler
 
-	handler.ServeHTTP(recorder, request)
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 
-	if recorder.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503 Service Unavailable, got %d", recorder.Code)
-	}
+		handler.ServeHTTP(recorder, request)
+
+		if recorder.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503 Service Unavailable, got %d", recorder.Code)
+		}
+	})
+
+	t.Run("nil controller", func(t *testing.T) {
+		t.Parallel()
+
+		handler := status.NewHandler(nil, nil)
+
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+
+		handler.ServeHTTP(recorder, request)
+
+		if recorder.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503 Service Unavailable, got %d", recorder.Code)
+		}
+	})
 }
 
 func TestHandlerReportsCgroupErrors(t *testing.T) {
@@ -229,21 +257,6 @@ func requireCgroupPointers(t *testing.T, snapshot *status.CgroupSnapshot) {
 	}
 }
 
-func TestHandlerNilReceiver(t *testing.T) {
-	t.Parallel()
-
-	var handler *status.Handler
-
-	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-
-	handler.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503 Service Unavailable, got %d", recorder.Code)
-	}
-}
-
 func TestHandlerOmitsCgroupWhenUnavailable(t *testing.T) {
 	t.Parallel()
 
@@ -269,5 +282,31 @@ func TestHandlerOmitsCgroupWhenUnavailable(t *testing.T) {
 
 	if snapshot.Cgroup != nil {
 		t.Fatalf("expected cgroup snapshot to be omitted, got %+v", snapshot.Cgroup)
+	}
+}
+
+func TestHandlerMarshalFailure(t *testing.T) {
+	t.Parallel()
+
+	handler := status.NewHandler(marshalErrorController{}, nil)
+	status.SetMarshalFunc(handler, func(any) ([]byte, error) {
+		return nil, errEncodeSnapshot
+	})
+
+	t.Cleanup(func() {
+		status.SetMarshalFunc(handler, json.Marshal)
+	})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d", recorder.Code)
+	}
+
+	if body := recorder.Body.String(); body == "" || !strings.Contains(body, "marshal status") {
+		t.Fatalf("expected marshal error response, got %q", body)
 	}
 }
