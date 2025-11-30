@@ -43,6 +43,8 @@ var (
 	currentSchedIdleSetter schedIdleSetter = unixSchedIdleSetter{}
 )
 
+var hasSysNiceCapability = realHasSysNiceCapability
+
 func trySchedIdle() error {
 	schedIdleSetterMu.RLock()
 	setter := currentSchedIdleSetter
@@ -68,7 +70,7 @@ func trySchedIdle() error {
 	return nil
 }
 
-func hasSysNiceCapability() (bool, error) {
+func realHasSysNiceCapability() (bool, error) {
 	header := unix.CapUserHeader{
 		Version: unix.LINUX_CAPABILITY_VERSION_3,
 		Pid:     0,
