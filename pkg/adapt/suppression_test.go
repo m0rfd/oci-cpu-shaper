@@ -5,6 +5,7 @@
 package adapt
 
 import (
+	"context"
 	"math"
 	"testing"
 )
@@ -184,4 +185,159 @@ func TestConsumeEstimatorHandlesErrors(t *testing.T) {
 			controller.Target(),
 		)
 	}
+}
+
+func TestSuppressionTransitionsRestoreDesiredTarget(t *testing.T) {
+	t.Parallel()
+
+	controller, shaper, cfg := newSuppressionHarness(t)
+	initialTarget := controller.Target()
+
+	feedObservationWithRunnable(controller, 0, cfg.SuppressThreshold+0.05, 0, nil)
+	assertSuppressedTargets(
+		t,
+		controller,
+		initialTarget,
+		"guarded spike should suppress controller",
+	)
+
+	stepOnce(t, controller)
+
+	requireConditionf(
+		t,
+		controller.desired > initialTarget,
+		"desired should rise while suppressed, got %.2f",
+		controller.desired,
+	)
+	assertTargetZero(t, controller, "target should stay zero while suppressed")
+
+	feedObservationWithRunnable(
+		controller,
+		1,
+		cfg.SuppressResume*0.9,
+		cfg.SuppressRunnableThreshold+0.1,
+		nil,
+	)
+	assertState(t, controller, StateSuppressed, "runnable spike should keep suppression")
+
+	feedObservationWithRunnable(
+		controller,
+		2,
+		cfg.SuppressResume*0.9,
+		cfg.SuppressRunnableResume*0.9,
+		nil,
+	)
+	assertState(t, controller, StateNormal, "cooldown should restore controller")
+
+	restored := assertRestoredTarget(t, controller)
+
+	assertShaperCallSequence(t, shaper, []float64{initialTarget, 0, 0, restored})
+}
+
+func newSuppressionHarness(t *testing.T) (*AdaptiveController, *fakeShaper, Config) {
+	t.Helper()
+
+	metrics := newFakeMetrics([]metricResult{{value: 0.19, err: nil}}) //nolint:exhaustruct
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+	cfg.SuppressSmoothingSamples = 1
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	requireConditionf(t, err == nil, "NewAdaptiveController: %v", err)
+
+	return controller, shaper, cfg
+}
+
+func stepOnce(t *testing.T, controller *AdaptiveController) {
+	t.Helper()
+
+	stepper, ok := any(controller).(controllerStepper)
+	requireConditionf(t, ok, "controller does not expose stepper interface")
+
+	stepper.step(context.Background())
+}
+
+func assertSuppressedTargets(
+	t *testing.T,
+	controller *AdaptiveController,
+	expectedDesired float64,
+	reason string,
+) {
+	t.Helper()
+
+	assertState(t, controller, StateSuppressed, reason)
+	assertTargetZero(t, controller, reason)
+
+	requireConditionf(
+		t,
+		controller.desired == expectedDesired,
+		"desired should stay fallback, got %.2f vs %.2f",
+		expectedDesired,
+		controller.desired,
+	)
+}
+
+func assertState(t *testing.T, controller *AdaptiveController, expected State, reason string) {
+	t.Helper()
+
+	requireConditionf(t, controller.State() == expected, "%s, got %v", reason, controller.State())
+}
+
+func assertTargetZero(t *testing.T, controller *AdaptiveController, reason string) {
+	t.Helper()
+
+	requireConditionf(t, controller.Target() == 0, "%s: target %.2f", reason, controller.Target())
+}
+
+func assertRestoredTarget(t *testing.T, controller *AdaptiveController) float64 {
+	t.Helper()
+
+	requireConditionf(
+		t,
+		controller.Target() != 0,
+		"restored target should be non-zero, got %.2f",
+		controller.Target(),
+	)
+	requireConditionf(
+		t,
+		controller.Target() == controller.desired,
+		"restored target should match desired %.2f, got %.2f",
+		controller.desired,
+		controller.Target(),
+	)
+
+	return controller.Target()
+}
+
+func assertShaperCallSequence(t *testing.T, shaper *fakeShaper, expected []float64) {
+	t.Helper()
+
+	requireConditionf(
+		t,
+		len(shaper.Calls()) == len(expected),
+		"expected %d shaper calls, got %d",
+		len(expected),
+		len(shaper.Calls()),
+	)
+
+	for index, expectedValue := range expected {
+		requireConditionf(
+			t,
+			math.Abs(shaper.Calls()[index]-expectedValue) <= 1e-9,
+			"shaper call %d should be %.2f, got %.2f",
+			index,
+			expectedValue,
+			shaper.Calls()[index],
+		)
+	}
+}
+
+func requireConditionf(t *testing.T, condition bool, format string, args ...any) {
+	t.Helper()
+
+	if condition {
+		return
+	}
+
+	t.Fatalf(format, args...)
 }
