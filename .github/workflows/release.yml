@@ -101,7 +101,7 @@ jobs:
       - name: Download integration coverage (if available)
         id: download-integration-coverage
         continue-on-error: true
-        uses: dawidd6/action-download-artifact@v6
+        uses: dawidd6/action-download-artifact@v11
         with:
           workflow: ci.yml
           commit: ${{ github.sha }}
