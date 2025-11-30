@@ -100,7 +100,17 @@ jobs:
             ${{ runner.os }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Run make check
-        run: make check
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          make check 2>&1 | tee artifacts/make-check.log
+
+      - name: Upload make check logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: make-check-logs
+          path: artifacts/make-check.log
 
       - name: Ensure make check left no uncommitted changes
         run: |
@@ -150,7 +160,17 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-actionlint-${{ env.ACTIONLINT_VERSION }}-
 
       - name: Run actionlint
-        run: make actionlint ACTIONLINT_PATHS=".github/workflows/${{ matrix.workflow }}"
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          make actionlint ACTIONLINT_PATHS=".github/workflows/${{ matrix.workflow }}" 2>&1 | tee "artifacts/actionlint-${{ matrix.workflow }}.log"
+
+      - name: Upload actionlint logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: actionlint-logs-${{ matrix.workflow }}
+          path: artifacts/actionlint-${{ matrix.workflow }}.log
 
   govulncheck:
     name: govulncheck

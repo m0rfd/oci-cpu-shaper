@@ -83,14 +83,34 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-actionlint-${{ env.ACTIONLINT_VERSION }}-
 
       - name: Run lint
-        run: make lint
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          make lint 2>&1 | tee artifacts/make-lint.log
         env:
           GOBIN: ${{ env.GOBIN }}
 
+      - name: Upload lint logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-logs
+          path: artifacts/make-lint.log
+
       - name: Run actionlint for release workflow
-        run: make actionlint ACTIONLINT_PATHS=".github/workflows/release.yml"
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          make actionlint ACTIONLINT_PATHS=".github/workflows/release.yml" 2>&1 | tee artifacts/release-actionlint.log
         env:
           GOBIN: ${{ env.GOBIN }}
+
+      - name: Upload actionlint logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: actionlint-logs-release
+          path: artifacts/release-actionlint.log
 
       - name: Check Makefile formatting
         run: make lint-makefile
