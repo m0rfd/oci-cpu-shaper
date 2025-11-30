@@ -104,7 +104,7 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 
 ### Changed
 _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% threshold impact (§11)._
-- Release workflow pins Cosign installs to `v2.4.2` for predictable signing output; bump the pin and release docs together when upgrading (§14).
+- Release workflow pins Cosign installs to `v3.0.2` for predictable signing output; bump the pin and release docs together when upgrading (§14).
 - Documented the controller interval selection (normal, relaxed, fallback) plus the relaxed confirmation hysteresis and refreshed the metrics/`/healthz` field names in §§4–5 so the docs mirror the current defaults and telemetry exports.
 - Relaxed controller cadence now waits for two consecutive above-threshold P95 samples before switching to the four-hour loop.
   New `controller.relaxedConfirmations`/`SHAPER_RELAXED_CONFIRMATIONS` knobs carry a default of `2`, update the sample configs,
