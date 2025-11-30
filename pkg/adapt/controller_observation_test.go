@@ -4,7 +4,10 @@
 //nolint:testpackage,godoclint // Tests need internal helpers and per-file coverage documentation.
 package adapt
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestHandleObservationClearsEstimatorError(t *testing.T) {
 	t.Parallel()
@@ -61,5 +64,61 @@ func TestHandleObservationGuardSuppression(t *testing.T) {
 	lastSignal := shaper.hostSignal[len(shaper.hostSignal)-1]
 	if lastSignal.runnable == 0 {
 		t.Fatal("expected runnable signal to be forwarded to shaper")
+	}
+}
+
+func TestHandleObservationNormalizesRunnable(t *testing.T) {
+	t.Parallel()
+
+	testCases := map[string]float64{
+		"nan":      math.NaN(),
+		"pos-inf":  math.Inf(1),
+		"neg-inf":  math.Inf(-1),
+		"negative": -1,
+	}
+
+	for name, runnable := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}}) //nolint:exhaustruct
+			shaper := newFakeShaper()
+			recorder := newStubMetricsRecorder()
+			cfg := DefaultConfig()
+
+			controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, recorder)
+			if err != nil {
+				t.Fatalf("NewAdaptiveController: %v", err)
+			}
+
+			feedObservationWithRunnable(controller, 0, 0.5, runnable, nil)
+
+			if controller.hostRunnable != 0 {
+				t.Fatalf(
+					"expected controller runnable to be normalized, got %.2f",
+					controller.hostRunnable,
+				)
+			}
+
+			if len(shaper.hostSignal) != 1 {
+				t.Fatalf("expected shaper to receive 1 observation, got %d", len(shaper.hostSignal))
+			}
+
+			lastSignal := shaper.hostSignal[0]
+			if lastSignal.runnable != 0 {
+				t.Fatalf("expected shaper runnable to be normalized, got %.2f", lastSignal.runnable)
+			}
+
+			if recorder.hostCalls != 1 {
+				t.Fatalf("expected recorder to observe host CPU once, got %d", recorder.hostCalls)
+			}
+
+			if recorder.host != 0.5 {
+				t.Fatalf(
+					"expected recorder host utilisation to match observation, got %.2f",
+					recorder.host,
+				)
+			}
+		})
 	}
 }
