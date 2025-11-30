@@ -51,11 +51,12 @@ type CgroupMaxSnapshot struct {
 type Handler struct {
 	controller Controller
 	cgroup     *cgroup.CPU
+	marshal    func(any) ([]byte, error)
 }
 
 // NewHandler constructs a Handler that proxies controller status.
 func NewHandler(controller Controller, cpuInfo *cgroup.CPU) *Handler {
-	return &Handler{controller: controller, cgroup: cpuInfo}
+	return &Handler{controller: controller, cgroup: cpuInfo, marshal: json.Marshal}
 }
 
 // ServeHTTP implements http.Handler.
@@ -84,7 +85,12 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, _ *http.Request) {
 		snapshot.EstimatorError = estimatorErr.Error()
 	}
 
-	payload, err := json.Marshal(snapshot)
+	marshal := h.marshal
+	if marshal == nil {
+		marshal = json.Marshal
+	}
+
+	payload, err := marshal(snapshot)
 	if err != nil {
 		http.Error(writer, "marshal status", http.StatusInternalServerError)
 
