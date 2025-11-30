@@ -214,6 +214,64 @@ func TestExporterServeHTTPWritesContentType(t *testing.T) {
 	}
 }
 
+func TestExporterServeHTTPClampsNegativeCgroupValues(t *testing.T) {
+	t.Parallel()
+
+	exporter := metrics.NewExporter()
+	exporter.SetCgroupCPUWeight(-10)
+	exporter.SetCgroupCPUMax(-20, -30, true)
+
+	recorder := httptest.NewRecorder()
+	exporter.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", recorder.Code)
+	}
+
+	body := recorder.Body.String()
+	expectations := map[string]string{
+		"cgroup_cpu_weight":        "cgroup_cpu_weight 0",
+		"cgroup_cpu_max_quota":     "cgroup_cpu_max_quota 0",
+		"cgroup_cpu_max_period":    "cgroup_cpu_max_period 0",
+		"cgroup_cpu_max_unlimited": "cgroup_cpu_max_unlimited 1",
+	}
+
+	for label, expected := range expectations {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("expected %s to include %q, got %s", label, expected, body)
+		}
+	}
+}
+
+func TestExporterServeHTTPClampsNonFiniteCgroupValues(t *testing.T) {
+	t.Parallel()
+
+	exporter := metrics.NewExporter()
+	exporter.SetCgroupCPUWeight(math.Inf(1))
+	exporter.SetCgroupCPUMax(math.Inf(1), math.NaN(), true)
+
+	recorder := httptest.NewRecorder()
+	exporter.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", recorder.Code)
+	}
+
+	body := recorder.Body.String()
+	expectations := map[string]string{
+		"cgroup_cpu_weight":        "cgroup_cpu_weight 0",
+		"cgroup_cpu_max_quota":     "cgroup_cpu_max_quota 0",
+		"cgroup_cpu_max_period":    "cgroup_cpu_max_period 0",
+		"cgroup_cpu_max_unlimited": "cgroup_cpu_max_unlimited 1",
+	}
+
+	for label, expected := range expectations {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("expected %s to include %q, got %s", label, expected, body)
+		}
+	}
+}
+
 func TestExporterServeHTTPSanitizesCgroupMetrics(t *testing.T) {
 	t.Parallel()
 
