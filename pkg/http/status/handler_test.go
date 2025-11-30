@@ -160,6 +160,43 @@ func TestHandlerReportsCgroupErrors(t *testing.T) {
 	}
 }
 
+func TestHandlerTrimsWhitespaceAndReportsErrors(t *testing.T) {
+	t.Parallel()
+
+	controller := &stubController{
+		mode:   "  dry-run \t\n",
+		state:  adapt.StateSuppressed,
+		ociErr: errMetricsUnavailable,
+		estErr: errEstimatorStalled,
+	}
+
+	handler := status.NewHandler(controller, nil)
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", recorder.Code)
+	}
+
+	var snapshot status.Snapshot
+
+	err := json.Unmarshal(recorder.Body.Bytes(), &snapshot)
+	if err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	requireEqual(t, "mode", "dry-run", snapshot.Mode)
+	requireEqual(t, "state", adapt.StateSuppressed.String(), snapshot.State)
+	requireEqual(t, "ociError", errMetricsUnavailable.Error(), snapshot.LastOCIError)
+	requireEqual(t, "estimatorError", errEstimatorStalled.Error(), snapshot.EstimatorError)
+
+	if snapshot.Cgroup != nil {
+		t.Fatalf("expected cgroup snapshot to be omitted, got %+v", snapshot.Cgroup)
+	}
+}
+
 func requireEqual[T comparable](t *testing.T, name string, want, got T) {
 	t.Helper()
 
