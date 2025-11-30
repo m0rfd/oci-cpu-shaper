@@ -132,8 +132,9 @@ func TestDeriveWorkerCountFromOCPUs(t *testing.T) {
 		capped   bool
 	}{
 		{name: "fallback", ocpus: 0, fallback: 3, want: 3, applied: false, capped: false},
-		{name: "single", ocpus: 0.4, fallback: 2, want: 1, applied: true, capped: false},
-		{name: "roundUp", ocpus: 2.2, fallback: 2, want: 3, applied: true, capped: false},
+		{name: "negative", ocpus: -8, fallback: 4, want: 4, applied: false, capped: false},
+		{name: "belowOne", ocpus: 0.25, fallback: 2, want: 1, applied: true, capped: false},
+		{name: "fractionalCeil", ocpus: 2.75, fallback: 2, want: 3, applied: true, capped: false},
 		{
 			name:     "maxCap",
 			ocpus:    64,
