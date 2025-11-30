@@ -81,6 +81,8 @@ The release workflow now installs Cosign with OIDC `id-token` permissions, signs
 - `cosign-<tag>-<variant>.sig` and `cosign-<tag>-<variant>.pem` (image signature + certificate).
 - `sbom-attestation-<tag>-<variant>.jsonl`, `.sig`, and `.pem` (SPDX attestation payload + metadata).
 
+Cosign is pinned to `v2.4.2` via the `sigstore/cosign-installer` action to keep signing output predictable; bump the pin and this note together when upgrading.
+
 Pull the assets that match the tag and variant you plan to deploy, then verify either the image or the SBOM attestation with Cosign’s keyless verification flags:
 
 ```bash
