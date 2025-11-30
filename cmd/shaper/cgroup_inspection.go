@@ -68,26 +68,26 @@ func recordCgroupMetrics(exporter *metricshttp.Exporter, info *cgroup.CPU) {
 		return
 	}
 
-	weight := uint64(0)
+	weight := float64(0)
 	if info != nil && info.Weight.Err == nil && info.Weight.Available {
-		weight = info.Weight.Value
+		weight = float64(info.Weight.Value)
 	}
 
 	exporter.SetCgroupCPUWeight(weight)
 
 	var (
-		quota  uint64
-		period uint64
+		quota  float64
+		period float64
 	)
 
 	unlimited := false
 
 	if info != nil && info.Max.Err == nil && info.Max.Available {
-		period = info.Max.Period
+		period = float64(info.Max.Period)
 
 		unlimited = info.Max.Unlimited
 		if !info.Max.Unlimited {
-			quota = info.Max.Quota
+			quota = float64(info.Max.Quota)
 		}
 	}
 

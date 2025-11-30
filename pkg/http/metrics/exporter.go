@@ -182,8 +182,8 @@ func (e *Exporter) SetWorkerCount(count int) {
 }
 
 // SetCgroupCPUWeight records the detected cgroup v2 cpu.weight value.
-func (e *Exporter) SetCgroupCPUWeight(weight uint64) {
-	value := float64(weight)
+func (e *Exporter) SetCgroupCPUWeight(weight float64) {
+	value := weight
 	if value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
 		value = 0
 	}
@@ -195,13 +195,13 @@ func (e *Exporter) SetCgroupCPUWeight(weight uint64) {
 
 // SetCgroupCPUMax captures the configured cpu.max quota/period tuple.
 // When unlimited is true, quota is ignored and a separate flag is toggled.
-func (e *Exporter) SetCgroupCPUMax(quota uint64, period uint64, unlimited bool) {
-	periodValue := float64(period)
+func (e *Exporter) SetCgroupCPUMax(quota float64, period float64, unlimited bool) {
+	periodValue := period
 	if periodValue < 0 || math.IsNaN(periodValue) || math.IsInf(periodValue, 0) {
 		periodValue = 0
 	}
 
-	quotaValue := float64(quota)
+	quotaValue := quota
 	if quotaValue < 0 || math.IsNaN(quotaValue) || math.IsInf(quotaValue, 0) {
 		quotaValue = 0
 	}
