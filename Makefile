@@ -74,8 +74,8 @@ MBAKE_BIN ?= $(HOME)/.local/bin/mbake
 MBAKE ?= $(MBAKE_BIN)
 MBAKE_FORMAT_PATHS ?= Makefile
 
-.PHONY: actionlint agents bench build check clean coverage e2e ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tools verify-go-version
-HELP_TARGETS := lint lint-makefile lint-workflows test coverage build check govulncheck integration e2e agents actionlint help clean
+.PHONY: actionlint agents bench build check clean coverage e2e ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tools verify-git-hooks verify-go-version
+HELP_TARGETS := lint lint-makefile lint-workflows test coverage build check govulncheck integration e2e agents actionlint help clean verify-git-hooks
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-mbake
 
@@ -138,6 +138,7 @@ help:
 			lint-makefile) desc="Run mbake validate and check";; \
 			lint-workflows) desc="Run actionlint against GitHub workflows";; \
 			lint-fix) desc="Run golangci-lint with autofix";; \
+			verify-git-hooks) desc="Verify pre-commit hook matches repository template";; \
 			test) desc="Run unit tests (excludes integration/e2e)";; \
 			coverage) desc="Run coverage with minimum threshold enforcement";; \
 			build) desc="Compile all modules with cache isolation";; \
@@ -279,7 +280,7 @@ govulncheck: verify-go-version
         GOCACHE="$(GOCACHE_DIR)" GOVULNCHECK_CACHE="$(GOVULNCHECK_CACHE_DIR)" \
         $(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
-check: go-mod-download lint lint-makefile lint-workflows test coverage agents
+check: go-mod-download verify-git-hooks lint lint-makefile lint-workflows test coverage agents
 
 actionlint: ensure-actionlint
 	@set -euo pipefail; \
@@ -494,18 +495,81 @@ install-git-hooks:
 	esac; \
 	script_path="hack/githooks/pre-commit"; \
 	hook_path="$$hook_dir/pre-commit"; \
+	checksum_path="$$hook_path.sha256"; \
 	if [ ! -f "$$script_path" ]; then \
 		echo "Hook template $$script_path not found" >&2; \
 		exit 1; \
 	fi; \
+	script_checksum="$$(sha256sum "$$script_path" | awk '{print $$1}')"; \
 	mkdir -p "$$(dirname "$$hook_path")"; \
-	if [ -f "$$hook_path" ] && cmp -s "$$script_path" "$$hook_path"; then \
+	hook_checksum=""; \
+	if [ -f "$$hook_path" ]; then \
+		hook_checksum="$$(sha256sum "$$hook_path" | awk '{print $$1}')"; \
+	fi; \
+	stored_checksum=""; \
+	if [ -f "$$checksum_path" ]; then \
+		stored_checksum="$$(awk 'NR==1 {print $$1}' "$$checksum_path")"; \
+	fi; \
+	if [ "$$hook_checksum" = "$$script_checksum" ] && [ "$$stored_checksum" = "$$script_checksum" ]; then \
 		echo "Pre-commit hook already up to date."; \
 		exit 0; \
 	fi; \
 	install -m 0755 "$$script_path" "$$hook_path"; \
+	printf "%s\n" "$$script_checksum" > "$$checksum_path"; \
 	if [ -f "$$hook_path" ]; then \
 		echo "Refreshed pre-commit hook from $$script_path."; \
 	else \
 		echo "Installed pre-commit hook with auto-staging autofix."; \
 	fi
+
+verify-git-hooks:
+	@set -euo pipefail; \
+	if [ "$${CI:-}" = "true" ]; then \
+		echo "Running in CI; skipping hook verification."; \
+		exit 0; \
+	fi; \
+	git_common_dir="$$(git rev-parse --git-common-dir 2>/dev/null || true)"; \
+	if [ -z "$$git_common_dir" ]; then \
+		git_common_dir=".git"; \
+	fi; \
+	if [ -f "$$git_common_dir" ]; then \
+		git_common_dir="$$(sed -n 's/^gitdir: //p' "$$git_common_dir")"; \
+	fi; \
+	if [ -z "$$git_common_dir" ] || [ ! -d "$$git_common_dir" ]; then \
+		echo "No git metadata found; skipping hook verification."; \
+		exit 0; \
+	fi; \
+	hooks_path="$$(git config core.hooksPath 2>/dev/null || true)"; \
+	repo_root="$$(git rev-parse --show-toplevel 2>/dev/null || pwd)"; \
+	case "$$hooks_path" in \
+		/*) hook_dir="$$hooks_path" ;; \
+		"" ) hook_dir="$$git_common_dir/hooks" ;; \
+		*) hook_dir="$$repo_root/$$hooks_path" ;; \
+	esac; \
+	script_path="hack/githooks/pre-commit"; \
+	hook_path="$$hook_dir/pre-commit"; \
+	checksum_path="$$hook_path.sha256"; \
+	if [ ! -f "$$script_path" ]; then \
+		echo "Hook template $$script_path not found" >&2; \
+		exit 1; \
+	fi; \
+	if [ ! -f "$$hook_path" ]; then \
+		echo "Pre-commit hook missing at $$hook_path. Run 'make install-git-hooks'."; \
+		exit 1; \
+	fi; \
+	if [ ! -f "$$checksum_path" ]; then \
+		echo "Checksum file $$checksum_path missing. Run 'make install-git-hooks'."; \
+		exit 1; \
+	fi; \
+	expected_checksum="$$(sha256sum "$$script_path" | awk '{print $$1}')"; \
+	stored_checksum="$$(awk 'NR==1 {print $$1}' "$$checksum_path")"; \
+	hook_checksum="$$(sha256sum "$$hook_path" | awk '{print $$1}')"; \
+	if [ "$$stored_checksum" != "$$expected_checksum" ]; then \
+		echo "Pre-commit hook checksum out of date. Run 'make install-git-hooks'."; \
+		exit 1; \
+	fi; \
+	if [ "$$hook_checksum" != "$$expected_checksum" ]; then \
+		echo "Pre-commit hook at $$hook_path differs from template. Run 'make install-git-hooks'."; \
+		exit 1; \
+	fi; \
+	echo "Pre-commit hook verified at $$hook_path."
