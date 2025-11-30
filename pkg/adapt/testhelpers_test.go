@@ -90,21 +90,65 @@ type fakeShaper struct {
 	target     float64
 	calls      []float64
 	hostSignal []hostSignal
+	mu         sync.Mutex
 }
 
 func newFakeShaper() *fakeShaper {
-	return &fakeShaper{target: 0, calls: make([]float64, 0), hostSignal: make([]hostSignal, 0)}
+	return &fakeShaper{
+		target:     0,
+		calls:      make([]float64, 0),
+		hostSignal: make([]hostSignal, 0),
+		mu:         sync.Mutex{},
+	}
 }
 
 func (f *fakeShaper) SetTarget(v float64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	f.target = v
 	f.calls = append(f.calls, v)
 }
 
-func (f *fakeShaper) Target() float64 { return f.target }
+func (f *fakeShaper) Target() float64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.target
+}
 
 func (f *fakeShaper) ObserveHostLoad(util, runnable float64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	f.hostSignal = append(f.hostSignal, hostSignal{utilisation: util, runnable: runnable})
+}
+
+func (f *fakeShaper) HostSignals() []hostSignal {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	copied := make([]hostSignal, len(f.hostSignal))
+	copy(copied, f.hostSignal)
+
+	return copied
+}
+
+func (f *fakeShaper) Calls() []float64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	copied := make([]float64, len(f.calls))
+	copy(copied, f.calls)
+
+	return copied
+}
+
+func (f *fakeShaper) TargetValue() float64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.target
 }
 
 type fakeEstimator struct {
