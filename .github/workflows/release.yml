@@ -41,6 +41,7 @@ jobs:
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+      GOBIN: ${{ github.workspace }}/bin
 
     steps:
       - name: Checkout
@@ -64,23 +65,19 @@ jobs:
       - name: Cache golangci-lint binary
         uses: actions/cache@v4
         with:
-          path: bin/golangci-lint
-          key: ${{ runner.os }}-${{ runner.arch }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('Makefile') }}
+          path: ${{ env.GOBIN }}/golangci-lint
+          key: ${{ runner.os }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ hashFiles('Makefile') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ steps.setup-go.outputs.go-version }}-
+            ${{ runner.os }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-
 
       - name: Set up lint tools
         uses: ./.github/actions/setup-lint-tools
 
       - name: Run lint
         run: make lint
-        env:
-          GOBIN: ${{ github.workspace }}/bin
 
       - name: Run actionlint for release workflow
         run: make actionlint ACTIONLINT_PATHS=".github/workflows/release.yml"
-        env:
-          GOBIN: ${{ github.workspace }}/bin
 
       - name: Check Makefile formatting
         run: make lint-makefile
