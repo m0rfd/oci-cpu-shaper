@@ -221,8 +221,8 @@ jobs:
   coverage:
     name: go test & coverage
     # Coverage suite normally completes in ~1-2m; cap at 5m to catch hangs.
-    # Waits on integration to reuse its coverage profile while still running when
-    # integration is skipped or fails (the integration job is continue-on-error).
+    # Waits on integration to reuse its coverage profile once integration succeeds;
+    # coverage uploads are skipped when integration does not complete successfully.
     timeout-minutes: 5
     permissions:
       contents: read
@@ -233,7 +233,7 @@ jobs:
       - govulncheck
       - integration
     runs-on: ubuntu-latest
-    if: ${{ needs.unit-test.result == 'success' && needs.lint.result == 'success' && needs.govulncheck.result == 'success' && needs.integration.result != 'cancelled' }}
+    if: ${{ needs.unit-test.result == 'success' && needs.lint.result == 'success' && needs.govulncheck.result == 'success' && needs.integration.result == 'success' }}
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
