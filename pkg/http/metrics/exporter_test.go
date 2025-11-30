@@ -214,6 +214,66 @@ func TestExporterServeHTTPWritesContentType(t *testing.T) {
 	}
 }
 
+func TestExporterServeHTTPSanitizesCgroupMetrics(t *testing.T) {
+	t.Parallel()
+
+	exporter := metrics.NewExporter()
+	exporter.SetCgroupCPUWeight(math.NaN())
+	exporter.SetCgroupCPUMax(math.NaN(), -100, true)
+
+	recorder := httptest.NewRecorder()
+	exporter.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", recorder.Code)
+	}
+
+	body := recorder.Body.String()
+
+	firstExpectations := map[string]string{
+		"cgroup_cpu_weight":        "cgroup_cpu_weight 0",
+		"cgroup_cpu_max_quota":     "cgroup_cpu_max_quota 0",
+		"cgroup_cpu_max_period":    "cgroup_cpu_max_period 0",
+		"cgroup_cpu_max_unlimited": "cgroup_cpu_max_unlimited 1",
+	}
+
+	for label, expected := range firstExpectations {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("expected %s to include %q, got %s", label, expected, body)
+		}
+	}
+
+	exporter.SetCgroupCPUWeight(-25)
+	exporter.SetCgroupCPUMax(-5000, math.NaN(), false)
+
+	recorder = httptest.NewRecorder()
+	exporter.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status code after toggling unlimited: %d", recorder.Code)
+	}
+
+	body = recorder.Body.String()
+
+	secondExpectations := map[string]string{
+		"cgroup_cpu_weight":        "cgroup_cpu_weight 0",
+		"cgroup_cpu_max_quota":     "cgroup_cpu_max_quota 0",
+		"cgroup_cpu_max_period":    "cgroup_cpu_max_period 0",
+		"cgroup_cpu_max_unlimited": "cgroup_cpu_max_unlimited 0",
+	}
+
+	for label, expected := range secondExpectations {
+		if !strings.Contains(body, expected) {
+			t.Fatalf(
+				"expected %s to include %q after toggling unlimited, got %s",
+				label,
+				expected,
+				body,
+			)
+		}
+	}
+}
+
 func TestExporterWriteToPropagatesWriterErrors(t *testing.T) {
 	t.Parallel()
 
