@@ -42,6 +42,7 @@ GOLANGCI_LINT_SHA256_linux_arm64 := 1c22b899f2dd84f9638e0e0352a319a2867b0bb082c5
 GOVULNCHECK_VERSION ?= v1.1.4
 ACTIONLINT_VERSION ?= v1.7.9
 MBAKE_VERSION ?= 1.4.3
+TIDY_VERIFY ?= 1
 
 GO_BIN_PATH := $(strip $(GOBIN))
 ifeq ($(GO_BIN_PATH),)
@@ -75,7 +76,7 @@ MBAKE_BIN ?= $(HOME)/.local/bin/mbake
 MBAKE ?= $(MBAKE_BIN)
 MBAKE_FORMAT_PATHS ?= Makefile
 
-.PHONY: actionlint agents bench build check clean coverage e2e ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tools verify-git-hooks verify-go-version
+.PHONY: actionlint agents bench build check clean coverage e2e ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools verify-git-hooks verify-go-version
 HELP_TARGETS := lint lint-makefile lint-workflows test coverage build check govulncheck integration e2e agents actionlint help clean verify-git-hooks
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-mbake
@@ -281,7 +282,7 @@ govulncheck: verify-go-version
 	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" GOVULNCHECK_CACHE="$(GOVULNCHECK_CACHE_DIR)" \
 	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
-check: go-mod-download verify-git-hooks lint lint-makefile lint-workflows test coverage agents
+check: go-mod-download verify-git-hooks tidy lint lint-makefile lint-workflows test coverage agents
 
 actionlint: ensure-actionlint
 	@set -euo pipefail; \
@@ -467,6 +468,17 @@ go-mod-download: verify-go-version
 	mkdir -p "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
 	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) mod download; \
 	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) mod verify
+
+tidy: go-mod-download
+	@set -euo pipefail; \
+	mkdir -p "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
+	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) mod tidy; \
+	if [ "$(strip $(TIDY_VERIFY))" = "1" ]; then \
+		if ! git diff --quiet -- go.mod go.sum; then \
+			echo "go.mod or go.sum changed after tidy; commit or reset the updates."; \
+			exit 1; \
+		fi; \
+	fi
 
 clean:
 	@set -euo pipefail; \
