@@ -23,7 +23,17 @@ on:
       - main
     tags:
       - "v*"
+    # Ignore docs-only branch pushes to reduce CI churn; tag pushes still run for release builds.
+    paths-ignore:
+      - docs/**
+      - README.md
+      - CHANGELOG.md
   pull_request:
+    # Skip CI on doc-only pull requests while keeping code-related changes triggering.
+    paths-ignore:
+      - docs/**
+      - README.md
+      - CHANGELOG.md
   merge_group:
 
 jobs:
