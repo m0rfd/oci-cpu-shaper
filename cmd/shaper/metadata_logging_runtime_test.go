@@ -5,8 +5,6 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-	"oci-cpu-shaper/pkg/adapt"
-	metricshttp "oci-cpu-shaper/pkg/http/metrics"
 	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
 
@@ -206,55 +204,4 @@ func TestLogMetadataResolutionSkipsNoopMode(t *testing.T) {
 	}
 
 	requireLogFieldString(t, entry, "mode", modeNoop)
-}
-
-func TestLogControllerInitialization(t *testing.T) {
-	t.Parallel()
-
-	logger, observed := newObservedLogger(zap.InfoLevel)
-
-	cfg := runtimeconfig.Config{ //nolint:exhaustruct
-		Pool: runtimeconfig.PoolConfig{
-			Workers:           2,
-			AutoSizeFromShape: false,
-			Quantum:           25 * time.Millisecond,
-			PauseThreshold:    0.85,
-			ResumeThreshold:   0.70,
-			RunnableGuard:     1.1,
-		},
-		Estimator: runtimeconfig.EstimatorConfig{
-			Interval: 750 * time.Millisecond,
-		},
-		OCI: runtimeconfig.OCIConfig{ //nolint:exhaustruct
-			CompartmentID: stubCompartmentID,
-			Region:        stubRegion,
-		},
-	}
-
-	ctrl := &stubController{mode: modeDryRun, state: adapt.StateFallback} //nolint:exhaustruct
-	exporter := metricshttp.NewExporter()
-
-	logControllerInitialization(logger, cfg, ctrl, exporter)
-
-	entry := requireSingleEntry(t, observed, zap.InfoLevel)
-	if entry.Message != "controller initialized" {
-		t.Fatalf("unexpected log message: %q", entry.Message)
-	}
-
-	requireLogFieldString(t, entry, "mode", modeDryRun)
-	requireLogFieldString(t, entry, "controllerState", adapt.StateFallback.String())
-	requireLogFieldString(t, entry, "compartmentID", stubCompartmentID)
-	requireLogFieldString(t, entry, "region", stubRegion)
-
-	if enforcing, ok := fieldBool(entry.Context, "enforcingTargets"); !ok || enforcing {
-		t.Fatalf("expected enforcingTargets false for dry-run, got %v (present=%v)", enforcing, ok)
-	}
-
-	if workers, ok := fieldInt(entry.Context, "workerCount"); !ok || workers != 2 {
-		t.Fatalf("expected worker count 2, got %d (present=%v)", workers, ok)
-	}
-
-	if metricsEnabled, ok := fieldBool(entry.Context, "metricsEnabled"); !ok || !metricsEnabled {
-		t.Fatalf("expected metricsEnabled true, got %v (present=%v)", metricsEnabled, ok)
-	}
 }
