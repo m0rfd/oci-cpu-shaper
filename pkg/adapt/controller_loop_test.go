@@ -299,6 +299,132 @@ func TestAdaptiveControllerRunEmitsMetricsSignals(t *testing.T) {
 	requireTrue(t, "errorCallsAfterStep", recorder.errorCalls >= 2)
 }
 
+func TestAdaptiveControllerGuardedSuppressionResetsRelaxedSuccesses(t *testing.T) {
+	t.Parallel()
+
+	recorder := newStubMetricsRecorder()
+	metrics := newFakeMetrics(
+		[]metricResult{
+			{value: defaultRelaxedThresh, timestamp: time.Unix(1_700_002_100, 0), err: nil},
+		},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, recorder)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	stepper, ok := any(controller).(controllerStepper)
+	if !ok {
+		t.Fatal("controller does not expose stepper interface")
+	}
+
+	_ = stepper.step(context.Background())
+
+	_, callsBefore := recorder.relaxedSuccesses()
+
+	controller.handleObservation(est.Observation{
+		Timestamp:    time.Unix(1_700_002_160, 0),
+		Utilisation:  cfg.SuppressThreshold + 0.05,
+		Runnable:     0,
+		BusyJiffies:  0,
+		TotalJiffies: 0,
+		Err:          nil,
+	})
+
+	if controller.RelaxedSuccesses() != 0 {
+		t.Fatalf(
+			"expected relaxedSuccesses to reset after guarded suppression, got %d",
+			controller.RelaxedSuccesses(),
+		)
+	}
+
+	relaxed, callsAfter := recorder.relaxedSuccesses()
+	requireEqual(t, "recorder relaxed successes after guard", relaxed, 0)
+	requireTrue(t, "recorder updated on guarded transition", callsAfter > callsBefore)
+}
+
+func TestAdaptiveControllerSmoothedSuppressionTransitionsResetRelaxedSuccesses(t *testing.T) {
+	t.Parallel()
+
+	recorder := newStubMetricsRecorder()
+	metrics := newFakeMetrics(
+		[]metricResult{
+			{value: defaultRelaxedThresh, timestamp: time.Unix(1_700_002_220, 0), err: nil},
+		},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, recorder)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	stepper, ok := any(controller).(controllerStepper)
+	if !ok {
+		t.Fatal("controller does not expose stepper interface")
+	}
+
+	_ = stepper.step(context.Background())
+
+	controller.handleObservation(est.Observation{
+		Timestamp:    time.Unix(1_700_002_280, 0),
+		Utilisation:  cfg.SuppressThreshold + 0.1,
+		Runnable:     0,
+		BusyJiffies:  0,
+		TotalJiffies: 0,
+		Err:          nil,
+	})
+
+	controller.mu.Lock()
+	controller.relaxedSuccesses = 3
+	controller.mu.Unlock()
+
+	_, callsBefore := recorder.relaxedSuccesses()
+
+	resumeStart := time.Unix(1_700_002_340, 0)
+	if !resumeSuppression(controller, cfg, resumeStart) {
+		t.Fatal("expected controller to resume after cooled observations")
+	}
+
+	if controller.RelaxedSuccesses() != 0 {
+		t.Fatalf(
+			"expected relaxedSuccesses to reset after smoothed transition, got %d",
+			controller.RelaxedSuccesses(),
+		)
+	}
+
+	relaxed, callsAfter := recorder.relaxedSuccesses()
+	requireEqual(t, "recorder relaxed successes after smoothed transition", relaxed, 0)
+	requireTrue(t, "recorder updated on smoothed transition", callsAfter > callsBefore)
+}
+
+func resumeSuppression(controller *AdaptiveController, cfg Config, start time.Time) bool {
+	for index := range 20 {
+		controller.handleObservation(est.Observation{
+			Timestamp:    start.Add(time.Duration(index*10) * time.Second),
+			Utilisation:  cfg.SuppressResume - 0.05,
+			Runnable:     0,
+			BusyJiffies:  0,
+			TotalJiffies: 0,
+			Err:          nil,
+		})
+
+		controller.mu.Lock()
+		suppressed := controller.suppressed
+		controller.mu.Unlock()
+
+		if !suppressed {
+			return true
+		}
+	}
+
+	return false
+}
+
 func waitFor(cond func() bool, timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
 
