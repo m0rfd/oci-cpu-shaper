@@ -45,12 +45,26 @@ func withFakeSchedIdleSetter(setter schedIdleSetter) func() {
 	}
 }
 
+func withSysNiceCapabilityCheck(check func() (bool, error)) func() {
+	original := hasSysNiceCapability
+	hasSysNiceCapability = check
+
+	return func() {
+		hasSysNiceCapability = original
+	}
+}
+
 func TestTrySchedIdleSuccess(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeSchedIdleSetter{}
 	restore := withFakeSchedIdleSetter(fake)
 	t.Cleanup(restore)
+
+	restoreCapCheck := withSysNiceCapabilityCheck(func() (bool, error) {
+		return true, nil
+	})
+	t.Cleanup(restoreCapCheck)
 
 	if err := trySchedIdle(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
