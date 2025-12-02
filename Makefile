@@ -108,7 +108,18 @@ ensure-golangci-lint:
 	TMP_DIR="$$(mktemp -d)"; \
 	trap "rm -rf \"$$TMP_DIR\"" EXIT; \
 	echo "Downloading golangci-lint $(GOLANGCI_LINT_VERSION) from $(GOLANGCI_LINT_DOWNLOAD_URL)"; \
-	curl -fsSL "$(GOLANGCI_LINT_DOWNLOAD_URL)" -o "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)"; \
+	attempts=3; \
+	for i in $$(seq 1 $$attempts); do \
+		if curl -fsSL "$(GOLANGCI_LINT_DOWNLOAD_URL)" -o "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)"; then \
+			break; \
+		fi; \
+		if [ $$i -lt $$attempts ]; then \
+			sleep $$i; \
+		else \
+			echo "Failed to download golangci-lint after $$attempts attempts"; \
+			exit 1; \
+		fi; \
+	done; \
 	printf "%s  %s\n" "$$CHECKSUM" "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)" | sha256sum -c -; \
 	tar -xzf "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)" -C "$$TMP_DIR"; \
 	install -m 0755 "$$TMP_DIR/golangci-lint-$(GOLANGCI_LINT_VERSION_STRIPPED)-$(GOLANGCI_LINT_OS)-$(GOLANGCI_LINT_ARCH)/golangci-lint" "$(GOLANGCI_LINT_BIN)"; \
@@ -428,22 +439,33 @@ ensure-go:
 		echo "Go not found and platform ($$ID) is not Ubuntu; aborting install"; \
 		exit 1; \
 	fi; \
-	TARBALL="go$(GO_REQUIRED_VERSION).linux-$(GO_DL_ARCH).tar.gz"; \
-	case "$(GO_DL_ARCH)" in \
-		amd64) CHECKSUM="$(GO_SHA256_linux_amd64)" ;; \
-		arm64) CHECKSUM="$(GO_SHA256_linux_arm64)" ;; \
-		*) echo "Unsupported Go arch: $(GO_DL_ARCH)"; exit 1 ;; \
-	esac; \
-	URL="https://go.dev/dl/$$TARBALL"; \
-	echo "Installing Go $(GO_REQUIRED_VERSION) from $$URL"; \
-	TMP_DIR="$$(mktemp -d)"; \
-	trap "rm -rf \"$$TMP_DIR\"" EXIT; \
+        TARBALL="go$(GO_REQUIRED_VERSION).linux-$(GO_DL_ARCH).tar.gz"; \
+        case "$(GO_DL_ARCH)" in \
+                amd64) CHECKSUM="$(GO_SHA256_linux_amd64)" ;; \
+                arm64) CHECKSUM="$(GO_SHA256_linux_arm64)" ;; \
+                *) echo "Unsupported Go arch: $(GO_DL_ARCH)"; exit 1 ;; \
+        esac; \
+        URL="https://go.dev/dl/$$TARBALL"; \
+        echo "Installing Go $(GO_REQUIRED_VERSION) from $$URL"; \
+        TMP_DIR="$$(mktemp -d)"; \
+        trap "rm -rf \"$$TMP_DIR\"" EXIT; \
 	TMP_TARBALL="$$TMP_DIR/$$TARBALL"; \
-	curl -fsSL "$$URL" -o "$$TMP_TARBALL"; \
+	attempts=3; \
+	for i in $$(seq 1 $$attempts); do \
+		if curl -fsSL "$$URL" -o "$$TMP_TARBALL"; then \
+			break; \
+		fi; \
+		if [ $$i -lt $$attempts ]; then \
+			sleep $$i; \
+		else \
+			echo "Failed to download Go after $$attempts attempts"; \
+			exit 1; \
+		fi; \
+	done; \
 	printf "%s  %s\n" "$$CHECKSUM" "$$TMP_TARBALL" | sha256sum -c -; \
-	rm -rf /usr/local/go; \
-	tar -C /usr/local -xzf "$$TMP_TARBALL"; \
-	echo "Go $(GO_REQUIRED_VERSION) installed at /usr/local/go";
+        rm -rf /usr/local/go; \
+        tar -C /usr/local -xzf "$$TMP_TARBALL"; \
+        echo "Go $(GO_REQUIRED_VERSION) installed at /usr/local/go";
 
 go-mod-download: verify-go-version
 	@if [ ! -f go.mod ]; then \
