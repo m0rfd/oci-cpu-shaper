@@ -2,8 +2,16 @@ package main
 
 import (
 	"fmt"
+	"sync"
 
 	"go.uber.org/zap"
+)
+
+var (
+	//nolint:gochecknoglobals // swapped in tests to exercise zap build errors
+	newProductionConfig = zap.NewProductionConfig
+	//nolint:gochecknoglobals // guards test replacement of newProductionConfig
+	newProductionConfigMu sync.RWMutex
 )
 
 func newLogger(level string) (*zap.Logger, error) {
@@ -11,7 +19,11 @@ func newLogger(level string) (*zap.Logger, error) {
 		level = defaultLogLevel
 	}
 
-	cfg := zap.NewProductionConfig()
+	newProductionConfigMu.RLock()
+
+	cfg := newProductionConfig()
+
+	newProductionConfigMu.RUnlock()
 
 	err := cfg.Level.UnmarshalText([]byte(level))
 	if err != nil {
