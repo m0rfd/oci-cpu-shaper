@@ -108,7 +108,18 @@ ensure-golangci-lint:
 	TMP_DIR="$$(mktemp -d)"; \
 	trap "rm -rf \"$$TMP_DIR\"" EXIT; \
 	echo "Downloading golangci-lint $(GOLANGCI_LINT_VERSION) from $(GOLANGCI_LINT_DOWNLOAD_URL)"; \
-	curl -fsSL "$(GOLANGCI_LINT_DOWNLOAD_URL)" -o "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)"; \
+	attempts=3; \
+	for i in $$(seq 1 $$attempts); do \
+		if curl -fsSL "$(GOLANGCI_LINT_DOWNLOAD_URL)" -o "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)"; then \
+			break; \
+		fi; \
+		if [ $$i -lt $$attempts ]; then \
+			sleep $$i; \
+		else \
+			echo "Failed to download golangci-lint after $$attempts attempts"; \
+			exit 1; \
+		fi; \
+	done; \
 	printf "%s  %s\n" "$$CHECKSUM" "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)" | sha256sum -c -; \
 	tar -xzf "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)" -C "$$TMP_DIR"; \
 	install -m 0755 "$$TMP_DIR/golangci-lint-$(GOLANGCI_LINT_VERSION_STRIPPED)-$(GOLANGCI_LINT_OS)-$(GOLANGCI_LINT_ARCH)/golangci-lint" "$(GOLANGCI_LINT_BIN)"; \
@@ -265,9 +276,19 @@ verify-go-version:
 	echo "Go not found in PATH; expected version $(GO_REQUIRED_VERSION)."; \
 	exit 1; \
 	fi; \
-	CURRENT_VERSION="$$( $(GO) version | awk '{print $$3}' | sed 's/^go//' )"; \
-	if [ "$$CURRENT_VERSION" != "$(GO_REQUIRED_VERSION)" ]; then \
-		echo "Go version $$CURRENT_VERSION detected, but $(GO_REQUIRED_VERSION) is required."; \
+	CURRENT_VERSION="$$( $(GO) env GOVERSION | sed 's/^go//' )"; \
+	req_major="$$(echo "$(GO_REQUIRED_VERSION)" | cut -d. -f1)"; \
+	req_minor="$$(echo "$(GO_REQUIRED_VERSION)" | cut -d. -f2)"; \
+	req_patch="$$(echo "$(GO_REQUIRED_VERSION)" | cut -d. -f3)"; \
+	cur_major="$$(echo "$$CURRENT_VERSION" | cut -d. -f1)"; \
+	cur_minor="$$(echo "$$CURRENT_VERSION" | cut -d. -f2)"; \
+	cur_patch="$$(echo "$$CURRENT_VERSION" | cut -d. -f3)"; \
+	if [ "$$cur_major" != "$$req_major" ] || [ "$$cur_minor" != "$$req_minor" ]; then \
+		echo "Go $$CURRENT_VERSION detected, but Go $$req_major.$$req_minor.x (>= $(GO_REQUIRED_VERSION)) is required."; \
+		exit 1; \
+	fi; \
+	if [ "$$cur_patch" -lt "$$req_patch" ]; then \
+		echo "Go $$CURRENT_VERSION detected, but >= $(GO_REQUIRED_VERSION) is required within $$req_major.$$req_minor.x."; \
 		exit 1; \
 	fi
 
@@ -410,40 +431,52 @@ ensure-dev-deps:
 	DEBIAN_FRONTEND=noninteractive $$APT_GET_CMD install -y --no-install-recommends ca-certificates curl git tar gzip build-essential;
 
 ensure-go:
-	@if command -v $(GO) >/dev/null 2>&1; then \
-	CURRENT_VERSION="$$( $(GO) version | awk '{print $$3}' | sed 's/^go//' )"; \
-	if [ "$$CURRENT_VERSION" = "$(GO_REQUIRED_VERSION)" ]; then \
-		echo "Go already available: $$($(GO) version)"; \
-		exit 0; \
-	else \
-		echo "Go $$CURRENT_VERSION detected, reinstalling $(GO_REQUIRED_VERSION)"; \
-	fi; \
-	fi; \
-	if [ ! -r /etc/os-release ]; then \
-		echo "/etc/os-release not readable; cannot install Go"; \
-		exit 1; \
+	if command -v $(GO) >/dev/null 2>&1; then \
+		req_major="$$(echo "$(GO_REQUIRED_VERSION)" | cut -d. -f1)"; \
+		req_minor="$$(echo "$(GO_REQUIRED_VERSION)" | cut -d. -f2)"; \
+		req_patch="$$(echo "$(GO_REQUIRED_VERSION)" | cut -d. -f3)"; \
+		CURRENT_VERSION="$$( $(GO) env GOVERSION | sed 's/^go//' )"; \
+		cur_major="$$(echo "$$CURRENT_VERSION" | cut -d. -f1)"; \
+		cur_minor="$$(echo "$$CURRENT_VERSION" | cut -d. -f2)"; \
+		cur_patch="$$(echo "$$CURRENT_VERSION" | cut -d. -f3)"; \
+		if [ "$$cur_major" = "$$req_major" ] && [ "$$cur_minor" = "$$req_minor" ] && [ "$$cur_patch" -ge "$$req_patch" ]; then \
+			echo "Go $$($(GO) version) satisfies $$req_major.$$req_minor.x (>= $(GO_REQUIRED_VERSION))."; \
+			exit 0; \
+		fi; \
+		echo "Go $$CURRENT_VERSION detected, installing $(GO_REQUIRED_VERSION) for $$req_major.$$req_minor.x."; \
 	fi; \
 	. /etc/os-release; \
 	if [ "$$ID" != "ubuntu" ]; then \
 		echo "Go not found and platform ($$ID) is not Ubuntu; aborting install"; \
 		exit 1; \
 	fi; \
-	TARBALL="go$(GO_REQUIRED_VERSION).linux-$(GO_DL_ARCH).tar.gz"; \
-	case "$(GO_DL_ARCH)" in \
-		amd64) CHECKSUM="$(GO_SHA256_linux_amd64)" ;; \
-		arm64) CHECKSUM="$(GO_SHA256_linux_arm64)" ;; \
-		*) echo "Unsupported Go arch: $(GO_DL_ARCH)"; exit 1 ;; \
-	esac; \
-	URL="https://go.dev/dl/$$TARBALL"; \
-	echo "Installing Go $(GO_REQUIRED_VERSION) from $$URL"; \
-	TMP_DIR="$$(mktemp -d)"; \
-	trap "rm -rf \"$$TMP_DIR\"" EXIT; \
+        TARBALL="go$(GO_REQUIRED_VERSION).linux-$(GO_DL_ARCH).tar.gz"; \
+        case "$(GO_DL_ARCH)" in \
+                amd64) CHECKSUM="$(GO_SHA256_linux_amd64)" ;; \
+                arm64) CHECKSUM="$(GO_SHA256_linux_arm64)" ;; \
+                *) echo "Unsupported Go arch: $(GO_DL_ARCH)"; exit 1 ;; \
+        esac; \
+        URL="https://go.dev/dl/$$TARBALL"; \
+        echo "Installing Go $(GO_REQUIRED_VERSION) from $$URL"; \
+        TMP_DIR="$$(mktemp -d)"; \
+        trap "rm -rf \"$$TMP_DIR\"" EXIT; \
 	TMP_TARBALL="$$TMP_DIR/$$TARBALL"; \
-	curl -fsSL "$$URL" -o "$$TMP_TARBALL"; \
+	attempts=3; \
+	for i in $$(seq 1 $$attempts); do \
+		if curl -fsSL "$$URL" -o "$$TMP_TARBALL"; then \
+			break; \
+		fi; \
+		if [ $$i -lt $$attempts ]; then \
+			sleep $$i; \
+		else \
+			echo "Failed to download Go after $$attempts attempts"; \
+			exit 1; \
+		fi; \
+	done; \
 	printf "%s  %s\n" "$$CHECKSUM" "$$TMP_TARBALL" | sha256sum -c -; \
-	rm -rf /usr/local/go; \
-	tar -C /usr/local -xzf "$$TMP_TARBALL"; \
-	echo "Go $(GO_REQUIRED_VERSION) installed at /usr/local/go";
+        rm -rf /usr/local/go; \
+        tar -C /usr/local -xzf "$$TMP_TARBALL"; \
+        echo "Go $(GO_REQUIRED_VERSION) installed at /usr/local/go";
 
 go-mod-download: verify-go-version
 	@if [ ! -f go.mod ]; then \
