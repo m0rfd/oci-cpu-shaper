@@ -38,6 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: write
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
@@ -171,6 +172,7 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     permissions:
       contents: read
+      actions: write
       security-events: write
 
     env:
