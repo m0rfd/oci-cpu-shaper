@@ -103,6 +103,24 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 	}
 }
 
+func TestExporterRenderIncludesRelaxedSuccesses(t *testing.T) {
+	t.Parallel()
+
+	exporter := metrics.NewExporter()
+	exporter.SetMode("active")
+	exporter.SetState("normal")
+	exporter.SetRelaxedSuccesses(3)
+
+	body, err := exporter.Render()
+	if err != nil {
+		t.Fatalf("Render() returned error: %v", err)
+	}
+
+	if !strings.Contains(string(body), "controller_relaxed_successes 3") {
+		t.Fatalf("expected relaxed successes to propagate to metrics output, got %s", string(body))
+	}
+}
+
 func TestExporterRenderClampsInvalidMetrics(t *testing.T) {
 	t.Parallel()
 
@@ -147,6 +165,50 @@ func TestExporterRenderClampsInvalidMetrics(t *testing.T) {
 			t.Fatalf("expected %s to include %q, got %s", label, expected, output)
 		}
 	}
+}
+
+func TestExporterSetRelaxedSuccessesClampsInvalidInputs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("clamps negative values", func(t *testing.T) {
+		t.Parallel()
+
+		exporter := metrics.NewExporter()
+		exporter.SetRelaxedSuccesses(-5)
+
+		body, err := exporter.Render()
+		if err != nil {
+			t.Fatalf("Render() returned error: %v", err)
+		}
+
+		if !strings.Contains(string(body), "controller_relaxed_successes 0") {
+			t.Fatalf("expected relaxed successes to clamp to zero, got %s", string(body))
+		}
+	})
+
+	t.Run("clamps NaN and Inf inputs", func(t *testing.T) {
+		t.Parallel()
+
+		samples := []int{int(math.NaN()), int(math.Inf(1))}
+
+		for _, sample := range samples {
+			exporter := metrics.NewExporter()
+			exporter.SetRelaxedSuccesses(sample)
+
+			body, err := exporter.Render()
+			if err != nil {
+				t.Fatalf("Render() returned error for sample %d: %v", sample, err)
+			}
+
+			if !strings.Contains(string(body), "controller_relaxed_successes 0") {
+				t.Fatalf(
+					"expected relaxed successes to clamp to zero for sample %d, got %s",
+					sample,
+					string(body),
+				)
+			}
+		}
+	})
 }
 
 func TestExporterSetModeNoopDisablesEnforcement(t *testing.T) {
