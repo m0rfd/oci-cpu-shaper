@@ -107,7 +107,7 @@ jobs:
 
       - name: Upload make check logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: make-check-logs
           path: artifacts/make-check.log
@@ -167,7 +167,7 @@ jobs:
 
       - name: Upload actionlint logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: actionlint-logs-${{ matrix.workflow }}
           path: artifacts/actionlint-${{ matrix.workflow }}.log
