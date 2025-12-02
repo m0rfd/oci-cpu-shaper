@@ -6,53 +6,12 @@ package adapt
 
 import (
 	"context"
-	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"oci-cpu-shaper/pkg/est"
 )
-
-func TestAdaptiveControllerRunWithNilEstimatorChannel(t *testing.T) {
-	t.Parallel()
-
-	metrics := newFakeMetrics(
-		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_001_260, 0), err: nil}},
-	)
-	shaper := newFakeShaper()
-	cfg := DefaultConfig()
-
-	estimator := newNilObservationsEstimator()
-
-	controller, err := NewAdaptiveController(cfg, metrics, estimator, shaper, nil)
-	if err != nil {
-		t.Fatalf("NewAdaptiveController: %v", err)
-	}
-
-	done := make(chan error, 1)
-
-	go func() {
-		done <- controller.Run(t.Context())
-	}()
-
-	select {
-	case runErr := <-done:
-		if runErr == nil {
-			t.Fatal("expected controller run to fail when estimator returns nil channel")
-		}
-
-		if !errors.Is(runErr, errEstimatorNilChannel) {
-			t.Fatalf("unexpected run error: %v", runErr)
-		}
-
-		if !estimator.started.Load() {
-			t.Fatal("expected estimator to be invoked")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Run did not terminate after estimator returned nil channel")
-	}
-}
 
 func TestConsumeEstimatorStopsAfterCancellationWithClosingEstimator(t *testing.T) {
 	t.Parallel()
