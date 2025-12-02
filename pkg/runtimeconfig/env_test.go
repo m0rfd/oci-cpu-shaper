@@ -6,6 +6,36 @@ import (
 	"time"
 )
 
+type envIntCase struct {
+	name     string
+	key      string
+	value    string
+	setEnv   bool
+	fallback int
+	expected int
+}
+
+func runEnvIntTestCases(t *testing.T, parser func(string, int) int, cases []envIntCase) {
+	t.Helper()
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if testCase.setEnv {
+				t.Setenv(testCase.key, testCase.value)
+			}
+
+			if got := parser(testCase.key, testCase.fallback); got != testCase.expected {
+				t.Fatalf(
+					"unexpected value for %s: got %d, want %d",
+					testCase.key,
+					got,
+					testCase.expected,
+				)
+			}
+		})
+	}
+}
+
 func TestParseFloatDefault(t *testing.T) {
 	t.Parallel()
 
@@ -54,50 +84,116 @@ func TestEnvDurationFallbacks(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // uses t.Setenv which cannot run in parallel.
 func TestEnvIntRejectsNonPositive(t *testing.T) {
-	keyNegative := "OCI_CPU_SHAPER_TEST_INT_NEGATIVE"
-	t.Setenv(keyNegative, "-5")
-
-	if got := envInt(keyNegative, 7); got != 7 {
-		t.Fatalf("expected negative int fallback 7, got %d", got)
+	defaultEnvIntCases := []envIntCase{
+		{
+			name:     "missing_uses_fallback",
+			key:      "OCI_CPU_SHAPER_TEST_INT_MISSING",
+			value:    "",
+			setEnv:   false,
+			fallback: 11,
+			expected: 11,
+		},
+		{
+			name:     "blank_uses_fallback",
+			key:      "OCI_CPU_SHAPER_TEST_INT_BLANK",
+			value:    "   ",
+			setEnv:   true,
+			fallback: 12,
+			expected: 12,
+		},
+		{
+			name:     "non_numeric",
+			key:      "OCI_CPU_SHAPER_TEST_INT_NON_NUMERIC",
+			value:    "invalid",
+			setEnv:   true,
+			fallback: 9,
+			expected: 9,
+		},
+		{
+			name:     "negative",
+			key:      "OCI_CPU_SHAPER_TEST_INT_NEGATIVE",
+			value:    "-5",
+			setEnv:   true,
+			fallback: 7,
+			expected: 7,
+		},
+		{
+			name:     "zero",
+			key:      "OCI_CPU_SHAPER_TEST_INT_ZERO",
+			value:    "0",
+			setEnv:   true,
+			fallback: 4,
+			expected: 4,
+		},
+		{
+			name:     "valid_high_positive",
+			key:      "OCI_CPU_SHAPER_TEST_INT_VALID",
+			value:    " 123456 ",
+			setEnv:   true,
+			fallback: 1,
+			expected: 123456,
+		},
 	}
 
-	keyZero := "OCI_CPU_SHAPER_TEST_INT_ZERO"
-	t.Setenv(keyZero, "0")
-
-	if got := envInt(keyZero, 4); got != 4 {
-		t.Fatalf("expected zero fallback 4, got %d", got)
-	}
-
-	keyValid := "OCI_CPU_SHAPER_TEST_INT_VALID"
-	t.Setenv(keyValid, " 5 ")
-
-	if got := envInt(keyValid, 1); got != 5 {
-		t.Fatalf("expected trimmed int 5, got %d", got)
-	}
-
-	keyInvalid := "OCI_CPU_SHAPER_TEST_INT_INVALID"
-	t.Setenv(keyInvalid, "not-a-number")
-
-	if got := envInt(keyInvalid, 9); got != 9 {
-		t.Fatalf("expected invalid int to fall back to 9, got %d", got)
-	}
+	runEnvIntTestCases(t, envInt, defaultEnvIntCases)
 }
 
+//nolint:paralleltest // uses t.Setenv which cannot run in parallel.
 func TestEnvIntAllowZero(t *testing.T) {
-	keyZero := "OCI_CPU_SHAPER_TEST_INT_ALLOW_ZERO"
-	t.Setenv(keyZero, "0")
-
-	if got := envIntAllowZero(keyZero, 3); got != 0 {
-		t.Fatalf("expected zero to be accepted, got %d", got)
+	envIntAllowZeroCases := []envIntCase{
+		{
+			name:     "missing_uses_fallback",
+			key:      "OCI_CPU_SHAPER_TEST_INT_ALLOW_ZERO_MISSING",
+			value:    "",
+			setEnv:   false,
+			fallback: 13,
+			expected: 13,
+		},
+		{
+			name:     "blank_uses_fallback",
+			key:      "OCI_CPU_SHAPER_TEST_INT_ALLOW_ZERO_BLANK",
+			value:    "  ",
+			setEnv:   true,
+			fallback: 8,
+			expected: 8,
+		},
+		{
+			name:     "non_numeric",
+			key:      "OCI_CPU_SHAPER_TEST_INT_ALLOW_ZERO_NON_NUMERIC",
+			value:    "oops",
+			setEnv:   true,
+			fallback: 6,
+			expected: 6,
+		},
+		{
+			name:     "negative",
+			key:      "OCI_CPU_SHAPER_TEST_INT_ALLOW_ZERO_NEGATIVE",
+			value:    "-2",
+			setEnv:   true,
+			fallback: 4,
+			expected: 4,
+		},
+		{
+			name:     "zero_accepted",
+			key:      "OCI_CPU_SHAPER_TEST_INT_ALLOW_ZERO",
+			value:    "0",
+			setEnv:   true,
+			fallback: 3,
+			expected: 0,
+		},
+		{
+			name:     "valid_high_positive",
+			key:      "OCI_CPU_SHAPER_TEST_INT_ALLOW_ZERO_POSITIVE",
+			value:    "98765",
+			setEnv:   true,
+			fallback: 2,
+			expected: 98765,
+		},
 	}
 
-	keyNegative := "OCI_CPU_SHAPER_TEST_INT_ALLOW_ZERO_NEGATIVE"
-	t.Setenv(keyNegative, "-2")
-
-	if got := envIntAllowZero(keyNegative, 4); got != 4 {
-		t.Fatalf("expected negative to fall back, got %d", got)
-	}
+	runEnvIntTestCases(t, envIntAllowZero, envIntAllowZeroCases)
 }
 
 func TestEnvStringTrimsAndFallback(t *testing.T) {
@@ -161,6 +257,31 @@ func TestEnvBoolEvaluation(t *testing.T) {
 
 	if got := envBool(keyInvalid, false); got {
 		t.Fatal("expected invalid bool to fall back to false")
+	}
+}
+
+//nolint:paralleltest // uses t.Setenv which cannot run in parallel.
+func TestApplyEnvOverridesIntegratesIntParsers(t *testing.T) {
+	defaultCfg := Default()
+	expected := defaultCfg
+	expected.Controller.RelaxedConfirmations = 15
+	expected.Controller.SuppressSmoothingSamples = 0
+
+	overrides := map[string]string{
+		envPoolWorkers:              "-8",
+		envRelaxedConfirmations:     "15",
+		envSuppressSmoothingSamples: "0",
+	}
+
+	for key, value := range overrides {
+		t.Setenv(key, value)
+	}
+
+	cfg := defaultCfg
+	applyEnvOverrides(&cfg)
+
+	if cfg != expected {
+		t.Fatalf("expected %#v after env overrides, got %#v", expected, cfg)
 	}
 }
 
