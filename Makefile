@@ -543,7 +543,7 @@ install-git-hooks:
 	hook_path="$$hook_dir/pre-commit"; \
 	checksum_path="$$hook_path.sha256"; \
 	if [ ! -f "$$script_path" ]; then \
-		echo "Hook template $$script_path not found" >&2; \
+		echo "Hook template $$script_path not found; rerun 'make install-git-hooks' locally." >&2; \
 		exit 1; \
 	fi; \
 	script_checksum="$$(sha256sum "$$script_path" | awk '{print $$1}')"; \
@@ -560,8 +560,14 @@ install-git-hooks:
 		echo "Pre-commit hook already up to date."; \
 		exit 0; \
 	fi; \
-	install -m 0755 "$$script_path" "$$hook_path"; \
-	printf "%s\n" "$$script_checksum" > "$$checksum_path"; \
+	if ! install -m 0755 "$$script_path" "$$hook_path"; then \
+		echo "Failed to install pre-commit hook at $$hook_path. Rerun 'make install-git-hooks' locally." >&2; \
+		exit 1; \
+	fi; \
+	if ! printf "%s\n" "$$script_checksum" > "$$checksum_path"; then \
+		echo "Failed to persist hook checksum at $$checksum_path. Rerun 'make install-git-hooks' locally." >&2; \
+		exit 1; \
+	fi; \
 	if [ -f "$$hook_path" ]; then \
 		echo "Refreshed pre-commit hook from $$script_path."; \
 	else \
