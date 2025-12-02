@@ -51,6 +51,24 @@ func TestExporterServeHTTPHandlesRenderErrors(t *testing.T) {
 	}
 }
 
+func TestExporterServeHTTPHandlesNilBufferFactory(t *testing.T) {
+	t.Parallel()
+
+	exporter := NewExporter()
+	exporter.bufferFactory = func() byteBuffer { return nil }
+
+	recorder := httptest.NewRecorder()
+	exporter.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("expected HTTP 500 when buffer factory returns nil, got %d", recorder.Code)
+	}
+
+	if body := recorder.Body.String(); !strings.Contains(body, errNilBuffer.Error()) {
+		t.Fatalf("expected nil buffer error to be reported, got %q", body)
+	}
+}
+
 func TestExporterRenderRejectsNilBufferFactory(t *testing.T) {
 	t.Parallel()
 
