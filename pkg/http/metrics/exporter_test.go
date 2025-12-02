@@ -1,6 +1,7 @@
-package metrics_test
+package metrics //nolint:testpackage // Access exporter internals for error coverage.
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math"
@@ -9,8 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	metrics "oci-cpu-shaper/pkg/http/metrics"
 )
 
 const openMetricsContentType = "application/openmetrics-text; version=1.0.0; charset=utf-8"
@@ -25,7 +24,7 @@ var (
 func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 	t.Parallel()
 
-	exporter := metrics.NewExporter()
+	exporter := NewExporter()
 	exporter.SetMode(" dry-run ")
 	exporter.SetState(" fallback ")
 	exporter.SetTarget(0.275)
@@ -106,7 +105,7 @@ func TestExporterRenderProducesOpenMetrics(t *testing.T) {
 func TestExporterRenderIncludesRelaxedSuccesses(t *testing.T) {
 	t.Parallel()
 
-	exporter := metrics.NewExporter()
+	exporter := NewExporter()
 	exporter.SetMode("active")
 	exporter.SetState("normal")
 	exporter.SetRelaxedSuccesses(3)
@@ -124,7 +123,7 @@ func TestExporterRenderIncludesRelaxedSuccesses(t *testing.T) {
 func TestExporterRenderClampsInvalidMetrics(t *testing.T) {
 	t.Parallel()
 
-	exporter := metrics.NewExporter()
+	exporter := NewExporter()
 	exporter.SetLastError(errWhitespaceError)
 
 	samples := []struct {
@@ -173,7 +172,7 @@ func TestExporterSetRelaxedSuccessesClampsInvalidInputs(t *testing.T) {
 	t.Run("clamps negative values", func(t *testing.T) {
 		t.Parallel()
 
-		exporter := metrics.NewExporter()
+		exporter := NewExporter()
 		exporter.SetRelaxedSuccesses(-5)
 
 		body, err := exporter.Render()
@@ -192,7 +191,7 @@ func TestExporterSetRelaxedSuccessesClampsInvalidInputs(t *testing.T) {
 		samples := []int{int(math.NaN()), int(math.Inf(1))}
 
 		for _, sample := range samples {
-			exporter := metrics.NewExporter()
+			exporter := NewExporter()
 			exporter.SetRelaxedSuccesses(sample)
 
 			body, err := exporter.Render()
@@ -214,7 +213,7 @@ func TestExporterSetRelaxedSuccessesClampsInvalidInputs(t *testing.T) {
 func TestExporterSetModeNoopDisablesEnforcement(t *testing.T) {
 	t.Parallel()
 
-	exporter := metrics.NewExporter()
+	exporter := NewExporter()
 	exporter.SetMode(" NoOp ")
 
 	body, err := exporter.Render()
@@ -235,7 +234,7 @@ func TestExporterSetModeNoopDisablesEnforcement(t *testing.T) {
 func TestExporterObserveOCIP95TracksTimestamp(t *testing.T) {
 	t.Parallel()
 
-	exporter := metrics.NewExporter()
+	exporter := NewExporter()
 	timestamp := time.Unix(1_700_000_111, 0)
 	exporter.ObserveOCIP95(0.45, timestamp)
 	exporter.ObserveOCIP95(0.55, time.Time{})
@@ -260,7 +259,7 @@ func TestExporterObserveOCIP95TracksTimestamp(t *testing.T) {
 func TestExporterServeHTTPWritesContentType(t *testing.T) {
 	t.Parallel()
 
-	exporter := metrics.NewExporter()
+	exporter := NewExporter()
 	exporter.SetMode("noop")
 	exporter.SetState("normal")
 
@@ -279,7 +278,7 @@ func TestExporterServeHTTPWritesContentType(t *testing.T) {
 func TestExporterServeHTTPClampsNegativeCgroupValues(t *testing.T) {
 	t.Parallel()
 
-	exporter := metrics.NewExporter()
+	exporter := NewExporter()
 	exporter.SetCgroupCPUWeight(-10)
 	exporter.SetCgroupCPUMax(-20, -30, true)
 
@@ -308,7 +307,7 @@ func TestExporterServeHTTPClampsNegativeCgroupValues(t *testing.T) {
 func TestExporterServeHTTPClampsNonFiniteCgroupValues(t *testing.T) {
 	t.Parallel()
 
-	exporter := metrics.NewExporter()
+	exporter := NewExporter()
 	exporter.SetCgroupCPUWeight(math.Inf(1))
 	exporter.SetCgroupCPUMax(math.Inf(1), math.NaN(), true)
 
@@ -337,7 +336,7 @@ func TestExporterServeHTTPClampsNonFiniteCgroupValues(t *testing.T) {
 func TestExporterServeHTTPSanitizesCgroupMetrics(t *testing.T) {
 	t.Parallel()
 
-	exporter := metrics.NewExporter()
+	exporter := NewExporter()
 	exporter.SetCgroupCPUWeight(math.NaN())
 	exporter.SetCgroupCPUMax(math.NaN(), -100, true)
 
@@ -397,7 +396,7 @@ func TestExporterServeHTTPSanitizesCgroupMetrics(t *testing.T) {
 func TestExporterWriteToPropagatesWriterErrors(t *testing.T) {
 	t.Parallel()
 
-	exporter := metrics.NewExporter()
+	exporter := NewExporter()
 	exporter.SetMode("noop")
 
 	_, err := exporter.WriteTo(failingWriter{})
@@ -410,25 +409,57 @@ func TestExporterWriteToPropagatesWriterErrors(t *testing.T) {
 	}
 }
 
-func TestExporterWriteToRejectsNilWriter(t *testing.T) {
+func TestExporterWriteToRejectsNilWriterExternal(t *testing.T) {
 	t.Parallel()
 
-	exporter := metrics.NewExporter()
+	exporter := NewExporter()
 
 	_, err := exporter.WriteTo(nil)
-	if err == nil {
-		t.Fatal("expected error when writer is nil")
+	if !errors.Is(err, errNilWriter) {
+		t.Fatalf("expected errNilWriter, got %v", err)
+	}
+}
+
+func TestExporterRenderRejectsNilBuffer(t *testing.T) {
+	t.Parallel()
+
+	exporter := NewExporter()
+	exporter.bufferFactory = func() byteBuffer { return nil }
+
+	_, err := exporter.Render()
+	if !errors.Is(err, errNilBuffer) {
+		t.Fatalf("expected errNilBuffer, got %v", err)
+	}
+}
+
+func TestExporterRenderClonesFactoryBuffer(t *testing.T) {
+	t.Parallel()
+
+	seed := bytes.NewBufferString("prefilled\n")
+	exporter := NewExporter()
+	exporter.bufferFactory = func() byteBuffer { return seed }
+
+	data, err := exporter.Render()
+	if err != nil {
+		t.Fatalf("Render() returned error: %v", err)
 	}
 
-	if !strings.Contains(err.Error(), "writer is nil") {
-		t.Fatalf("unexpected error message: %v", err)
+	metricsOutput := string(data)
+	if !strings.HasPrefix(metricsOutput, "prefilled\n") {
+		t.Fatalf("expected metrics output to include factory buffer prefix, got %s", metricsOutput)
+	}
+
+	seed.WriteString("mutated\n")
+
+	if strings.Contains(metricsOutput, "mutated") {
+		t.Fatalf("expected Render output to be cloned, got %s", metricsOutput)
 	}
 }
 
 func TestExporterGuardsAgainstInvalidInputs(t *testing.T) {
 	t.Parallel()
 
-	exporter := metrics.NewExporter()
+	exporter := NewExporter()
 	exporter.SetMode("")
 	exporter.SetState(" ")
 	exporter.SetTarget(math.NaN())
