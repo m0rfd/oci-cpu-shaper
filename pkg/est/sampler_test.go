@@ -264,6 +264,64 @@ func TestBuildObservationNormalisesRunnables(t *testing.T) {
 	assertObservation(t, observation, 1, 2, 10, 10)
 }
 
+func TestBuildObservationClampsNonPositiveCPUCounts(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		cpuCount int
+		previous Snapshot
+		current  Snapshot
+		util     float64
+		runnable float64
+		busy     uint64
+		total    uint64
+	}{
+		{
+			name:     "zero-cpu-count",
+			cpuCount: 0,
+			previous: Snapshot{Idle: 10, Total: 20, Runnable: 0},
+			current:  Snapshot{Idle: 12, Total: 30, Runnable: 8},
+			util:     0.8,
+			runnable: 0,
+			busy:     8,
+			total:    10,
+		},
+		{
+			name:     "negative-cpu-count",
+			cpuCount: -1,
+			previous: Snapshot{Idle: 40, Total: 120, Runnable: 0},
+			current:  Snapshot{Idle: 50, Total: 150, Runnable: 12},
+			util:     0.6666666666666666,
+			runnable: 0,
+			busy:     20,
+			total:    30,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			observation := buildObservationWithCPUCount(
+				time.Unix(0, 0),
+				testCase.previous,
+				testCase.current,
+				testCase.cpuCount,
+			)
+
+			assertObservation(
+				t,
+				observation,
+				testCase.util,
+				testCase.runnable,
+				testCase.busy,
+				testCase.total,
+			)
+		})
+	}
+}
+
 func TestBuildObservationHandlesZeroTotalDelta(t *testing.T) {
 	t.Parallel()
 
