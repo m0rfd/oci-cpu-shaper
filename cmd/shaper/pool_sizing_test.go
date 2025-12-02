@@ -122,6 +122,96 @@ func TestApplyPoolSizingFromShapeHandlesNonPositiveOCPUs(t *testing.T) {
 	}
 }
 
+type ocpuScenario struct {
+	name            string
+	ocpus           float64
+	configWorkers   int
+	expectedWorkers int
+	expectedApplied bool
+	expectedCapped  bool
+}
+
+func TestApplyPoolSizingFromShapeOCPUScenarios(t *testing.T) {
+	t.Parallel()
+
+	testCases := []ocpuScenario{
+		{
+			name:            "nonPositiveFallsBack",
+			ocpus:           0,
+			configWorkers:   5,
+			expectedWorkers: 5,
+			expectedApplied: false,
+			expectedCapped:  false,
+		},
+		{
+			name:            "fractionalRoundsUpToMinimum",
+			ocpus:           0.3,
+			configWorkers:   2,
+			expectedWorkers: 1,
+			expectedApplied: true,
+			expectedCapped:  false,
+		},
+		{
+			name:            "capsAtMaxWorkers",
+			ocpus:           96,
+			configWorkers:   1,
+			expectedWorkers: maxAutoSizedWorkers,
+			expectedApplied: true,
+			expectedCapped:  true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			runOCPUScenario(t, testCase)
+		})
+	}
+}
+
+func runOCPUScenario(t *testing.T, testCase ocpuScenario) {
+	t.Helper()
+
+	cfg := runtimeconfig.Default()
+	cfg.Pool.AutoSizeFromShape = true
+	cfg.Pool.Workers = testCase.configWorkers
+
+	imds := &stubIMDSClient{shape: stubShapeConfig(testCase.ocpus, 0)} //nolint:exhaustruct
+
+	updated, result, err := applyPoolSizingFromShape(context.Background(), cfg, modeEnforce, imds)
+	if err != nil {
+		t.Fatalf("applyPoolSizingFromShape returned error: %v", err)
+	}
+
+	if result.applied != testCase.expectedApplied {
+		t.Fatalf(
+			"applied flag mismatch: expected %t, got %t",
+			testCase.expectedApplied,
+			result.applied,
+		)
+	}
+
+	if result.capped != testCase.expectedCapped {
+		t.Fatalf(
+			"capped flag mismatch: expected %t, got %t",
+			testCase.expectedCapped,
+			result.capped,
+		)
+	}
+
+	if updated.Pool.Workers != testCase.expectedWorkers {
+		t.Fatalf(
+			"worker count mismatch: expected %d, got %d",
+			testCase.expectedWorkers,
+			updated.Pool.Workers,
+		)
+	}
+
+	if imds.shapeCalls != 1 {
+		t.Fatalf("expected one ShapeConfig call, got %d", imds.shapeCalls)
+	}
+}
+
 func TestApplyPoolSizingFromShapeSmallOCPUs(t *testing.T) {
 	t.Parallel()
 
