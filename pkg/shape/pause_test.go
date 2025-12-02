@@ -198,6 +198,50 @@ func TestPoolRunnableGuardPausesAndResumes(t *testing.T) {
 	}
 }
 
+func TestPoolObserveHostLoadNormalisesRunnable(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		runnable     float64
+		expectPaused bool
+	}{
+		{name: "nan", runnable: math.NaN(), expectPaused: false},
+		{name: "pos-inf", runnable: math.Inf(1), expectPaused: false},
+		{name: "neg-inf", runnable: math.Inf(-1), expectPaused: false},
+		{name: "negative", runnable: -0.5, expectPaused: false},
+		{name: "below-guard", runnable: 0.4, expectPaused: false},
+		{name: "at-guard", runnable: 1, expectPaused: true},
+		{name: "above-guard", runnable: 1.5, expectPaused: true},
+	}
+
+	for _, tt := range tests {
+		testCase := tt
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			pool, err := shape.NewPool(1, time.Millisecond)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			pool.SetPauseThresholds(0, 0)
+			pool.SetRunnableGuard(1)
+
+			pool.ObserveHostLoad(0.2, testCase.runnable)
+
+			if paused := pool.Paused(); paused != testCase.expectPaused {
+				t.Fatalf(
+					"expected paused=%t for runnable %v, got %t",
+					testCase.expectPaused,
+					testCase.runnable,
+					paused,
+				)
+			}
+		})
+	}
+}
+
 func TestPoolRunnableGuardClampsInvalidInputs(t *testing.T) {
 	t.Parallel()
 
