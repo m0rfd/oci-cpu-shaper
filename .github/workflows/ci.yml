@@ -2,6 +2,7 @@ name: CI
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
