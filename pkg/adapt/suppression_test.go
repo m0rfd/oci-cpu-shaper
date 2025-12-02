@@ -153,6 +153,41 @@ func TestSuppressionGuardBypassesHostSmoothing(t *testing.T) {
 	}
 }
 
+func TestGuardedSuppressionOverridesMetrics(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}}) //nolint:exhaustruct
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	controller.mu.Lock()
+	controller.hostLoad = cfg.SuppressThreshold * 0.25
+	controller.hostRunnable = cfg.SuppressRunnableThreshold * 0.25
+	controller.applyTargetLocked(cfg.FallbackTarget * 1.1)
+	previouslySuppressed := controller.transitionSuppressionLocked(true)
+	controller.applySuppressionTargetsLocked(previouslySuppressed)
+	controller.updateEffectiveStateLocked()
+	target := controller.target
+	controller.mu.Unlock()
+
+	requireConditionf(t, !previouslySuppressed, "guarded suppression should report previous false")
+	assertState(t, controller, StateSuppressed, "guard path should force suppression")
+	assertTargetZero(t, controller, "guarded suppression should zero target")
+
+	if shaper.Target() != target {
+		t.Fatalf(
+			"expected shaper target %.2f to match controller target %.2f",
+			shaper.Target(),
+			target,
+		)
+	}
+}
+
 func TestConsumeEstimatorHandlesErrors(t *testing.T) {
 	t.Parallel()
 
@@ -232,6 +267,54 @@ func TestSuppressionTransitionsRestoreDesiredTarget(t *testing.T) {
 	restored := assertRestoredTarget(t, controller)
 
 	assertShaperCallSequence(t, shaper, []float64{initialTarget, 0, 0, restored})
+}
+
+func TestSuppressionResumesAfterBothMetricsCool(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics([]metricResult{{value: 0.25, err: nil}}) //nolint:exhaustruct
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	controller.mu.Lock()
+	controller.suppressed = true
+	controller.target = 0
+	controller.desired = cfg.FallbackTarget * 1.2
+	controller.hostLoad = cfg.SuppressResume * 0.8
+	controller.hostRunnable = cfg.SuppressRunnableResume * 0.8
+	previouslySuppressed := controller.transitionSuppressionLocked(false)
+	controller.applySuppressionTargetsLocked(previouslySuppressed)
+	controller.updateEffectiveStateLocked()
+	restored := controller.target
+	controller.mu.Unlock()
+
+	requireConditionf(
+		t,
+		previouslySuppressed,
+		"suppression exit should report previous suppression",
+	)
+	assertState(t, controller, StateFallback, "cooled metrics should resume controller")
+
+	if restored != controller.desired {
+		t.Fatalf(
+			"expected suppression exit to restore desired target %.2f, got %.2f",
+			controller.desired,
+			restored,
+		)
+	}
+
+	if shaper.Target() != restored {
+		t.Fatalf(
+			"expected shaper to receive restored target %.2f, got %.2f",
+			restored,
+			shaper.Target(),
+		)
+	}
 }
 
 func newSuppressionHarness(t *testing.T) (*AdaptiveController, *fakeShaper, Config) {
