@@ -286,7 +286,7 @@ jobs:
         id: download-integration-coverage
         if: (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && needs.integration.result == 'success' && needs.integration.outputs.integration-succeeded == 'true'
         continue-on-error: true
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v5
         with:
           name: integration-coverage
           path: artifacts
