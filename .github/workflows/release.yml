@@ -58,9 +58,11 @@ jobs:
           RELEASE_REF: ${{ github.event_name == 'workflow_run' && format('refs/tags/{0}', github.event.workflow_run.head_branch) || github.ref }}
           RELEASE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
         run: |
-          echo "release-ref=${RELEASE_REF}" >> "$GITHUB_OUTPUT"
-          echo "release-ref-name=${RELEASE_REF_NAME}" >> "$GITHUB_OUTPUT"
-          echo "release-sha=${RELEASE_SHA}" >> "$GITHUB_OUTPUT"
+          {
+            echo "release-ref=${RELEASE_REF}"
+            echo "release-ref-name=${RELEASE_REF_NAME}"
+            echo "release-sha=${RELEASE_SHA}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Download CI coverage artifact (if available)
         id: download-ci-coverage
