@@ -50,12 +50,12 @@ func TestParseFloatDefault(t *testing.T) {
 		{name: "valid", input: " 0.33 ", fallback: 1.0, want: 0.33},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := parseFloatDefault(tc.input, tc.fallback); got != tc.want {
-				t.Fatalf("parseFloatDefault(%q)=%v want %v", tc.input, got, tc.want)
+			if got := parseFloatDefault(testCase.input, testCase.fallback); got != testCase.want {
+				t.Fatalf("parseFloatDefault(%q)=%v want %v", testCase.input, got, testCase.want)
 			}
 		})
 	}
@@ -96,7 +96,7 @@ func TestEnvIntRejectsNonPositive(t *testing.T) {
 			expected: 11,
 		},
 		{
-			name:     "blank_uses_fallback",
+			name:     "blank_env_falls_back",
 			key:      "OCI_CPU_SHAPER_TEST_INT_BLANK",
 			value:    "   ",
 			setEnv:   true,
@@ -104,7 +104,7 @@ func TestEnvIntRejectsNonPositive(t *testing.T) {
 			expected: 12,
 		},
 		{
-			name:     "non_numeric",
+			name:     "non_numeric_env_falls_back",
 			key:      "OCI_CPU_SHAPER_TEST_INT_NON_NUMERIC",
 			value:    "invalid",
 			setEnv:   true,
@@ -112,7 +112,7 @@ func TestEnvIntRejectsNonPositive(t *testing.T) {
 			expected: 9,
 		},
 		{
-			name:     "negative",
+			name:     "negative_env_falls_back",
 			key:      "OCI_CPU_SHAPER_TEST_INT_NEGATIVE",
 			value:    "-5",
 			setEnv:   true,
@@ -120,7 +120,7 @@ func TestEnvIntRejectsNonPositive(t *testing.T) {
 			expected: 7,
 		},
 		{
-			name:     "zero",
+			name:     "zero_env_falls_back",
 			key:      "OCI_CPU_SHAPER_TEST_INT_ZERO",
 			value:    "0",
 			setEnv:   true,
@@ -128,7 +128,7 @@ func TestEnvIntRejectsNonPositive(t *testing.T) {
 			expected: 4,
 		},
 		{
-			name:     "valid_high_positive",
+			name:     "valid_high_positive", // ensures successful parsing when valid
 			key:      "OCI_CPU_SHAPER_TEST_INT_VALID",
 			value:    " 123456 ",
 			setEnv:   true,
@@ -152,7 +152,7 @@ func TestEnvIntAllowZero(t *testing.T) {
 			expected: 13,
 		},
 		{
-			name:     "blank_uses_fallback",
+			name:     "blank_env_falls_back",
 			key:      "OCI_CPU_SHAPER_TEST_INT_ALLOW_ZERO_BLANK",
 			value:    "  ",
 			setEnv:   true,
@@ -160,7 +160,7 @@ func TestEnvIntAllowZero(t *testing.T) {
 			expected: 8,
 		},
 		{
-			name:     "non_numeric",
+			name:     "non_numeric_env_falls_back",
 			key:      "OCI_CPU_SHAPER_TEST_INT_ALLOW_ZERO_NON_NUMERIC",
 			value:    "oops",
 			setEnv:   true,
@@ -168,7 +168,7 @@ func TestEnvIntAllowZero(t *testing.T) {
 			expected: 6,
 		},
 		{
-			name:     "negative",
+			name:     "negative_env_falls_back",
 			key:      "OCI_CPU_SHAPER_TEST_INT_ALLOW_ZERO_NEGATIVE",
 			value:    "-2",
 			setEnv:   true,
@@ -184,7 +184,7 @@ func TestEnvIntAllowZero(t *testing.T) {
 			expected: 0,
 		},
 		{
-			name:     "valid_high_positive",
+			name:     "valid_high_positive", // ensures successful parsing when valid
 			key:      "OCI_CPU_SHAPER_TEST_INT_ALLOW_ZERO_POSITIVE",
 			value:    "98765",
 			setEnv:   true,
@@ -282,6 +282,67 @@ func TestApplyEnvOverridesIntegratesIntParsers(t *testing.T) {
 
 	if cfg != expected {
 		t.Fatalf("expected %#v after env overrides, got %#v", expected, cfg)
+	}
+}
+
+func TestApplyEnvOverridesEnvIntFallbacks(t *testing.T) {
+	defaultCfg := Default()
+
+	testCases := []struct {
+		name      string
+		overrides map[string]string
+		expected  Config
+	}{
+		{
+			name: "blank_and_non_numeric_use_defaults",
+			overrides: map[string]string{
+				envPoolWorkers:              "   ",
+				envRelaxedConfirmations:     "alpha",
+				envSuppressSmoothingSamples: " ",
+			},
+			expected: defaultCfg,
+		},
+		{
+			name: "negative_and_zero_use_defaults",
+			overrides: map[string]string{
+				envPoolWorkers:              "-3",
+				envRelaxedConfirmations:     "0",
+				envSuppressSmoothingSamples: "-1",
+			},
+			expected: defaultCfg,
+		},
+		{
+			name: "positive_ints_override_config",
+			overrides: map[string]string{
+				envPoolWorkers:              "16",
+				envRelaxedConfirmations:     "12",
+				envSuppressSmoothingSamples: "1",
+			},
+			expected: func() Config {
+				cfg := defaultCfg
+				cfg.Controller.RelaxedConfirmations = 12
+				cfg.Controller.SuppressSmoothingSamples = 1
+				cfg.Pool.Workers = 16
+
+				return cfg
+			}(),
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			cfg := Default()
+
+			for key, value := range testCase.overrides {
+				t.Setenv(key, value)
+			}
+
+			applyEnvOverrides(&cfg)
+
+			if cfg != testCase.expected {
+				t.Fatalf("expected %#v after env overrides, got %#v", testCase.expected, cfg)
+			}
+		})
 	}
 }
 
