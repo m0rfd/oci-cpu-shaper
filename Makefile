@@ -587,28 +587,28 @@ verify-git-hooks:
 		"" ) hook_dir="$$git_common_dir/hooks" ;; \
 		*) hook_dir="$$repo_root/$$hooks_path" ;; \
 	esac; \
-		script_path="hack/githooks/pre-commit"; \
-		hook_path="$$hook_dir/pre-commit"; \
-		if [ ! -f "$$script_path" ]; then \
-			echo "Hook template $$script_path not found" >&2; \
+	script_path="hack/githooks/pre-commit"; \
+	hook_path="$$hook_dir/pre-commit"; \
+	if [ ! -f "$$script_path" ]; then \
+		echo "Hook template $$script_path not found" >&2; \
+		exit 1; \
+	fi; \
+	expected_checksum="$$(sha256sum "$$script_path" | awk '{print $$1}')"; \
+	if [ ! -f "$$hook_path" ]; then \
+		echo "Pre-commit hook missing at $$hook_path. Run 'make install-git-hooks' locally to install."; \
+		exit 1; \
+	fi; \
+	hook_checksum="$$(sha256sum "$$hook_path" | awk '{print $$1}')"; \
+	if [ "$$hook_checksum" != "$$expected_checksum" ]; then \
+		echo "Pre-commit hook at $$hook_path differs from template. Run 'make install-git-hooks'."; \
+		exit 1; \
+	fi; \
+	checksum_path="$$hook_path.sha256"; \
+	if [ -f "$$checksum_path" ]; then \
+		stored_checksum="$$(awk 'NR==1 {print $$1}' "$$checksum_path")"; \
+		if [ "$$stored_checksum" != "$$expected_checksum" ]; then \
+			echo "Stored checksum $$checksum_path differs from template. Run 'make install-git-hooks'."; \
 			exit 1; \
 		fi; \
-		expected_checksum="$$(sha256sum "$$script_path" | awk '{print $$1}')"; \
-		if [ ! -f "$$hook_path" ]; then \
-			echo "Pre-commit hook missing at $$hook_path. Skipping verification; run 'make install-git-hooks' locally to install."; \
-			exit 0; \
-		fi; \
-		hook_checksum="$$(sha256sum "$$hook_path" | awk '{print $$1}')"; \
-		if [ "$$hook_checksum" != "$$expected_checksum" ]; then \
-			echo "Pre-commit hook at $$hook_path differs from template. Run 'make install-git-hooks'."; \
-			exit 1; \
-		fi; \
-		checksum_path="$$hook_path.sha256"; \
-		if [ -f "$$checksum_path" ]; then \
-			stored_checksum="$$(awk 'NR==1 {print $$1}' "$$checksum_path")"; \
-			if [ "$$stored_checksum" != "$$expected_checksum" ]; then \
-				echo "Stored checksum $$checksum_path differs from template. Run 'make install-git-hooks'."; \
-				exit 1; \
-			fi; \
-		fi; \
-		echo "Pre-commit hook verified at $$hook_path."
+	fi; \
+	echo "Pre-commit hook verified at $$hook_path."
