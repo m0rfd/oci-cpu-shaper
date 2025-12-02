@@ -425,10 +425,7 @@ jobs:
 
       # ------ Cosign signing (keyless) ------
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4.0.0
-        with:
-          # Keep cosign pinned for predictable signing output; bump docs when upgrading.
-          cosign-release: 'v3.0.2'
+        uses: sigstore/cosign-installer@v4
 
       - name: Sign rootless image digest
         env:
