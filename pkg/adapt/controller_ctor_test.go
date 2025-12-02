@@ -5,6 +5,7 @@
 package adapt
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -33,6 +34,87 @@ func TestNewAdaptiveControllerInitializesRecorder(t *testing.T) {
 	requireEqual(t, "initialLastError", recorder.lastError, nil)
 	requirePositiveInt(t, "errorCalls", recorder.errorCalls)
 	requireEqual(t, "mode", recorder.mode, controller.Mode())
+}
+
+func TestNewAdaptiveControllerNormalizesConfigAndRecordsInitialState(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	defaultCfg := cfg
+	cfg.Mode = " DRY-RUN "
+	cfg.Interval = 0
+	cfg.FallbackTarget = 0
+
+	recorder := newStubMetricsRecorder()
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.2, timestamp: time.Unix(1_700_000_120, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, recorder)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	requireEqual(t, "mode", controller.Mode(), dryRunModeLabel)
+	requireEqual(t, "recorderMode", recorder.mode, dryRunModeLabel)
+	requireEqual(t, "state", controller.State(), StateFallback)
+	requireEqual(t, "recorderState", recorder.state, StateFallback.String())
+	requireFloatApprox(t, "target", controller.Target(), defaultCfg.FallbackTarget)
+	requireFloatApprox(t, "recorderTarget", recorder.target, defaultCfg.FallbackTarget)
+	requireEqual(t, "interval", controller.interval, defaultCfg.Interval)
+	requireEqual(t, "recorderInterval", recorder.interval, defaultCfg.Interval)
+}
+
+func TestNewAdaptiveControllerRejectsNilMetricsClient(t *testing.T) {
+	t.Parallel()
+
+	controller, err := NewAdaptiveController(DefaultConfig(), nil, nil, newFakeShaper(), nil)
+	if err == nil {
+		t.Fatalf("expected error, got controller: %+v", controller)
+	}
+
+	if !errors.Is(err, errMetricsClientRequired) {
+		t.Fatalf("expected errMetricsClientRequired, got %v", err)
+	}
+}
+
+func TestNewAdaptiveControllerRejectsNilDutyCycler(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.2, timestamp: time.Unix(1_700_000_240, 0), err: nil}},
+	)
+
+	controller, err := NewAdaptiveController(DefaultConfig(), metrics, nil, nil, nil)
+	if err == nil {
+		t.Fatalf("expected error, got controller: %+v", controller)
+	}
+
+	if !errors.Is(err, errDutyCyclerRequired) {
+		t.Fatalf("expected errDutyCyclerRequired, got %v", err)
+	}
+}
+
+func TestNewAdaptiveControllerHandlesNilRecorder(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.2, timestamp: time.Unix(1_700_000_360, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+
+	controller, err := NewAdaptiveController(DefaultConfig(), metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	if controller == nil {
+		t.Fatalf("expected controller, got nil")
+	}
+
+	requireFloatApprox(t, "target", controller.Target(), DefaultConfig().FallbackTarget)
+	requireFloatApprox(t, "shaperTarget", shaper.Target(), DefaultConfig().FallbackTarget)
 }
 
 func TestNewAdaptiveControllerSetsFallbackTarget(t *testing.T) {

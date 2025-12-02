@@ -1,4 +1,5 @@
 SHELL := /bin/bash
+SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := help
 MAKEFLAGS += --warn-undefined-variables --no-builtin-rules
 
@@ -85,8 +86,7 @@ print-golangci-lint-version:
 	@printf "%s\n" "$(GOLANGCI_LINT_VERSION)"
 
 ensure-golangci-lint:
-	@set -euo pipefail; \
-	mkdir -p "$(GO_BIN_PATH)"; \
+	@mkdir -p "$(GO_BIN_PATH)"; \
 	BIN="$(GOLANGCI_LINT_BIN)"; \
 	CURRENT_VERSION=""; \
 	if [ -x "$$BIN" ]; then \
@@ -169,8 +169,7 @@ help:
 	done
 
 ensure-actionlint: verify-go-version
-	@set -euo pipefail; \
-	mkdir -p "$(GO_BIN_PATH)"; \
+	@mkdir -p "$(GO_BIN_PATH)"; \
 	BIN="$(ACTIONLINT_BIN)"; \
 	CURRENT_VERSION=""; \
 	if [ -x "$$BIN" ]; then \
@@ -182,8 +181,7 @@ ensure-actionlint: verify-go-version
 	fi
 
 ensure-mbake:
-	@set -euo pipefail; \
-	BIN="$(MBAKE_BIN)"; \
+	@BIN="$(MBAKE_BIN)"; \
 	CURRENT_VERSION=""; \
 	if [ -x "$$BIN" ]; then \
 		CURRENT_VERSION="$$($$BIN --version 2>/dev/null | awk '{print $$NF}')"; \
@@ -214,8 +212,7 @@ test: go-mod-download
 	fi
 
 coverage: go-mod-download
-	@set -euo pipefail; \
-	if [ -z "$(strip $(PKGS))" ]; then \
+	@if [ -z "$(strip $(PKGS))" ]; then \
 		echo "No Go packages found; skipping coverage."; \
 	elif [ -z "$(strip $(COVERAGE_PKGS))" ]; then \
 		echo "No Go packages selected for coverage after exclusions; adjust COVERAGE_EXCLUDES."; \
@@ -271,15 +268,13 @@ coverage: go-mod-download
 	fi
 
 agents: verify-go-version
-	@set -euo pipefail; \
-	mkdir -p "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
+	@mkdir -p "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
 	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) run ./cmd/agentscheck
 
 verify-go-version:
-	@set -euo pipefail; \
-	if ! command -v $(GO) >/dev/null 2>&1; then \
-		echo "Go not found in PATH; expected version $(GO_REQUIRED_VERSION)."; \
-		exit 1; \
+	@if ! command -v $(GO) >/dev/null 2>&1; then \
+	echo "Go not found in PATH; expected version $(GO_REQUIRED_VERSION)."; \
+	exit 1; \
 	fi; \
 	CURRENT_VERSION="$$( $(GO) version | awk '{print $$3}' | sed 's/^go//' )"; \
 	if [ "$$CURRENT_VERSION" != "$(GO_REQUIRED_VERSION)" ]; then \
@@ -288,16 +283,14 @@ verify-go-version:
 	fi
 
 govulncheck: verify-go-version
-	@set -euo pipefail; \
-	mkdir -p "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)" "$(GOVULNCHECK_CACHE_DIR)"; \
+	@mkdir -p "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)" "$(GOVULNCHECK_CACHE_DIR)"; \
 	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" GOVULNCHECK_CACHE="$(GOVULNCHECK_CACHE_DIR)" \
 	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
 check: go-mod-download verify-git-hooks tidy lint lint-makefile lint-workflows test coverage agents
 
 actionlint: ensure-actionlint
-	@set -euo pipefail; \
-	if [ ! -d ".github/workflows" ]; then \
+	@if [ ! -d ".github/workflows" ]; then \
 		echo "No workflows directory found; skipping workflow lint."; \
 	else \
 		if [ -n "$(strip $(ACTIONLINT_PATHS))" ]; then \
@@ -310,16 +303,14 @@ actionlint: ensure-actionlint
 lint-workflows: actionlint
 
 bench:
-	@set -euo pipefail; \
-	./hack/check_benchmarks.sh
+	@./hack/check_benchmarks.sh
 
 build: verify-go-version
 	@mkdir -p "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"
 	@GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) build ./...
 
 integration: verify-go-version
-	@set -euo pipefail; \
-	if [ "$$(uname -s)" != "Linux" ]; then \
+	@if [ "$$(uname -s)" != "Linux" ]; then \
 		echo "integration suite requires Linux (detected $$(uname -s))"; \
 		exit 1; \
 	fi; \
@@ -386,8 +377,7 @@ integration: verify-go-version
 	fi
 
 e2e:
-	@set -euo pipefail; \
-	e2e_pkgs="$(strip $(E2E_PKGS))"; \
+	@e2e_pkgs="$(strip $(E2E_PKGS))"; \
 	if [ -z "$$e2e_pkgs" ]; then \
 		echo "e2e suite not available"; \
 		exit 0; \
@@ -396,8 +386,7 @@ e2e:
 	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -tags=e2e -v $$e2e_pkgs
 
 setup: install-git-hooks ensure-dev-deps ensure-go maintenance
-	@set -euo pipefail; \
-	if ! command -v go >/dev/null 2>&1; then \
+	@if ! command -v go >/dev/null 2>&1; then \
 	echo "Go installation failed; check logs above"; \
 	exit 1; \
 	fi; \
@@ -406,13 +395,11 @@ setup: install-git-hooks ensure-dev-deps ensure-go maintenance
 	echo "Setup complete; caches live in $(GOCACHE_DIR), $(GOMODCACHE_DIR), and $(GOLANGCI_LINT_CACHE_DIR)";
 
 maintenance: ensure-go go-mod-download tools
-	@set -euo pipefail; \
-	mkdir -p "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)" "$(GOLANGCI_LINT_CACHE_DIR)"; \
+	@mkdir -p "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)" "$(GOLANGCI_LINT_CACHE_DIR)"; \
 	echo "Dependencies refreshed; Go cache at $(GOCACHE_DIR), module cache at $(GOMODCACHE_DIR), golangci-lint cache at $(GOLANGCI_LINT_CACHE_DIR)";
 
 ensure-dev-deps:
-	@set -euo pipefail; \
-	if [ ! -r /etc/os-release ]; then \
+	@if [ ! -r /etc/os-release ]; then \
 		echo "/etc/os-release not readable; cannot verify platform"; \
 		exit 1; \
 	fi; \
@@ -434,8 +421,7 @@ ensure-dev-deps:
 	DEBIAN_FRONTEND=noninteractive $$APT_GET_CMD install -y --no-install-recommends ca-certificates curl git tar gzip build-essential;
 
 ensure-go:
-	@set -euo pipefail; \
-	if command -v $(GO) >/dev/null 2>&1; then \
+	@if command -v $(GO) >/dev/null 2>&1; then \
 	CURRENT_VERSION="$$( $(GO) version | awk '{print $$3}' | sed 's/^go//' )"; \
 	if [ "$$CURRENT_VERSION" = "$(GO_REQUIRED_VERSION)" ]; then \
 		echo "Go already available: $$($(GO) version)"; \
@@ -482,8 +468,7 @@ ensure-go:
         echo "Go $(GO_REQUIRED_VERSION) installed at /usr/local/go";
 
 go-mod-download: verify-go-version
-	@set -euo pipefail; \
-	if [ ! -f go.mod ]; then \
+	@if [ ! -f go.mod ]; then \
 		echo "go.mod not found; skipping module download."; \
 		exit 0; \
 	fi; \
@@ -492,8 +477,7 @@ go-mod-download: verify-go-version
 	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) mod verify
 
 tidy: go-mod-download
-	@set -euo pipefail; \
-	mkdir -p "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
+	@mkdir -p "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
 	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) mod tidy; \
 	if [ "$(strip $(TIDY_VERIFY))" = "1" ]; then \
 		if ! git diff --quiet -- go.mod go.sum; then \
@@ -503,14 +487,12 @@ tidy: go-mod-download
 	fi
 
 clean:
-	@set -euo pipefail; \
-	rm -rf "$(COVERAGE_PROFILE)" "$(COVERAGE_SUMMARY)" coverage-*.out "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)" "$(GOLANGCI_LINT_CACHE_DIR)" "$(GOVULNCHECK_CACHE_DIR)" artifacts
+	@rm -rf "$(COVERAGE_PROFILE)" "$(COVERAGE_SUMMARY)" coverage-*.out "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)" "$(GOLANGCI_LINT_CACHE_DIR)" "$(GOVULNCHECK_CACHE_DIR)" artifacts
 
 lint-autofix: lint-fix
 
 install-git-hooks:
-	@set -euo pipefail; \
-	git_common_dir="$$(git rev-parse --git-common-dir 2>/dev/null || true)"; \
+	@git_common_dir="$$(git rev-parse --git-common-dir 2>/dev/null || true)"; \
 	if [ -z "$$git_common_dir" ]; then \
 		git_common_dir=".git"; \
 	fi; \
@@ -558,8 +540,7 @@ install-git-hooks:
 	fi
 
 verify-git-hooks:
-	@set -euo pipefail; \
-	if [ "$${CI:-}" = "true" ]; then \
+	@if [ "$${CI:-}" = "true" ]; then \
 		echo "Running in CI; skipping hook verification."; \
 		exit 0; \
 	fi; \
