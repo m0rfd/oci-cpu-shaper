@@ -264,6 +264,30 @@ func TestBuildObservationNormalisesRunnables(t *testing.T) {
 	assertObservation(t, observation, 1, 2, 10, 10)
 }
 
+func TestBuildObservationHandlesZeroTotalDelta(t *testing.T) {
+	t.Parallel()
+
+	observation := buildObservation(
+		time.Unix(0, 0),
+		Snapshot{Idle: 40, Total: 120, Runnable: 0},
+		Snapshot{Idle: 50, Total: 120, Runnable: 0},
+	)
+
+	assertObservation(t, observation, 0, 0, 0, 0)
+}
+
+func TestBuildObservationIdleDeltaExceedsTotal(t *testing.T) {
+	t.Parallel()
+
+	observation := buildObservation(
+		time.Unix(0, 0),
+		Snapshot{Idle: 10, Total: 20, Runnable: 0},
+		Snapshot{Idle: 25, Total: 24, Runnable: 0},
+	)
+
+	assertObservation(t, observation, 0, 0, 0, 4)
+}
+
 func TestBuildObservationClampsDecreasingAndZeroDeltas(t *testing.T) {
 	t.Parallel()
 
@@ -861,4 +885,33 @@ func TestBuildObservationZeroDelta(t *testing.T) {
 	observation := buildObservation(time.Unix(0, 0), previous, current)
 
 	assertObservation(t, observation, 0, 0, 0, 0)
+}
+
+func TestDiffCounterHandlesWrap(t *testing.T) {
+	t.Parallel()
+
+	if diff := diffCounter(500, 100); diff != 0 {
+		t.Fatalf("expected wrapped counter delta to be zero, got %d", diff)
+	}
+
+	observation := buildObservation(
+		time.Unix(0, 0),
+		Snapshot{Idle: 300, Total: 600, Runnable: 0},
+		Snapshot{Idle: 200, Total: 100, Runnable: 0},
+	)
+
+	assertObservation(t, observation, 0, 0, 0, 0)
+}
+
+func TestBuildObservationNonPositiveCPUCount(t *testing.T) {
+	t.Parallel()
+
+	observation := buildObservationWithCPUCount(
+		time.Unix(0, 0),
+		Snapshot{Idle: 1, Total: 2, Runnable: 0},
+		Snapshot{Idle: 1, Total: 12, Runnable: 50},
+		0,
+	)
+
+	assertObservation(t, observation, 1, 0, 10, 10)
 }

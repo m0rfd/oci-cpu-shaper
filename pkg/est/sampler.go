@@ -216,6 +216,14 @@ func (s *Sampler) timeSource() func() time.Time {
 }
 
 func buildObservation(timestamp time.Time, previous, current Snapshot) Observation {
+	return buildObservationWithCPUCount(timestamp, previous, current, runtime.NumCPU())
+}
+
+func buildObservationWithCPUCount(
+	timestamp time.Time,
+	previous, current Snapshot,
+	cpuCount int,
+) Observation {
 	totalDelta := diffCounter(previous.Total, current.Total)
 	idleDelta := diffCounter(previous.Idle, current.Idle)
 	busyDelta := uint64(0)
@@ -233,7 +241,6 @@ func buildObservation(timestamp time.Time, previous, current Snapshot) Observati
 		}
 	}
 
-	cpuCount := runtime.NumCPU()
 	if cpuCount > 0 {
 		runnable = float64(current.Runnable) / float64(cpuCount)
 	}
