@@ -7,7 +7,9 @@ package adapt
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -207,6 +209,46 @@ func TestAdaptiveControllerRunHandlesNilEstimatorChannel(t *testing.T) {
 	}
 }
 
+func TestAdaptiveControllerRunWrapsNilEstimatorChannel(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_001_440, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	estimator := newNilObservationsEstimator()
+
+	controller, err := NewAdaptiveController(cfg, metrics, estimator, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	done := make(chan error, 1)
+
+	go func() {
+		done <- controller.Run(t.Context())
+	}()
+
+	select {
+	case runErr := <-done:
+		if runErr == nil {
+			t.Fatal("expected controller run to fail when estimator returns nil channel")
+		}
+
+		if !errors.Is(runErr, errEstimatorNilChannel) {
+			t.Fatalf("unexpected run error: %v", runErr)
+		}
+
+		if !estimator.started.Load() {
+			t.Fatal("expected estimator to be invoked")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run did not terminate after estimator returned nil channel")
+	}
+}
+
 func TestConsumeEstimatorStopsWhenEstimatorClosesImmediately(t *testing.T) {
 	t.Parallel()
 
@@ -244,6 +286,64 @@ func TestConsumeEstimatorStopsWhenEstimatorClosesImmediately(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("consumeEstimator goroutine did not exit after immediate channel close")
+	}
+}
+
+func TestAdaptiveControllerRunResetsTickerAndFallsBackOnInvalidIntervals(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_001_500, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+	cfg.Interval = 10 * time.Millisecond
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	intervals := []time.Duration{
+		2 * controller.cfg.Interval,
+		0,
+		controller.cfg.Interval / 2,
+	}
+
+	intervalUpdates := make(chan time.Duration, len(intervals))
+	stepper := newFakeStep(intervals, cancel)
+
+	done := make(chan error, 1)
+
+	go func() {
+		done <- runControllerWithStep(ctx, controller, stepper.Step, intervalUpdates)
+	}()
+
+	waitFor(func() bool { return len(intervalUpdates) == len(intervals) }, time.Second)
+
+	expecteds := []time.Duration{
+		2 * controller.cfg.Interval,
+		controller.cfg.Interval,
+		controller.cfg.Interval / 2,
+	}
+
+	runErr := <-done
+
+	if !errors.Is(runErr, context.Canceled) {
+		t.Fatalf("Run error: %v", runErr)
+	}
+
+	requireIntervalSequence(t, intervalUpdates, expecteds)
+
+	if controller.interval != controller.cfg.Interval/2 {
+		t.Fatalf(
+			"expected controller interval to end at %v, got %v",
+			controller.cfg.Interval/2,
+			controller.interval,
+		)
 	}
 }
 
@@ -603,4 +703,151 @@ func waitFor(cond func() bool, timeout time.Duration) {
 
 		time.Sleep(5 * time.Millisecond)
 	}
+}
+
+type fakeStep struct {
+	intervals []time.Duration
+	cancel    context.CancelFunc
+	calls     atomic.Int32
+}
+
+func newFakeStep(intervals []time.Duration, cancel context.CancelFunc) *fakeStep {
+	return &fakeStep{intervals: intervals, cancel: cancel, calls: atomic.Int32{}}
+}
+
+func (f *fakeStep) Step(_ context.Context) time.Duration {
+	callIndex := int(f.calls.Add(1)) - 1
+
+	if callIndex >= len(f.intervals) {
+		return f.intervals[len(f.intervals)-1]
+	}
+
+	next := f.intervals[callIndex]
+
+	if f.cancel != nil && callIndex+1 == len(f.intervals) {
+		f.cancel()
+	}
+
+	return next
+}
+
+func runControllerWithStep(
+	ctx context.Context,
+	controller *AdaptiveController,
+	step func(context.Context) time.Duration,
+	intervalUpdates chan<- time.Duration,
+) error {
+	estimatorCh, err := startEstimator(ctx, controller)
+	if err != nil {
+		return err
+	}
+
+	if estimatorCh != nil {
+		go controller.consumeEstimator(ctx, estimatorCh)
+	}
+
+	nextInterval := normalizeInterval(controller.cfg, step(ctx))
+	applyInterval(controller, intervalUpdates, nextInterval)
+
+	ticker := time.NewTicker(nextInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return wrapContextErr(ctx.Err())
+		case <-ticker.C:
+			nextInterval := normalizeInterval(controller.cfg, step(ctx))
+
+			if nextInterval != controller.interval {
+				ticker.Reset(nextInterval)
+			}
+
+			applyInterval(controller, intervalUpdates, nextInterval)
+		}
+	}
+}
+
+func drainIntervals(ch <-chan time.Duration) []time.Duration {
+	intervals := make([]time.Duration, 0, len(ch))
+
+	for {
+		select {
+		case interval := <-ch:
+			intervals = append(intervals, interval)
+		default:
+			return intervals
+		}
+	}
+}
+
+func requireIntervalSequence(
+	t *testing.T,
+	intervalUpdates <-chan time.Duration,
+	expecteds []time.Duration,
+) {
+	t.Helper()
+
+	normalized := drainIntervals(intervalUpdates)
+
+	if len(normalized) != len(expecteds) {
+		t.Fatalf("expected %d interval updates, got %d", len(expecteds), len(normalized))
+	}
+
+	for index, expected := range expecteds {
+		if normalized[index] != expected {
+			t.Fatalf(
+				"expected interval %v at position %d, got %v",
+				expected,
+				index,
+				normalized[index],
+			)
+		}
+	}
+}
+
+func startEstimator(
+	ctx context.Context,
+	controller *AdaptiveController,
+) (<-chan est.Observation, error) {
+	if controller.estimator == nil {
+		return nil, nil //nolint:nilnil // tests allow omitting estimator without error.
+	}
+
+	estimatorCh := controller.estimator.Run(ctx)
+	if estimatorCh == nil {
+		return nil, fmt.Errorf("adaptive controller run: %w", errEstimatorNilChannel)
+	}
+
+	return estimatorCh, nil
+}
+
+func normalizeInterval(cfg Config, interval time.Duration) time.Duration {
+	if interval <= 0 {
+		return cfg.Interval
+	}
+
+	return interval
+}
+
+func applyInterval(
+	controller *AdaptiveController,
+	intervalUpdates chan<- time.Duration,
+	interval time.Duration,
+) {
+	controller.mu.Lock()
+	controller.interval = interval
+	controller.mu.Unlock()
+
+	if intervalUpdates != nil {
+		intervalUpdates <- interval
+	}
+}
+
+func wrapContextErr(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("adaptive controller run: %w", err)
 }
