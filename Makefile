@@ -276,9 +276,19 @@ verify-go-version:
 	echo "Go not found in PATH; expected version $(GO_REQUIRED_VERSION)."; \
 	exit 1; \
 	fi; \
-	CURRENT_VERSION="$$( $(GO) version | awk '{print $$3}' | sed 's/^go//' )"; \
-	if [ "$$CURRENT_VERSION" != "$(GO_REQUIRED_VERSION)" ]; then \
-		echo "Go version $$CURRENT_VERSION detected, but $(GO_REQUIRED_VERSION) is required."; \
+	CURRENT_VERSION="$$( $(GO) env GOVERSION | sed 's/^go//' )"; \
+	req_major="$$(echo "$(GO_REQUIRED_VERSION)" | cut -d. -f1)"; \
+	req_minor="$$(echo "$(GO_REQUIRED_VERSION)" | cut -d. -f2)"; \
+	req_patch="$$(echo "$(GO_REQUIRED_VERSION)" | cut -d. -f3)"; \
+	cur_major="$$(echo "$$CURRENT_VERSION" | cut -d. -f1)"; \
+	cur_minor="$$(echo "$$CURRENT_VERSION" | cut -d. -f2)"; \
+	cur_patch="$$(echo "$$CURRENT_VERSION" | cut -d. -f3)"; \
+	if [ "$$cur_major" != "$$req_major" ] || [ "$$cur_minor" != "$$req_minor" ]; then \
+		echo "Go $$CURRENT_VERSION detected, but Go $$req_major.$$req_minor.x (>= $(GO_REQUIRED_VERSION)) is required."; \
+		exit 1; \
+	fi; \
+	if [ "$$cur_patch" -lt "$$req_patch" ]; then \
+		echo "Go $$CURRENT_VERSION detected, but >= $(GO_REQUIRED_VERSION) is required within $$req_major.$$req_minor.x."; \
 		exit 1; \
 	fi
 
@@ -421,18 +431,19 @@ ensure-dev-deps:
 	DEBIAN_FRONTEND=noninteractive $$APT_GET_CMD install -y --no-install-recommends ca-certificates curl git tar gzip build-essential;
 
 ensure-go:
-	@if command -v $(GO) >/dev/null 2>&1; then \
-	CURRENT_VERSION="$$( $(GO) version | awk '{print $$3}' | sed 's/^go//' )"; \
-	if [ "$$CURRENT_VERSION" = "$(GO_REQUIRED_VERSION)" ]; then \
-		echo "Go already available: $$($(GO) version)"; \
-		exit 0; \
-	else \
-		echo "Go $$CURRENT_VERSION detected, reinstalling $(GO_REQUIRED_VERSION)"; \
-	fi; \
-	fi; \
-	if [ ! -r /etc/os-release ]; then \
-		echo "/etc/os-release not readable; cannot install Go"; \
-		exit 1; \
+	if command -v $(GO) >/dev/null 2>&1; then \
+		req_major="$$(echo "$(GO_REQUIRED_VERSION)" | cut -d. -f1)"; \
+		req_minor="$$(echo "$(GO_REQUIRED_VERSION)" | cut -d. -f2)"; \
+		req_patch="$$(echo "$(GO_REQUIRED_VERSION)" | cut -d. -f3)"; \
+		CURRENT_VERSION="$$( $(GO) env GOVERSION | sed 's/^go//' )"; \
+		cur_major="$$(echo "$$CURRENT_VERSION" | cut -d. -f1)"; \
+		cur_minor="$$(echo "$$CURRENT_VERSION" | cut -d. -f2)"; \
+		cur_patch="$$(echo "$$CURRENT_VERSION" | cut -d. -f3)"; \
+		if [ "$$cur_major" = "$$req_major" ] && [ "$$cur_minor" = "$$req_minor" ] && [ "$$cur_patch" -ge "$$req_patch" ]; then \
+			echo "Go $$($(GO) version) satisfies $$req_major.$$req_minor.x (>= $(GO_REQUIRED_VERSION))."; \
+			exit 0; \
+		fi; \
+		echo "Go $$CURRENT_VERSION detected, installing $(GO_REQUIRED_VERSION) for $$req_major.$$req_minor.x."; \
 	fi; \
 	. /etc/os-release; \
 	if [ "$$ID" != "ubuntu" ]; then \
