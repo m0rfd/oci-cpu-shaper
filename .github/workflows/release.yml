@@ -196,7 +196,6 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
-      actions: write
       security-events: write
 
     env:
@@ -316,7 +315,7 @@ jobs:
     if: github.event_name == 'merge_group'
     permissions:
       contents: read
-      actions: write
+      security-events: write
 
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
