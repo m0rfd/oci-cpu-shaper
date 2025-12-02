@@ -2,7 +2,6 @@ name: Docker CI & Release
 
 permissions:
   contents: read
-  actions: write
 
 on:
   workflow_dispatch:
@@ -434,6 +433,7 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: read
+      actions: write # artifacts (upload)
       packages: write # GHCR push (release job)
       id-token: write # Cosign keyless (release job)
       security-events: write # Trivy SARIF upload
