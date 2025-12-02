@@ -2,6 +2,7 @@ name: Docker CI & Release
 
 permissions:
   contents: read
+  actions: write
 
 on:
   workflow_dispatch:
@@ -38,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: read
+      actions: write
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
@@ -93,7 +94,7 @@ jobs:
 
       - name: Upload lint logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: lint-logs
           path: artifacts/make-lint.log
@@ -108,7 +109,7 @@ jobs:
 
       - name: Upload actionlint logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: actionlint-logs-release
           path: artifacts/release-actionlint.log
@@ -190,12 +191,13 @@ jobs:
 
           env "${coverage_env[@]}" make coverage
 
-  build-and-test:
-    name: Build & test (PR / merge_group, no publish)
+  build-and-test-pr:
+    name: Build & test (pull_request, no publish)
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    if: github.event_name == 'pull_request'
     permissions:
       contents: read
+      actions: write
       security-events: write
 
     env:
@@ -307,6 +309,118 @@ jobs:
         if: steps.trivy_scan_pr.outcome == 'failure'
         run: |
           echo "Trivy found CRITICAL/HIGH vulnerabilities in PR image."
+          exit 1
+
+  build-and-test-merge-group:
+    name: Build & test (merge_group, no publish)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'merge_group'
+    permissions:
+      contents: read
+      actions: write
+
+    env:
+      GOCACHE: ${{ github.workspace }}/.cache/go
+      GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go with cache
+        id: setup-go
+        uses: ./.github/actions/setup-go-with-cache
+
+      - name: Restore Go build and module caches
+        id: restore-go-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .cache/go
+            .cache/gomod
+          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-
+
+      - name: Run checks before container build
+        run: make check
+
+      - name: Save Go build and module caches
+        if: steps.restore-go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cache/go
+            .cache/gomod
+          key: ${{ steps.restore-go-cache.outputs.cache-primary-key }}
+
+      - name: Compute build metadata
+        id: build_meta
+        run: |
+          echo "version=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          commit_date=$(git show -s --format=%cI "${GITHUB_SHA}" || true)
+          echo "build_date=${commit_date:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU (optional, for consistency)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # For merge queue we just build a local single-arch image and load it
+      - name: Build rootless image (local, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: rootless
+          platforms: linux/amd64
+          push: false
+          load: true
+          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-pr-build
+          cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-pr-build,mode=max
+          build-args: |
+            VERSION=${{ steps.build_meta.outputs.version }}
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ steps.build_meta.outputs.build_date }}
+            IMAGE_SOURCE=https://github.com/${{ github.repository }}
+          tags: pr-local/${{ github.repository }}:${{ github.sha }}
+
+      # basic container smoke test
+      - name: Smoke test container
+        run: |
+          output=$(docker run --rm pr-local/${{ github.repository }}:${{ github.sha }} --version)
+
+          expected=$(printf '{Version:%s GitCommit:%s BuildDate:%s}' \
+            "${{ steps.build_meta.outputs.version }}" \
+            "${{ github.sha }}" \
+            "${{ steps.build_meta.outputs.build_date }}")
+
+          if [[ "${output}" != "${expected}" ]]; then
+            echo "version output mismatch"
+            echo "  got:      ${output}"
+            echo "  expected: ${expected}"
+            exit 1
+          fi
+
+      # Trivy scan on merge queue image (local image, no SARIF upload)
+      - name: Scan merge queue image with Trivy
+        id: trivy_scan_merge_group
+        uses: aquasecurity/trivy-action@0.33.1
+        continue-on-error: true
+        with:
+          image-ref: pr-local/${{ github.repository }}:${{ github.sha }}
+          format: "sarif"
+          output: "trivy-results-merge-group.sarif"
+          vuln-type: "os,library"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Fail merge queue run if Trivy found CRITICAL/HIGH vulns
+        if: steps.trivy_scan_merge_group.outcome == 'failure'
+        run: |
+          echo "Trivy found CRITICAL/HIGH vulnerabilities in merge queue image."
           exit 1
 
   # --------------------------------
