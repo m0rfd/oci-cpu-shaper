@@ -21,7 +21,7 @@ func TestNewMonitoringClientValidatesEndpoint(t *testing.T) {
 	}
 }
 
-//nolint:cyclop // multiple request/response paths validated in one scenario.
+//nolint:cyclop,funlen // multiple request/response paths validated in one scenario.
 func TestMonitoringClientQueryP95CPUScenarios(t *testing.T) {
 	t.Parallel()
 
@@ -30,6 +30,8 @@ func TestMonitoringClientQueryP95CPUScenarios(t *testing.T) {
 			switch request.URL.Query().Get("resource") {
 			case "empty":
 				writer.WriteHeader(http.StatusNoContent)
+			case "status-only":
+				writer.WriteHeader(http.StatusServiceUnavailable)
 			case "error":
 				writer.WriteHeader(http.StatusServiceUnavailable)
 				_, _ = writer.Write([]byte("backend unavailable"))
@@ -58,8 +60,14 @@ func TestMonitoringClientQueryP95CPUScenarios(t *testing.T) {
 		t.Fatalf("expected zero timestamp on empty response, got %v", fetchedAt)
 	}
 
+	_, _, err = client.QueryP95CPU(context.Background(), "status-only")
+	if !errors.Is(err, errMonitoringUnexpectedStatus) {
+		t.Fatalf("expected errMonitoringUnexpectedStatus, got %v", err)
+	}
+
 	_, _, err = client.QueryP95CPU(context.Background(), "error")
-	if err == nil || !strings.Contains(err.Error(), "backend unavailable") {
+	if !errors.Is(err, errMonitoringResponseBody) ||
+		!strings.Contains(err.Error(), "backend unavailable") {
 		t.Fatalf("expected backend error, got %v", err)
 	}
 
@@ -85,7 +93,12 @@ func TestMonitoringClientQueryP95CPUScenarios(t *testing.T) {
 func TestMonitoringClientRejectsUninitialisedHTTPClient(t *testing.T) {
 	t.Parallel()
 
-	client := &MonitoringClient{endpoint: "http://127.0.0.1", http: nil}
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatalf("nil client should not issue requests")
+	}))
+	t.Cleanup(server.Close)
+
+	client := &MonitoringClient{endpoint: server.URL, http: nil}
 
 	_, _, err := client.QueryP95CPU(context.Background(), "resource")
 	if !errors.Is(err, errMonitoringHTTPNotInitialised) {
