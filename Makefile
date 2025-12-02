@@ -77,7 +77,7 @@ MBAKE_BIN ?= $(HOME)/.local/bin/mbake
 MBAKE ?= $(MBAKE_BIN)
 MBAKE_FORMAT_PATHS ?= Makefile
 
-.PHONY: actionlint agents bench build check clean coverage e2e ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools verify-git-hooks verify-go-version
+.PHONY: actionlint agents bench build check clean coverage e2e echo ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools verify-git-hooks verify-go-version
 HELP_TARGETS := lint lint-makefile lint-workflows test coverage build check govulncheck integration e2e agents actionlint help clean verify-git-hooks
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-mbake
@@ -400,7 +400,12 @@ setup: install-git-hooks ensure-dev-deps ensure-go maintenance
 	echo "Go installation failed; check logs above"; \
 	exit 1; \
 	fi; \
-	echo "PATH hints: export PATH=/usr/local/go/bin:\"$${PATH}\" and ensure \"$(GO_BIN_PATH)\" is in PATH for Go tools"; \
+	GOROOT="$$(go env GOROOT 2>/dev/null || true)"; \
+	PATH_PREFIX="$$GOROOT/bin"; \
+	if [ -z "$$PATH_PREFIX" ]; then \
+		PATH_PREFIX="/usr/local/go/bin"; \
+	fi; \
+	echo "PATH hints: export PATH=$$PATH_PREFIX:\"$${PATH}\" and ensure \"$(GO_BIN_PATH)\" is in PATH for Go tools"; \
 	echo "Optional: export GOPATH=$${GOPATH:-$${HOME}/go} and GOBIN=$${GOBIN:-$${GOPATH:-$${HOME}/go}/bin} to keep binaries isolated"; \
 	echo "Setup complete; caches live in $(GOCACHE_DIR), $(GOMODCACHE_DIR), and $(GOLANGCI_LINT_CACHE_DIR)";
 
@@ -473,10 +478,23 @@ ensure-go:
 			exit 1; \
 		fi; \
 	done; \
-	printf "%s  %s\n" "$$CHECKSUM" "$$TMP_TARBALL" | sha256sum -c -; \
-        rm -rf /usr/local/go; \
-        tar -C /usr/local -xzf "$$TMP_TARBALL"; \
-        echo "Go $(GO_REQUIRED_VERSION) installed at /usr/local/go";
+        printf "%s  %s\n" "$$CHECKSUM" "$$TMP_TARBALL" | sha256sum -c -; \
+        INSTALL_BASE="/usr/local"; \
+        INSTALL_DIR="$$INSTALL_BASE/go"; \
+        PATH_PREFIX="$$INSTALL_DIR/bin"; \
+        if [ ! -w "$$INSTALL_BASE" ] || { [ -e "$$INSTALL_DIR" ] && [ ! -w "$$INSTALL_DIR" ]; }; then \
+                INSTALL_BASE="$$HOME/.local"; \
+                INSTALL_DIR="$$INSTALL_BASE/go"; \
+                PATH_PREFIX="$$INSTALL_DIR/bin"; \
+                echo "Insufficient permissions to modify /usr/local; installing Go to $$INSTALL_DIR"; \
+                mkdir -p "$$INSTALL_BASE"; \
+        fi; \
+        rm -rf "$$INSTALL_DIR"; \
+        tar -C "$$INSTALL_BASE" -xzf "$$TMP_TARBALL"; \
+        echo "Go $(GO_REQUIRED_VERSION) installed at $$INSTALL_DIR"; \
+        echo "PATH hints: export PATH=$$PATH_PREFIX:\"$${PATH}\" and ensure \"$(GO_BIN_PATH)\" is in PATH for Go tools"; \
+        echo "Optional: export GOPATH=$${GOPATH:-$${HOME}/go} and GOBIN=$${GOBIN:-$${GOPATH:-$${HOME}/go}/bin} to keep binaries isolated"; \
+        echo "Setup complete; caches live in $(GOCACHE_DIR), $(GOMODCACHE_DIR), and $(GOLANGCI_LINT_CACHE_DIR)";
 
 go-mod-download: verify-go-version
 	@if [ ! -f go.mod ]; then \
