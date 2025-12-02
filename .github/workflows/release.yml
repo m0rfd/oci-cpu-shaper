@@ -226,7 +226,7 @@ jobs:
         run: make check
 
       - name: Save Go build and module caches
-        if: steps.restore-go-cache.outputs.cache-hit != 'true' && github.ref_protected == true
+        if: github.event.pull_request.head_repo.fork == false && steps.restore-go-cache.outputs.cache-hit != 'true' && github.ref_protected == true
         uses: actions/cache/save@v4
         with:
           path: |
