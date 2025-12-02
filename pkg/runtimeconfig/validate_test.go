@@ -3,7 +3,7 @@ package runtimeconfig
 
 import "testing"
 
-func TestValidateRuntimeConfigRejectsInvalidBounds(t *testing.T) {
+func TestValidateRuntimeConfigRejectsInvalidTargetBounds(t *testing.T) {
 	t.Parallel()
 
 	makeConfig := func(mod func(*Config)) Config {
@@ -27,6 +27,41 @@ func TestValidateRuntimeConfigRejectsInvalidBounds(t *testing.T) {
 			wantRef: "controller.targetMin",
 		},
 		{
+			name: "equal target bounds handled before other checks",
+			cfg: makeConfig(func(cfg *Config) {
+				cfg.Controller.TargetMin = cfg.Controller.TargetMax
+				cfg.Controller.TargetStart = cfg.Controller.TargetMax + 0.05
+			}),
+			wantRef: "controller.targetMin",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateRuntimeConfig(tc.cfg)
+			assertInvalidRuntimeConfigError(t, err, tc.wantRef)
+		})
+	}
+}
+
+func TestValidateRuntimeConfigRejectsTargetStartOutsideBounds(t *testing.T) {
+	t.Parallel()
+
+	makeConfig := func(mod func(*Config)) Config {
+		cfg := Default()
+		mod(&cfg)
+
+		return cfg
+	}
+
+	testCases := []struct {
+		name    string
+		cfg     Config
+		wantRef string
+	}{
+		{
 			name: "target start above max",
 			cfg: makeConfig(func(cfg *Config) {
 				cfg.Controller.TargetStart = 0.60
@@ -35,10 +70,55 @@ func TestValidateRuntimeConfigRejectsInvalidBounds(t *testing.T) {
 			wantRef: "controller.targetStart",
 		},
 		{
+			name: "target start below min",
+			cfg: makeConfig(func(cfg *Config) {
+				cfg.Controller.TargetStart = 0.05
+				cfg.Controller.TargetMin = 0.10
+			}),
+			wantRef: "controller.targetStart",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateRuntimeConfig(tc.cfg)
+			assertInvalidRuntimeConfigError(t, err, tc.wantRef)
+		})
+	}
+}
+
+func TestValidateRuntimeConfigRejectsInvalidGoalBounds(t *testing.T) {
+	t.Parallel()
+
+	makeConfig := func(mod func(*Config)) Config {
+		cfg := Default()
+		mod(&cfg)
+
+		return cfg
+	}
+
+	testCases := []struct {
+		name    string
+		cfg     Config
+		wantRef string
+	}{
+		{
 			name: "goalLow above goalHigh",
 			cfg: makeConfig(func(cfg *Config) {
 				cfg.Controller.GoalLow = 0.35
 				cfg.Controller.GoalHigh = 0.30
+			}),
+			wantRef: "controller.goalLow",
+		},
+		{
+			name: "goalLow equal goalHigh surfaced after bound checks",
+			cfg: makeConfig(func(cfg *Config) {
+				cfg.Controller.TargetMin = 0.20
+				cfg.Controller.TargetMax = 0.80
+				cfg.Controller.GoalLow = 0.50
+				cfg.Controller.GoalHigh = 0.50
 			}),
 			wantRef: "controller.goalLow",
 		},

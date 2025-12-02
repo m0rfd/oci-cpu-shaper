@@ -6,6 +6,7 @@ package adapt
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -116,20 +117,72 @@ func TestValidateConfigAllowsDisabledSuppression(t *testing.T) {
 func TestValidateConfigRejectsInvalidRunnableSuppression(t *testing.T) {
 	t.Parallel()
 
-	cfg := DefaultConfig()
-	cfg.SuppressRunnableThreshold = -1
+	thresholdErr := "controller.suppressRunnableThreshold (-1.00) must be zero or greater"
+	resumeErr := "controller.suppressRunnableResume (2.00) must be less than " +
+		"controller.suppressRunnableThreshold (1.00)"
+	resumeEqualErr := "controller.suppressRunnableResume (1.00) must be less than " +
+		"controller.suppressRunnableThreshold (1.00)"
 
-	err := ValidateConfig(cfg)
-	if !errors.Is(err, ErrInvalidConfig) {
-		t.Fatalf("expected ErrInvalidConfig for negative runnable threshold, got %v", err)
+	testCases := []struct {
+		name   string
+		mutate func(*Config)
+		want   string
+	}{
+		{
+			name: "negative runnable threshold",
+			mutate: func(cfg *Config) {
+				cfg.SuppressRunnableThreshold = -1
+			},
+			want: thresholdErr,
+		},
+		{
+			name: "negative runnable resume handled after threshold",
+			mutate: func(cfg *Config) {
+				cfg.SuppressRunnableThreshold = -2
+				cfg.SuppressRunnableResume = -1
+			},
+			want: "controller.suppressRunnableThreshold (-2.00) must be zero or greater",
+		},
+		{
+			name: "resume exceeds threshold",
+			mutate: func(cfg *Config) {
+				cfg.SuppressRunnableThreshold = 1
+				cfg.SuppressRunnableResume = 2
+			},
+			want: resumeErr,
+		},
+		{
+			name: "resume equals threshold",
+			mutate: func(cfg *Config) {
+				cfg.SuppressRunnableThreshold = 1
+				cfg.SuppressRunnableResume = 1
+			},
+			want: resumeEqualErr,
+		},
 	}
 
-	cfg.SuppressRunnableThreshold = 1
-	cfg.SuppressRunnableResume = 2
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	err = ValidateConfig(cfg)
-	if !errors.Is(err, ErrInvalidConfig) {
-		t.Fatalf("expected ErrInvalidConfig when runnable resume exceeds threshold, got %v", err)
+			cfg := DefaultConfig()
+			testCase.mutate(&cfg)
+
+			assertInvalidRunnableConfig(t, cfg, testCase.want)
+		})
+	}
+}
+
+func assertInvalidRunnableConfig(t *testing.T, cfg Config, wantMsg string) {
+	t.Helper()
+
+	err := ValidateConfig(cfg)
+	if err == nil || !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig, got %v", err)
+	}
+
+	if !strings.Contains(err.Error(), wantMsg) {
+		t.Fatalf("expected error containing %q, got %v", wantMsg, err)
 	}
 }
 
