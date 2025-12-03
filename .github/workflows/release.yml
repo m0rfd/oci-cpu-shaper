@@ -83,42 +83,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-actionlint-${{ env.ACTIONLINT_VERSION }}-
 
-      - name: Run lint
-        run: |
-          set -o pipefail
-          mkdir -p artifacts
-          make lint 2>&1 | tee artifacts/make-lint.log
-        env:
-          GOBIN: ${{ env.GOBIN }}
-
-      - name: Upload lint logs
-        if: always()
-        uses: actions/upload-artifact@v5
-        with:
-          name: lint-logs
-          path: artifacts/make-lint.log
-
-      - name: Run actionlint for release workflow
-        run: |
-          set -o pipefail
-          mkdir -p artifacts
-          make actionlint ACTIONLINT_PATHS=".github/workflows/release.yml" 2>&1 | tee artifacts/release-actionlint.log
-        env:
-          GOBIN: ${{ env.GOBIN }}
-
-      - name: Upload actionlint logs
-        if: always()
-        uses: actions/upload-artifact@v5
-        with:
-          name: actionlint-logs-release
-          path: artifacts/release-actionlint.log
-
-      - name: Check Makefile formatting
-        run: make lint-makefile
-
-      - name: Run tests
-        run: make test
-
       - name: Locate CI workflow run for this commit
         id: locate-ci-run
         env:
@@ -140,6 +104,71 @@ jobs:
           fi
 
           echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Download CI lint/test logs (if available)
+        id: download-make-check-logs
+        if: steps.locate-ci-run.outputs.run-id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.locate-ci-run.outputs.run-id }}
+          name: make-check-logs
+          path: artifacts
+
+      - name: Check lint/test artifact availability
+        id: lint-test-availability
+        run: |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          if [ "${{ steps.download-make-check-logs.outcome || '' }}" = "success" ] && [ -f artifacts/make-check.log ]; then
+            echo "available=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run lint (fallback)
+        if: steps.lint-test-availability.outputs.available == '0'
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          make lint 2>&1 | tee artifacts/make-lint.log
+        env:
+          GOBIN: ${{ env.GOBIN }}
+
+      - name: Upload lint logs
+        if: always() && steps.lint-test-availability.outputs.available == '0'
+        uses: actions/upload-artifact@v5
+        with:
+          name: lint-logs
+          path: artifacts/make-lint.log
+
+      - name: Run actionlint for release workflow (fallback)
+        if: steps.lint-test-availability.outputs.available == '0'
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          make actionlint ACTIONLINT_PATHS=".github/workflows/release.yml" 2>&1 | tee artifacts/release-actionlint.log
+        env:
+          GOBIN: ${{ env.GOBIN }}
+
+      - name: Upload actionlint logs
+        if: always() && steps.lint-test-availability.outputs.available == '0'
+        uses: actions/upload-artifact@v5
+        with:
+          name: actionlint-logs-release
+          path: artifacts/release-actionlint.log
+
+      - name: Check Makefile formatting (fallback)
+        if: steps.lint-test-availability.outputs.available == '0'
+        run: make lint-makefile
+
+      - name: Run tests (fallback)
+        if: steps.lint-test-availability.outputs.available == '0'
+        run: make test
 
       - name: Download integration coverage (if available)
         id: download-integration-coverage
@@ -166,7 +195,38 @@ jobs:
             echo "available=0" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Download CI coverage report (if available)
+        id: download-coverage-report
+        if: steps.locate-ci-run.outputs.run-id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.locate-ci-run.outputs.run-id }}
+          name: coverage-report
+          path: artifacts
+
+      - name: Check coverage artifact availability
+        id: coverage-availability
+        run: |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          if [ "${{ steps.download-coverage-report.outcome || '' }}" = "success" ] && [ -f artifacts/coverage.out ] && [ -f artifacts/coverage.txt ]; then
+            echo "available=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish reused coverage summary
+        if: steps.coverage-availability.outputs.available == '1'
+        run: |
+          { echo '### Coverage results (reused artifact)'; echo; cat artifacts/coverage.txt; } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Run coverage
+        if: steps.coverage-availability.outputs.available == '0'
         env:
           MIN_COVERAGE: "96"
           COVERAGE_PROFILE: coverage.out
