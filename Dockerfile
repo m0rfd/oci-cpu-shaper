@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.6
 
-ARG GO_VERSION=1.25.4
+ARG GO_VERSION=1.25.5
 ARG VERSION="dev"
 ARG GIT_COMMIT="unknown"
 ARG BUILD_DATE="unknown"

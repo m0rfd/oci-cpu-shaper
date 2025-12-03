@@ -4,11 +4,11 @@ This guide covers the tooling expectations and command shortcuts for contributin
 
 ## Prerequisites
 
-- Go 1.25.x (currently 1.25.4).
+- Go 1.25.x (currently 1.25.5).
 - `make` for running the provided automation targets.
 - [`golangci-lint`](https://golangci-lint.run/) for linting.
 
-Run `make tools` to install or upgrade the pinned `golangci-lint` release with `go install`. The helper target keeps local tooling aligned with CI, which currently runs `golangci-lint` v2.6.1. Ensure `$GOBIN` (or `$(go env GOPATH)/bin` when `GOBIN` is unset) is on your `PATH` so the installed binaries are discoverable. Developers using `mise`/`asdf` can achieve the same alignment by running `mise install`, because `.tool-versions` now pins Go 1.25.4 alongside the same `golangci-lint` version referenced in §14.
+Run `make tools` to install or upgrade the pinned `golangci-lint` release with `go install`. The helper target keeps local tooling aligned with CI, which currently runs `golangci-lint` v2.6.1. Ensure `$GOBIN` (or `$(go env GOPATH)/bin` when `GOBIN` is unset) is on your `PATH` so the installed binaries are discoverable. Developers using `mise`/`asdf` can achieve the same alignment by running `mise install`, because `.tool-versions` now pins Go 1.25.5 alongside the same `golangci-lint` version referenced in §14.
 
 ## Command Reference
 
@@ -16,7 +16,7 @@ The repository includes a `Makefile` that wraps the most common development task
 
 | Command | Purpose |
 |---------|---------|
-| `make tools` | Install pinned developer tooling (e.g., `golangci-lint` v2.6.1, Go 1.25.4 via `mise`/`asdf`). |
+| `make tools` | Install pinned developer tooling (e.g., `golangci-lint` v2.6.1, Go 1.25.5 via `mise`/`asdf`). |
 | `make lint` | Run `golangci-lint` checks. |
 | `make lint-fix` | Run `golangci-lint` with autofix enabled. Prefer this when working locally. |
 | `make test` | Execute `go test -race ./...` across every package. |
