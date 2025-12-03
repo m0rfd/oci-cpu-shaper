@@ -104,6 +104,7 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 
 ### Changed
 _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% threshold impact (§11)._
+- Raised the module `go` directive, `.tool-versions` pin, and container build ARG to Go 1.25.5 so CI, local builds, and release images stay on the latest patched toolchain (§14).
 - Release workflow pins Cosign installs to `v3.0.2` for predictable signing output; bump the pin and release docs together when upgrading (§14).
 - Documented the controller interval selection (normal, relaxed, fallback) plus the relaxed confirmation hysteresis and refreshed the metrics/`/healthz` field names in §§4–5 so the docs mirror the current defaults and telemetry exports.
 - Relaxed controller cadence now waits for two consecutive above-threshold P95 samples before switching to the four-hour loop.
