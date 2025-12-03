@@ -5,7 +5,21 @@ permissions:
 
 on:
   workflow_dispatch:
+    inputs:
+      release_ref:
+        description: "Branch, tag, or SHA to release"
+        default: "main"
+        required: true
+        type: string
+      dry_run:
+        description: "Run release pipeline without pushing images or signing"
+        default: true
+        required: true
+        type: boolean
   pull_request:
+    branches: [main]
+  pull_request_target:
+    types: [labeled]
     branches: [main]
   merge_group:
   push:
@@ -482,12 +496,32 @@ jobs:
           exit 1
 
   # --------------------------------
-  # Job 2: Release on v* tag (GHCR)
+  # Job 2: Release orchestration (tag + dry-run)
   # --------------------------------
-
-  release:
-    name: Release multi-arch images (tagged)
+  dispatch-release-dry-run:
+    name: Dispatch release dry-run from label
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request_target' && github.event.action == 'labeled' && github.event.label.name == 'release-dry-run'
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Trigger dry-run workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          gh workflow run release.yml \
+            --ref "${PR_HEAD_SHA}" \
+            -f release_ref="${PR_HEAD_SHA}" \
+            -f dry_run=true
+
+  release-tagged:
+    name: Release multi-arch images (tagged)
     needs: verify-tag
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -496,210 +530,30 @@ jobs:
       packages: write # GHCR push (release job)
       id-token: write # Cosign keyless (release job)
       security-events: write # Trivy SARIF upload
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # For convenience, strip 'v' from tag if you ever need bare version
-      - name: Extract version
-        id: vars
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
-      - name: Prepare build metadata
-        id: build_meta
-        run: |
-          commit_date=$(git show -s --format=%cI "${GITHUB_SHA}" || true)
-          echo "build_date=${commit_date:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}" >> "$GITHUB_OUTPUT"
-
-      # ------ Metadata (tags + labels) with docker/metadata-action ------
-      # Rootless is the primary image (gets :latest + semver tags)
-      - name: Docker meta (rootless)
-        id: meta_rootless
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=tag                               # v1.2.3
-            type=ref,event=tag,suffix=-rootless              # v1.2.3-rootless
-            type=semver,pattern={{version}}                  # 1.2.3
-            type=semver,pattern={{version}},suffix=-rootless # 1.2.3-rootless
-            type=semver,pattern={{major}}                    # 1
-            type=semver,pattern={{major}},suffix=-rootless   # 1-rootless
-            type=semver,pattern=v{{major}}                   # v1
-            type=semver,pattern=v{{major}},suffix=-rootless  # v1-rootless
-            type=raw,value=rootless                          # rootless
-          flavor: |
-            latest=true                                      # also tag :latest
-          labels: |
-            org.opencontainers.image.title=${{ github.repository }}
-            org.opencontainers.image.source=${{ github.repositoryUrl }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ steps.vars.outputs.version }}
-
-      # Rootful variant – tags prefixed with rootful-
-      - name: Docker meta (rootful)
-        id: meta_rootful
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=tag               # v1.2.3-rootful
-            type=semver,pattern={{version}}  # 1.2.3-rootful
-            type=semver,pattern={{major}}    # 1-rootful
-            type=semver,pattern=v{{major}}   # v1-rootful
-            type=raw,value=rootful,suffix=   # rootful
-          flavor: |
-            latest=false                     # auto by default; latest is for rootless only
-            suffix=-rootful,onlatest=true    # add -rootful to each tag
-          labels: |
-            org.opencontainers.image.title=${{ github.repository }} (rootful)
-            org.opencontainers.image.source=${{ github.repositoryUrl }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ steps.vars.outputs.version }}
-
-      # ------ Build & push rootless (multi-arch, with cache, SBOM, provenance) ------
-
-      - name: Build and push rootless image (multi-arch)
-        id: build_rootless
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          target: rootless
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta_rootless.outputs.tags }}
-          labels: ${{ steps.meta_rootless.outputs.labels }}
-          build-args: |
-            VERSION=${{ steps.vars.outputs.version }}
-            GIT_COMMIT=${{ github.sha }}
-            BUILD_DATE=${{ steps.build_meta.outputs.build_date }}
-            IMAGE_SOURCE=${{ github.repositoryUrl }}
-          provenance: true
-          sbom: true
-          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-builder
-          cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-builder,mode=max
-
-      # ------ Build & push rootful (multi-arch) ------
-
-      - name: Build and push rootful image (multi-arch)
-        id: build_rootful
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          target: rootful
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta_rootful.outputs.tags }}
-          labels: ${{ steps.meta_rootful.outputs.labels }}
-          build-args: |
-            VERSION=${{ steps.vars.outputs.version }}
-            GIT_COMMIT=${{ github.sha }}
-            BUILD_DATE=${{ steps.build_meta.outputs.build_date }}
-            IMAGE_SOURCE=${{ github.repositoryUrl }}
-          provenance: true
-          sbom: true
-          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-builder
-          cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-builder,mode=max
-
-      # ------ Cosign signing (keyless) ------
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v4.0.0
-        with:
-          # Keep cosign pinned for predictable signing output; bump docs when upgrading.
-          cosign-release: 'v3.0.2'
-
-      - name: Sign rootless image digest
-        env:
-          COSIGN_EXPERIMENTAL: "1"
-        run: |
-          DIGEST="${{ steps.build_rootless.outputs.digest }}"
-          IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
-
-          echo "Signing ${IMAGE_REF}"
-          cosign sign --yes "${IMAGE_REF}"
-
-      - name: Sign rootful image digest
-        env:
-          COSIGN_EXPERIMENTAL: "1"
-        run: |
-          DIGEST="${{ steps.build_rootful.outputs.digest }}"
-          IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
-
-          echo "Signing ${IMAGE_REF}"
-          cosign sign --yes "${IMAGE_REF}"
-
-      # ------ Trivy image scan + SARIF upload (rootless tag) ------
-
-      - name: Scan rootless image with Trivy (SARIF)
-        id: trivy_scan_rootless
-        uses: aquasecurity/trivy-action@0.33.1
-        continue-on-error: true
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
-          format: "sarif"
-          output: "trivy-results-rootless.sarif"
-          vuln-type: "os,library"
-          severity: "CRITICAL,HIGH"
-          ignore-unfixed: true
-          exit-code: "1" # non-zero when CRITICAL/HIGH found
-
-      - name: Upload Trivy SARIF to GitHub Security tab
-        if: always()
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: trivy-results-rootless.sarif
-          category: trivy-rootless
-
-      - name: Fail release if Trivy found CRITICAL/HIGH vulnerabilities
-        if: steps.trivy_scan_rootless.outcome == 'failure'
-        run: |
-          echo "Trivy found CRITICAL/HIGH vulnerabilities in the rootless image."
-          exit 1
-
-      # ------ Explicit SBOM artifact (on top of SBOM attestation) ------
-
-      - name: Generate SBOM (SPDX JSON) for rootless
-        uses: aquasecurity/trivy-action@0.33.1
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
-          format: "spdx-json"
-          output: "sbom-rootless.spdx.json"
-
-      - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v5
-        with:
-          name: sbom-rootless-${{ github.ref_name }}
-          path: sbom-rootless.spdx.json
-
-      - name: Generate SBOM (SPDX JSON) for rootful
-        uses: aquasecurity/trivy-action@0.33.1
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-rootful
-          format: "spdx-json"
-          output: "sbom-rootful.spdx.json"
-
-      - name: Upload SBOM artifact for rootful
-        uses: actions/upload-artifact@v5
-        with:
-          name: sbom-rootful-${{ github.ref_name }}
-          path: sbom-rootful.spdx.json
+    uses: ./.github/workflows/release-runner.yml
+    with:
+      release_ref: ${{ github.ref }}
+      release_tag: ${{ github.ref_name }}
+      publish_images: true
+      sign_artifacts: true
+      target_platforms: linux/amd64,linux/arm64
+      load_image: false
+    secrets:
+      github_token: ${{ secrets.GITHUB_TOKEN }}
+  release-dispatch:
+    name: Release multi-arch images (dispatch)
+    if: github.event_name == 'workflow_dispatch' && inputs.dry_run == true
+    permissions:
+      contents: read
+      actions: write # artifacts (upload)
+      security-events: write # artifact/SARIF handling
+    uses: ./.github/workflows/release-runner.yml
+    with:
+      release_ref: ${{ inputs.release_ref }}
+      release_tag: ""
+      publish_images: false
+      sign_artifacts: false
+      target_platforms: linux/amd64
+      load_image: true
+    secrets:
+      github_token: ${{ secrets.GITHUB_TOKEN }}
