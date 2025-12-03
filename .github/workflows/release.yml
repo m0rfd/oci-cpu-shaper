@@ -118,6 +118,8 @@ jobs:
 
       - name: Run tests
         run: make test
+        env:
+          RUN_E2E_TESTS: "1"
 
       - name: Locate CI workflow run for this commit
         id: locate-ci-run
@@ -173,6 +175,7 @@ jobs:
           COVERAGE_SUMMARY: coverage.txt
           REUSE_INTEGRATION_COVERAGE: ${{ steps.integration-coverage-availability.outputs.available || '0' }}
           INTEGRATION_COVERAGE_PROFILE: artifacts/integration-coverage.out
+          RUN_E2E_TESTS: "1"
         run: |
           set -o errexit
           set -o nounset
