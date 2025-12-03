@@ -5,6 +5,15 @@ permissions:
 
 on:
   workflow_dispatch:
+    inputs:
+      release_mode:
+        description: "Choose dry-run for validation or publish for manual promotion"
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - publish
   pull_request:
     branches: [main]
   merge_group:
@@ -489,13 +498,16 @@ jobs:
     name: Release multi-arch images (tagged)
     runs-on: ubuntu-latest
     needs: verify-tag
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_mode == 'dry-run')
     permissions:
       contents: read
       actions: write # artifacts (upload)
       packages: write # GHCR push (release job)
       id-token: write # Cosign keyless (release job)
       security-events: write # Trivy SARIF upload
+    env:
+      PUBLISH: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_mode == 'publish') }}
+      RELEASE_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_mode || 'publish' }}
 
     steps:
       - name: Checkout
@@ -508,6 +520,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
+        if: env.PUBLISH == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -518,7 +531,12 @@ jobs:
       - name: Extract version
         id: vars
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "${GITHUB_REF:-}" =~ refs/tags/v ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="dry-run-${GITHUB_RUN_ID}"
+          fi
+
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Prepare build metadata
@@ -529,8 +547,9 @@ jobs:
 
       # ------ Metadata (tags + labels) with docker/metadata-action ------
       # Rootless is the primary image (gets :latest + semver tags)
-      - name: Docker meta (rootless)
-        id: meta_rootless
+      - name: Docker meta (rootless publish)
+        if: env.PUBLISH == 'true'
+        id: meta_rootless_publish
         uses: docker/metadata-action@v5
         with:
           images: |
@@ -553,9 +572,41 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.vars.outputs.version }}
 
+      - name: Docker meta (rootless dry-run)
+        if: env.PUBLISH != 'true'
+        id: meta_rootless_dry_run
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=dry-run-${{ github.run_id }}-rootless
+            type=raw,value=dry-run-${{ github.run_number }}-${{ github.run_attempt }}-rootless
+          flavor: |
+            latest=false
+          labels: |
+            org.opencontainers.image.title=${{ github.repository }}
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.vars.outputs.version }}
+
+      - name: Collect rootless metadata outputs
+        id: meta_rootless
+        run: |
+          if [[ "${PUBLISH}" == "true" ]]; then
+            echo "tags=${{ steps.meta_rootless_publish.outputs.tags }}" >>"$GITHUB_OUTPUT"
+            echo "labels=${{ steps.meta_rootless_publish.outputs.labels }}" >>"$GITHUB_OUTPUT"
+          else
+            echo "tags=${{ steps.meta_rootless_dry_run.outputs.tags }}" >>"$GITHUB_OUTPUT"
+            echo "labels=${{ steps.meta_rootless_dry_run.outputs.labels }}" >>"$GITHUB_OUTPUT"
+          fi
+        env:
+          PUBLISH: ${{ env.PUBLISH }}
+
       # Rootful variant – tags prefixed with rootful-
-      - name: Docker meta (rootful)
-        id: meta_rootful
+      - name: Docker meta (rootful publish)
+        if: env.PUBLISH == 'true'
+        id: meta_rootful_publish
         uses: docker/metadata-action@v5
         with:
           images: |
@@ -575,6 +626,37 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.vars.outputs.version }}
 
+      - name: Docker meta (rootful dry-run)
+        if: env.PUBLISH != 'true'
+        id: meta_rootful_dry_run
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=dry-run-${{ github.run_id }}-rootful
+            type=raw,value=dry-run-${{ github.run_number }}-${{ github.run_attempt }}-rootful
+          flavor: |
+            latest=false
+          labels: |
+            org.opencontainers.image.title=${{ github.repository }} (rootful)
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.vars.outputs.version }}
+
+      - name: Collect rootful metadata outputs
+        id: meta_rootful
+        run: |
+          if [[ "${PUBLISH}" == "true" ]]; then
+            echo "tags=${{ steps.meta_rootful_publish.outputs.tags }}" >>"$GITHUB_OUTPUT"
+            echo "labels=${{ steps.meta_rootful_publish.outputs.labels }}" >>"$GITHUB_OUTPUT"
+          else
+            echo "tags=${{ steps.meta_rootful_dry_run.outputs.tags }}" >>"$GITHUB_OUTPUT"
+            echo "labels=${{ steps.meta_rootful_dry_run.outputs.labels }}" >>"$GITHUB_OUTPUT"
+          fi
+        env:
+          PUBLISH: ${{ env.PUBLISH }}
+
       # ------ Build & push rootless (multi-arch, with cache, SBOM, provenance) ------
 
       - name: Build and push rootless image (multi-arch)
@@ -585,7 +667,7 @@ jobs:
           file: ./Dockerfile
           target: rootless
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ env.PUBLISH == 'true' }}
           tags: ${{ steps.meta_rootless.outputs.tags }}
           labels: ${{ steps.meta_rootless.outputs.labels }}
           build-args: |
@@ -593,8 +675,8 @@ jobs:
             GIT_COMMIT=${{ github.sha }}
             BUILD_DATE=${{ steps.build_meta.outputs.build_date }}
             IMAGE_SOURCE=${{ github.repositoryUrl }}
-          provenance: true
-          sbom: true
+          provenance: ${{ env.PUBLISH == 'true' }}
+          sbom: ${{ env.PUBLISH == 'true' }}
           cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-builder
           cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-builder,mode=max
 
@@ -608,7 +690,7 @@ jobs:
           file: ./Dockerfile
           target: rootful
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ env.PUBLISH == 'true' }}
           tags: ${{ steps.meta_rootful.outputs.tags }}
           labels: ${{ steps.meta_rootful.outputs.labels }}
           build-args: |
@@ -616,19 +698,21 @@ jobs:
             GIT_COMMIT=${{ github.sha }}
             BUILD_DATE=${{ steps.build_meta.outputs.build_date }}
             IMAGE_SOURCE=${{ github.repositoryUrl }}
-          provenance: true
-          sbom: true
+          provenance: ${{ env.PUBLISH == 'true' }}
+          sbom: ${{ env.PUBLISH == 'true' }}
           cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-builder
           cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-builder,mode=max
 
       # ------ Cosign signing (keyless) ------
       - name: Install cosign
+        if: env.PUBLISH == 'true'
         uses: sigstore/cosign-installer@v4.0.0
         with:
           # Keep cosign pinned for predictable signing output; bump docs when upgrading.
           cosign-release: 'v3.0.2'
 
       - name: Sign rootless image digest
+        if: env.PUBLISH == 'true'
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
@@ -639,6 +723,7 @@ jobs:
           cosign sign --yes "${IMAGE_REF}"
 
       - name: Sign rootful image digest
+        if: env.PUBLISH == 'true'
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
@@ -651,6 +736,7 @@ jobs:
       # ------ Trivy image scan + SARIF upload (rootless tag) ------
 
       - name: Scan rootless image with Trivy (SARIF)
+        if: env.PUBLISH == 'true'
         id: trivy_scan_rootless
         uses: aquasecurity/trivy-action@0.33.1
         continue-on-error: true
@@ -664,7 +750,7 @@ jobs:
           exit-code: "1" # non-zero when CRITICAL/HIGH found
 
       - name: Upload Trivy SARIF to GitHub Security tab
-        if: always()
+        if: always() && env.PUBLISH == 'true'
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results-rootless.sarif
@@ -679,6 +765,7 @@ jobs:
       # ------ Explicit SBOM artifact (on top of SBOM attestation) ------
 
       - name: Generate SBOM (SPDX JSON) for rootless
+        if: env.PUBLISH == 'true'
         uses: aquasecurity/trivy-action@0.33.1
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
@@ -686,12 +773,14 @@ jobs:
           output: "sbom-rootless.spdx.json"
 
       - name: Upload SBOM artifact
+        if: env.PUBLISH == 'true'
         uses: actions/upload-artifact@v5
         with:
           name: sbom-rootless-${{ github.ref_name }}
           path: sbom-rootless.spdx.json
 
       - name: Generate SBOM (SPDX JSON) for rootful
+        if: env.PUBLISH == 'true'
         uses: aquasecurity/trivy-action@0.33.1
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-rootful
@@ -699,7 +788,31 @@ jobs:
           output: "sbom-rootful.spdx.json"
 
       - name: Upload SBOM artifact for rootful
+        if: env.PUBLISH == 'true'
         uses: actions/upload-artifact@v5
         with:
           name: sbom-rootful-${{ github.ref_name }}
           path: sbom-rootful.spdx.json
+
+      - name: Upload dry-run build summary
+        if: always()
+        run: |
+          mkdir -p artifacts
+          {
+            echo "release_mode=${{ env.RELEASE_MODE }}"
+            echo "publish=${{ env.PUBLISH }}"
+            echo "rootless_tags=${{ steps.meta_rootless.outputs.tags }}"
+            echo "rootful_tags=${{ steps.meta_rootful.outputs.tags }}"
+            echo "rootless_digest=${{ steps.build_rootless.outputs.digest }}"
+            echo "rootful_digest=${{ steps.build_rootful.outputs.digest }}"
+          } > artifacts/release-run.txt
+
+        env:
+          RELEASE_MODE: ${{ env.RELEASE_MODE }}
+
+      - name: Upload release artifacts
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: release-run-${{ github.run_id }}
+          path: artifacts

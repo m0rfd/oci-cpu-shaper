@@ -141,3 +141,7 @@ cosign verify-attestation \
 ```
 
 For additional context and troubleshooting guidance, see the §14 signing section in [`docs/08-development.md`](docs/08-development.md).
+
+### Validating release workflow changes
+
+Contributors can exercise the release job without pushing images by running the **Docker CI & Release** workflow with the `workflow_dispatch` input `release_mode=dry-run`. The dry-run path skips GHCR login, disables image pushes, Cosign signing, and Trivy SARIF uploads, and publishes a `release-run-<run_id>` artifact that captures the tags, digests, and mode flags produced during the build. Use this trigger to confirm workflow edits while keeping `make check`/`make actionlint` paths intact before raising a PR.
