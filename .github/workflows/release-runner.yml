@@ -96,9 +96,11 @@ jobs:
 
           commit_date=$(git show -s --format=%cI "${{ env.RELEASE_REF }}" || true)
 
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "build_date=${commit_date:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}" >> "$GITHUB_OUTPUT"
-          echo "ref_slug=${ref_slug}" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=${version}"
+            echo "build_date=${commit_date:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}"
+            echo "ref_slug=${ref_slug}"
+          } >> "$GITHUB_OUTPUT"
 
       # ------ Metadata (tags + labels) with docker/metadata-action ------
       # Rootless is the primary image (gets :latest + semver tags)
