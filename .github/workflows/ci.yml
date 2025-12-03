@@ -401,24 +401,22 @@ jobs:
           grep -F '"reason":"context deadline exceeded"' smoke.log
           rm smoke.log
 
-      - name: Generate SBOM
-        uses: anchore/sbom-action@v0
+      - name: Trivy SBOM + vulnerability scan
+        uses: aquasecurity/trivy-action@0.33.1
         with:
-          image: oci-cpu-shaper:test
-          output-file: sbom.spdx.json
+          image-ref: oci-cpu-shaper:test
+          format: "spdx-json"
+          output: "sbom.spdx.json"
+          vuln-type: "os,library"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
+          exit-code: "1" # non-zero when CRITICAL/HIGH found
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v5
         with:
           name: container-sbom
           path: sbom.spdx.json
-
-      - name: Scan image for vulnerabilities
-        uses: anchore/scan-action@v7
-        with:
-          image: oci-cpu-shaper:test
-          fail-build: true
-          severity-cutoff: critical
 
   integration:
     name: integration tests (cgroup v2)
