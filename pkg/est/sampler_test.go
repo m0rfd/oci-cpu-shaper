@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -32,6 +33,39 @@ type sequenceSource struct {
 type snapshotResponse struct {
 	snapshot Snapshot
 	err      error
+}
+
+type manualTicker struct {
+	ch <-chan time.Time
+}
+
+func (m manualTicker) C() <-chan time.Time {
+	return m.ch
+}
+
+func (m manualTicker) Stop() {}
+
+func newManualSampler(responses []snapshotResponse, ticks <-chan time.Time) *Sampler {
+	sampler := NewSampler(&sequenceSource{responses: responses, index: 0}, time.Hour)
+
+	start := time.Unix(0, 0)
+
+	var nowMu sync.Mutex
+
+	sampler.now = func() time.Time {
+		nowMu.Lock()
+		defer nowMu.Unlock()
+
+		start = start.Add(time.Millisecond)
+
+		return start
+	}
+
+	sampler.newTicker = func(time.Duration) ticker {
+		return manualTicker{ch: ticks}
+	}
+
+	return sampler
 }
 
 func (f *fakeSource) Snapshot(_ context.Context) (Snapshot, error) {
@@ -72,6 +106,62 @@ func (s *sequenceSource) Snapshot(_ context.Context) (Snapshot, error) {
 	s.index++
 
 	return response.snapshot, response.err
+}
+
+func TestSamplerPublishesErrorsAndContinuesSampling(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+
+	responses := []snapshotResponse{
+		{snapshot: Snapshot{Idle: 0, Total: 10, Runnable: 0}, err: nil},
+		{snapshot: Snapshot{Idle: 1, Total: 20, Runnable: 0}, err: nil},
+		{snapshot: Snapshot{Idle: 0, Total: 0, Runnable: 0}, err: errTestBoom},
+		{snapshot: Snapshot{Idle: 3, Total: 30, Runnable: 4}, err: nil},
+	}
+
+	tickCh := make(chan time.Time, len(responses))
+	sampler := newManualSampler(responses, tickCh)
+
+	observations := sampler.Run(ctx)
+
+	tick := func() { tickCh <- time.Time{} }
+
+	tick()
+
+	first := receiveObservation(t, observations, "first observation")
+
+	tick()
+
+	errorObservation := receiveObservation(t, observations, "error observation")
+
+	tick()
+
+	second := receiveObservation(t, observations, "second observation")
+
+	if first.Err != nil {
+		t.Fatalf("unexpected error in first observation: %v", first.Err)
+	}
+
+	if first.Utilisation != 0.9 {
+		t.Fatalf("unexpected utilisation after first tick: %.2f", first.Utilisation)
+	}
+
+	if !errors.Is(errorObservation.Err, errTestBoom) {
+		t.Fatalf("expected injected error to propagate, got %v", errorObservation.Err)
+	}
+
+	if second.Err != nil {
+		t.Fatalf("unexpected error in second observation: %v", second.Err)
+	}
+
+	if second.Utilisation != 0.8 {
+		t.Fatalf("unexpected utilisation after recovery: %.2f", second.Utilisation)
+	}
+
+	if second.Runnable <= 0 {
+		t.Fatalf("expected runnable count to be recorded, got %.2f", second.Runnable)
+	}
 }
 
 func TestSamplerEmitsObservations(t *testing.T) {
@@ -839,8 +929,7 @@ func TestSampleLoopStopsOnContextCancel(t *testing.T) {
 	)
 	sampler.now = func() time.Time { return time.Unix(0, 0) }
 
-	ticker := time.NewTicker(time.Hour)
-	defer ticker.Stop()
+	ticker := manualTicker{ch: make(chan time.Time)}
 
 	observations := make(chan Observation, 1)
 
@@ -888,7 +977,7 @@ func startSampleLoop(
 	t.Helper()
 
 	ticks := make(chan time.Time)
-	ticker := &time.Ticker{C: ticks}
+	ticker := manualTicker{ch: ticks}
 
 	sampler := NewSampler(&sequenceSource{responses: []snapshotResponse{
 		{snapshot: Snapshot{Idle: 0, Total: 0, Runnable: 0}, err: errTestBoom},

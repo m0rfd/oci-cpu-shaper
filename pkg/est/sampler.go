@@ -77,10 +77,11 @@ func (f FileSource) Snapshot(ctx context.Context) (Snapshot, error) {
 
 // Sampler periodically samples CPU statistics and publishes utilisation observations.
 type Sampler struct {
-	source   Source
-	interval time.Duration
-	now      func() time.Time
-	started  atomic.Bool
+	source    Source
+	interval  time.Duration
+	now       func() time.Time
+	newTicker func(time.Duration) ticker
+	started   atomic.Bool
 }
 
 // DefaultInterval is used when a zero or negative interval is supplied.
@@ -108,6 +109,9 @@ func NewSampler(src Source, interval time.Duration) *Sampler {
 	sampler.source = src
 	sampler.interval = interval
 	sampler.now = time.Now
+	sampler.newTicker = func(duration time.Duration) ticker {
+		return timeTicker{Ticker: time.NewTicker(duration)}
+	}
 
 	return sampler
 }
@@ -144,7 +148,7 @@ func (s *Sampler) startSampling(ctx context.Context, observations chan<- Observa
 		return
 	}
 
-	ticker := time.NewTicker(s.interval)
+	ticker := s.tickerSource()(s.interval)
 	defer ticker.Stop()
 
 	s.sampleLoop(ctx, src, last, ticker, observations)
@@ -154,7 +158,7 @@ func (s *Sampler) sampleLoop(
 	ctx context.Context,
 	src Source,
 	last Snapshot,
-	ticker *time.Ticker,
+	ticker ticker,
 	observations chan<- Observation,
 ) {
 	nowFn := s.timeSource()
@@ -163,7 +167,7 @@ func (s *Sampler) sampleLoop(
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-ticker.C():
 			snap, err := src.Snapshot(ctx)
 			if err != nil {
 				s.publishError(ctx, observations, fmt.Errorf("sample snapshot: %w", err))
@@ -213,6 +217,33 @@ func (s *Sampler) timeSource() func() time.Time {
 	}
 
 	return time.Now
+}
+
+func (s *Sampler) tickerSource() func(time.Duration) ticker {
+	if s.newTicker != nil {
+		return s.newTicker
+	}
+
+	return func(duration time.Duration) ticker {
+		return timeTicker{Ticker: time.NewTicker(duration)}
+	}
+}
+
+type ticker interface {
+	C() <-chan time.Time
+	Stop()
+}
+
+type timeTicker struct {
+	Ticker *time.Ticker
+}
+
+func (t timeTicker) C() <-chan time.Time {
+	return t.Ticker.C
+}
+
+func (t timeTicker) Stop() {
+	t.Ticker.Stop()
 }
 
 func buildObservation(timestamp time.Time, previous, current Snapshot) Observation {
