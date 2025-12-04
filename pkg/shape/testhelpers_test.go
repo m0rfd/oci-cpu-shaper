@@ -2,10 +2,33 @@
 package shape
 
 import (
+	"math"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func assertPauseThresholds(tb testing.TB, pool *Pool, pause, resume float64) {
+	tb.Helper()
+
+	loadedPause := math.Float64frombits(pool.pauseThresholdBits.Load())
+	if loadedPause != pause {
+		tb.Fatalf("pause threshold mismatch: expected %v, got %v", pause, loadedPause)
+	}
+
+	loadedResume := math.Float64frombits(pool.resumeThresholdBits.Load())
+	if loadedResume != resume {
+		tb.Fatalf("resume threshold mismatch: expected %v, got %v", resume, loadedResume)
+	}
+}
+
+func assertPausedState(tb testing.TB, pool *Pool, expected bool) {
+	tb.Helper()
+
+	if paused := pool.paused.Load() == 1; paused != expected {
+		tb.Fatalf("paused state mismatch: expected %t, got %t", expected, paused)
+	}
+}
 
 func assertBusyAndSleepDurations(
 	t *testing.T,
