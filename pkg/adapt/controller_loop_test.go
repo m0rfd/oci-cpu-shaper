@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -249,6 +250,128 @@ func TestAdaptiveControllerRunWrapsNilEstimatorChannel(t *testing.T) {
 	}
 }
 
+func TestRunControllerWithStepSurfacesNilEstimatorChannelError(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_001_560, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	estimator := newNilObservationsEstimator()
+
+	controller, err := NewAdaptiveController(cfg, metrics, estimator, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	runErr := runControllerWithStep(t.Context(), controller, func(context.Context) time.Duration {
+		return controller.cfg.Interval
+	}, nil)
+	if runErr == nil {
+		t.Fatal("expected runControllerWithStep to return error for nil estimator channel")
+	}
+
+	if !errors.Is(runErr, errEstimatorNilChannel) {
+		t.Fatalf("unexpected runControllerWithStep error: %v", runErr)
+	}
+
+	if !estimator.started.Load() {
+		t.Fatal("expected estimator to be invoked")
+	}
+}
+
+func TestRunControllerWithStepResetsTickerForClosedEstimator(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_001_620, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+	cfg.Interval = 10 * time.Millisecond
+
+	estimator := newClosedChannelEstimator()
+
+	controller, err := NewAdaptiveController(cfg, metrics, estimator, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	intervals := []time.Duration{
+		controller.cfg.Interval,
+		2 * controller.cfg.Interval,
+		controller.cfg.Interval / 2,
+	}
+
+	intervalUpdates := make(chan time.Duration, len(intervals))
+	stepper := newFakeStep(intervals, cancel)
+
+	done := make(chan error, 1)
+
+	go func() {
+		done <- runControllerWithStep(ctx, controller, stepper.Step, intervalUpdates)
+	}()
+
+	waitFor(func() bool { return len(intervalUpdates) == len(intervals) }, time.Second)
+
+	runErr := <-done
+
+	if !errors.Is(runErr, context.Canceled) {
+		t.Fatalf("runControllerWithStep error: %v", runErr)
+	}
+
+	requireIntervalSequence(t, intervalUpdates, intervals)
+
+	if controller.interval != intervals[len(intervals)-1] {
+		t.Fatalf(
+			"expected controller interval to track last step interval, got %v",
+			controller.interval,
+		)
+	}
+
+	if !estimator.started.Load() {
+		t.Fatal("expected closed estimator channel to be invoked")
+	}
+}
+
+func TestRunControllerWithStepWrapsCanceledContext(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_001_680, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	runErr := runControllerWithStep(ctx, controller, func(context.Context) time.Duration {
+		return controller.cfg.Interval
+	}, nil)
+	if runErr == nil {
+		t.Fatal("expected runControllerWithStep to wrap canceled context")
+	}
+
+	if !errors.Is(runErr, context.Canceled) {
+		t.Fatalf("expected wrapped context cancellation, got %v", runErr)
+	}
+
+	if !strings.Contains(runErr.Error(), "adaptive controller run") {
+		t.Fatalf("expected wrapped error to include context, got %v", runErr)
+	}
+}
+
 func TestConsumeEstimatorStopsWhenEstimatorClosesImmediately(t *testing.T) {
 	t.Parallel()
 
@@ -431,6 +554,24 @@ type channelEstimator struct {
 }
 
 func (c channelEstimator) Run(context.Context) <-chan est.Observation {
+	return c.ch
+}
+
+type closedChannelEstimator struct {
+	started atomic.Bool
+	ch      <-chan est.Observation
+}
+
+func newClosedChannelEstimator() *closedChannelEstimator {
+	ch := make(chan est.Observation)
+	close(ch)
+
+	return &closedChannelEstimator{started: atomic.Bool{}, ch: ch}
+}
+
+func (c *closedChannelEstimator) Run(context.Context) <-chan est.Observation {
+	c.started.Store(true)
+
 	return c.ch
 }
 
