@@ -43,6 +43,15 @@ GOLANGCI_LINT_SHA256_linux_arm64 := 1c22b899f2dd84f9638e0e0352a319a2867b0bb082c5
 GOVULNCHECK_VERSION ?= v1.1.4
 ACTIONLINT_VERSION ?= v1.7.9
 MBAKE_VERSION ?= 1.4.3
+CODEQL_VERSION ?= v2.23.7
+CODEQL_VERSION_STRIPPED := $(patsubst v%,%,$(CODEQL_VERSION))
+CODEQL_BUNDLE_TAG := codeql-bundle-$(CODEQL_VERSION)
+CODEQL_BUNDLE_linux_amd64 := codeql-bundle-linux64.tar.gz
+CODEQL_BUNDLE_linux_arm64 := codeql-bundle-linux64.tar.gz
+CODEQL_DOWNLOAD_URL_linux_amd64 := https://github.com/github/codeql-action/releases/download/$(CODEQL_BUNDLE_TAG)/$(CODEQL_BUNDLE_linux_amd64)
+CODEQL_DOWNLOAD_URL_linux_arm64 := https://github.com/github/codeql-action/releases/download/$(CODEQL_BUNDLE_TAG)/$(CODEQL_BUNDLE_linux_arm64)
+CODEQL_SHA256_linux_amd64 := dab3fe81dc4ae16ddaf231d8d5d2abc626c279cce042ecaa952673be89a221c8
+CODEQL_SHA256_linux_arm64 := dab3fe81dc4ae16ddaf231d8d5d2abc626c279cce042ecaa952673be89a221c8
 TIDY_VERIFY ?= 1
 
 GO_BIN_PATH := $(strip $(GOBIN))
@@ -66,6 +75,9 @@ GOVULNCHECK_CACHE_DIR ?= $(ROOT_DIR)/.cache/govulncheck
 GOCACHE_DIR ?= $(ROOT_DIR)/.cache/go
 GOMODCACHE_DIR ?= $(ROOT_DIR)/.cache/gomod
 GOLANGCI_LINT_CACHE_DIR ?= $(ROOT_DIR)/.cache/golangci
+CODEQL_CACHE_DIR ?= $(ROOT_DIR)/.cache/codeql
+CODEQL_ARTIFACT_DIR ?= $(ROOT_DIR)/artifacts/codeql
+CODEQL_INSTALL_DIR ?= $(ROOT_DIR)/.cache/tools/codeql
 
 GOLANGCI_LINT_BIN ?= $(GO_BIN_PATH)/golangci-lint
 GOLANGCI_LINT ?= $(GOLANGCI_LINT_BIN)
@@ -76,9 +88,10 @@ ACTIONLINT_PATHS ?=
 MBAKE_BIN ?= $(HOME)/.local/bin/mbake
 MBAKE ?= $(MBAKE_BIN)
 MBAKE_FORMAT_PATHS ?= Makefile
+CODEQL_BIN ?= $(GO_BIN_PATH)/codeql
 
-.PHONY: actionlint agents bench build check clean coverage e2e echo ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools verify-git-hooks verify-go-version
-HELP_TARGETS := lint lint-makefile lint-workflows test coverage build check govulncheck integration e2e agents actionlint help clean verify-git-hooks
+.PHONY: actionlint agents bench build check clean codeql-actions codeql-all codeql-go coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools verify-git-hooks verify-go-version
+HELP_TARGETS := lint lint-makefile lint-workflows test coverage build check govulncheck integration e2e agents actionlint codeql-actions codeql-go codeql-all help clean verify-git-hooks
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-mbake
 
@@ -155,12 +168,15 @@ help:
 			test) desc="Run unit tests (excludes integration/e2e)";; \
 			coverage) desc="Run coverage with minimum threshold enforcement";; \
 			build) desc="Compile all modules with cache isolation";; \
-			check) desc="Run lint, coverage, tests, and agent checks";; \
+			check) desc="Run lint, coverage, tests, CodeQL, and agent checks";; \
 			govulncheck) desc="Scan dependencies with govulncheck";; \
 			integration) desc="Execute integration suite (requires Docker + cgroup v2)";; \
 			e2e) desc="Execute end-to-end suite";; \
 			agents) desc="Validate agent instructions";; \
 			actionlint) desc="Lint GitHub Actions workflows";; \
+			codeql-actions) desc="Create and analyze the GitHub Actions CodeQL database";; \
+			codeql-go) desc="Create and analyze the Go CodeQL database";; \
+			codeql-all) desc="Run Go and GitHub Actions CodeQL analyses";; \
 			clean) desc="Remove build caches and coverage artifacts";; \
 			help) desc="Show this help";; \
 			*) desc="";; \
@@ -179,6 +195,44 @@ ensure-actionlint: verify-go-version
 		echo "Installing actionlint $(ACTIONLINT_VERSION)"; \
 		GOBIN="$(GO_BIN_PATH)" $(GO) install github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION); \
 	fi
+
+ensure-codeql:
+	@mkdir -p "$(GO_BIN_PATH)" "$(dir $(CODEQL_INSTALL_DIR))"; \
+	BIN="$(CODEQL_BIN)"; \
+	CURRENT_VERSION=""; \
+	if [ -x "$$BIN" ]; then \
+		CURRENT_VERSION="$$($$BIN version --format=terse 2>/dev/null || true)"; \
+	fi; \
+	if [ "$$CURRENT_VERSION" = "$(CODEQL_VERSION_STRIPPED)" ]; then \
+		echo "CodeQL $$CURRENT_VERSION already installed at $$BIN"; \
+		exit 0; \
+	fi; \
+	case "$(GO_DL_ARCH)" in \
+		amd64) ARCHIVE="$(CODEQL_BUNDLE_linux_amd64)"; DOWNLOAD_URL="$(CODEQL_DOWNLOAD_URL_linux_amd64)"; CHECKSUM="$(CODEQL_SHA256_linux_amd64)" ;; \
+		arm64) ARCHIVE="$(CODEQL_BUNDLE_linux_arm64)"; DOWNLOAD_URL="$(CODEQL_DOWNLOAD_URL_linux_arm64)"; CHECKSUM="$(CODEQL_SHA256_linux_arm64)" ;; \
+		*) echo "Unsupported CodeQL arch: $(GO_DL_ARCH)"; exit 1 ;; \
+	esac; \
+	TMP_DIR="$$(mktemp -d)"; \
+	trap "rm -rf \"$$TMP_DIR\"" EXIT; \
+	echo "Downloading CodeQL $(CODEQL_VERSION) from $$DOWNLOAD_URL"; \
+	attempts=3; \
+	for i in $$(seq 1 $$attempts); do \
+		if curl -fsSL "$$DOWNLOAD_URL" -o "$$TMP_DIR/$$ARCHIVE"; then \
+			break; \
+		fi; \
+	if [ $$i -lt $$attempts ]; then \
+		sleep $$i; \
+	else \
+		echo "Failed to download CodeQL after $$attempts attempts"; \
+		exit 1; \
+	fi; \
+	done; \
+	printf "%s  %s\n" "$$CHECKSUM" "$$TMP_DIR/$$ARCHIVE" | sha256sum -c -; \
+	tar -xzf "$$TMP_DIR/$$ARCHIVE" -C "$$TMP_DIR"; \
+	rm -rf "$(CODEQL_INSTALL_DIR)"; \
+	mv "$$TMP_DIR/codeql" "$(CODEQL_INSTALL_DIR)"; \
+	ln -sf "$(CODEQL_INSTALL_DIR)/codeql" "$(CODEQL_BIN)"; \
+	echo "Installed CodeQL $(CODEQL_VERSION) to $(CODEQL_BIN)"
 
 ensure-mbake:
 	@BIN="$(MBAKE_BIN)"; \
@@ -297,7 +351,29 @@ govulncheck: verify-go-version
 	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" GOVULNCHECK_CACHE="$(GOVULNCHECK_CACHE_DIR)" \
 	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
-check: go-mod-download verify-git-hooks tidy lint lint-makefile lint-workflows test coverage agents
+codeql-actions: ensure-codeql
+	@git -C "$(ROOT_DIR)" rev-parse --is-inside-work-tree >/dev/null
+	@mkdir -p "$(CODEQL_CACHE_DIR)" "$(CODEQL_ARTIFACT_DIR)"; \
+	DB_DIR="$(CODEQL_CACHE_DIR)/actions"; \
+	rm -rf "$$DB_DIR"; \
+        echo "Creating CodeQL database for GitHub Actions..."; \
+        "$(CODEQL_BIN)" database create "$$DB_DIR" --language=actions --source-root "$(ROOT_DIR)"; \
+        echo "Analyzing GitHub Actions CodeQL database..."; \
+        "$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --output "$(CODEQL_ARTIFACT_DIR)/actions.sarif"
+
+codeql-go: ensure-codeql
+	@git -C "$(ROOT_DIR)" rev-parse --is-inside-work-tree >/dev/null
+	@mkdir -p "$(CODEQL_CACHE_DIR)" "$(CODEQL_ARTIFACT_DIR)" "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
+	DB_DIR="$(CODEQL_CACHE_DIR)/go"; \
+	rm -rf "$$DB_DIR"; \
+	echo "Creating CodeQL database for Go..."; \
+	CODEQL_EXTRACTOR_GO_BUILD_TRACING=off "$(CODEQL_BIN)" database create "$$DB_DIR" --language=go --source-root "$(ROOT_DIR)" --command "env GOCACHE=$(GOCACHE_DIR) GOMODCACHE=$(GOMODCACHE_DIR) GOFLAGS=-mod=readonly $(GO) build ./..."; \
+	echo "Analyzing Go CodeQL database..."; \
+	"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --output "$(CODEQL_ARTIFACT_DIR)/go.sarif"
+
+codeql-all: codeql-actions codeql-go
+
+check: go-mod-download verify-git-hooks tidy lint lint-makefile lint-workflows test coverage codeql-all agents
 
 actionlint: ensure-actionlint
 	@if [ ! -d ".github/workflows" ]; then \
