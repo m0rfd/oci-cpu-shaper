@@ -68,6 +68,9 @@ GOVULNCHECK_CACHE_DIR ?= $(ROOT_DIR)/.cache/govulncheck
 GOCACHE_DIR ?= $(ROOT_DIR)/.cache/go
 GOMODCACHE_DIR ?= $(ROOT_DIR)/.cache/gomod
 GOLANGCI_LINT_CACHE_DIR ?= $(ROOT_DIR)/.cache/golangci
+CODEQL_CACHE_DIR ?= $(ROOT_DIR)/.cache/codeql
+CODEQL_ARTIFACT_DIR ?= $(ROOT_DIR)/artifacts/codeql
+CODEQL_INSTALL_DIR ?= $(ROOT_DIR)/.cache/tools/codeql
 
 GOLANGCI_LINT_BIN ?= $(GO_BIN_PATH)/golangci-lint
 GOLANGCI_LINT ?= $(GOLANGCI_LINT_BIN)
@@ -249,6 +252,9 @@ help:
 			e2e) desc="Execute end-to-end suite";; \
 			agents) desc="Validate agent instructions";; \
 			actionlint) desc="Lint GitHub Actions workflows";; \
+			codeql-actions) desc="Create and analyze the GitHub Actions CodeQL database";; \
+			codeql-go) desc="Create and analyze the Go CodeQL database";; \
+			codeql-all) desc="Run Go and GitHub Actions CodeQL analyses";; \
 			clean) desc="Remove build caches and coverage artifacts";; \
 			help) desc="Show this help";; \
 			*) desc="";; \
@@ -267,6 +273,44 @@ ensure-actionlint: verify-go-version
 		echo "Installing actionlint $(ACTIONLINT_VERSION)"; \
 		GOBIN="$(GO_BIN_PATH)" $(GO) install github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION); \
 	fi
+
+ensure-codeql:
+	@mkdir -p "$(GO_BIN_PATH)" "$(dir $(CODEQL_INSTALL_DIR))"; \
+	BIN="$(CODEQL_BIN)"; \
+	CURRENT_VERSION=""; \
+	if [ -x "$$BIN" ]; then \
+		CURRENT_VERSION="$$($$BIN version --format=terse 2>/dev/null || true)"; \
+	fi; \
+	if [ "$$CURRENT_VERSION" = "$(CODEQL_VERSION_STRIPPED)" ]; then \
+		echo "CodeQL $$CURRENT_VERSION already installed at $$BIN"; \
+		exit 0; \
+	fi; \
+	case "$(GO_DL_ARCH)" in \
+		amd64) ARCHIVE="$(CODEQL_BUNDLE_linux_amd64)"; DOWNLOAD_URL="$(CODEQL_DOWNLOAD_URL_linux_amd64)"; CHECKSUM="$(CODEQL_SHA256_linux_amd64)" ;; \
+		arm64) ARCHIVE="$(CODEQL_BUNDLE_linux_arm64)"; DOWNLOAD_URL="$(CODEQL_DOWNLOAD_URL_linux_arm64)"; CHECKSUM="$(CODEQL_SHA256_linux_arm64)" ;; \
+		*) echo "Unsupported CodeQL arch: $(GO_DL_ARCH)"; exit 1 ;; \
+	esac; \
+	TMP_DIR="$$(mktemp -d)"; \
+	trap "rm -rf \"$$TMP_DIR\"" EXIT; \
+	echo "Downloading CodeQL $(CODEQL_VERSION) from $$DOWNLOAD_URL"; \
+	attempts=3; \
+	for i in $$(seq 1 $$attempts); do \
+		if curl -fsSL "$$DOWNLOAD_URL" -o "$$TMP_DIR/$$ARCHIVE"; then \
+			break; \
+		fi; \
+	if [ $$i -lt $$attempts ]; then \
+		sleep $$i; \
+	else \
+		echo "Failed to download CodeQL after $$attempts attempts"; \
+		exit 1; \
+	fi; \
+	done; \
+	printf "%s  %s\n" "$$CHECKSUM" "$$TMP_DIR/$$ARCHIVE" | sha256sum -c -; \
+	tar -xzf "$$TMP_DIR/$$ARCHIVE" -C "$$TMP_DIR"; \
+	rm -rf "$(CODEQL_INSTALL_DIR)"; \
+	mv "$$TMP_DIR/codeql" "$(CODEQL_INSTALL_DIR)"; \
+	ln -sf "$(CODEQL_INSTALL_DIR)/codeql" "$(CODEQL_BIN)"; \
+	echo "Installed CodeQL $(CODEQL_VERSION) to $(CODEQL_BIN)"
 
 ensure-mbake:
 	@BIN="$(MBAKE_BIN)"; \
