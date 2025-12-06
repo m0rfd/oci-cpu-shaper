@@ -168,7 +168,7 @@ help:
 			test) desc="Run unit tests (excludes integration/e2e)";; \
 			coverage) desc="Run coverage with minimum threshold enforcement";; \
 			build) desc="Compile all modules with cache isolation";; \
-			check) desc="Run lint, coverage, tests, and agent checks";; \
+			check) desc="Run lint, coverage, tests, CodeQL, and agent checks";; \
 			govulncheck) desc="Scan dependencies with govulncheck";; \
 			integration) desc="Execute integration suite (requires Docker + cgroup v2)";; \
 			e2e) desc="Execute end-to-end suite";; \
@@ -356,24 +356,24 @@ codeql-actions: ensure-codeql
 	@mkdir -p "$(CODEQL_CACHE_DIR)" "$(CODEQL_ARTIFACT_DIR)"; \
 	DB_DIR="$(CODEQL_CACHE_DIR)/actions"; \
 	rm -rf "$$DB_DIR"; \
-	echo "Creating CodeQL database for GitHub Actions..."; \
-	"$(CODEQL_BIN)" database create "$$DB_DIR" --language=javascript --source-root "$(ROOT_DIR)"; \
-	echo "Analyzing GitHub Actions CodeQL database..."; \
-	"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --output "$(CODEQL_ARTIFACT_DIR)/actions.sarif"
+        echo "Creating CodeQL database for GitHub Actions..."; \
+        "$(CODEQL_BIN)" database create "$$DB_DIR" --language=actions --source-root "$(ROOT_DIR)"; \
+        echo "Analyzing GitHub Actions CodeQL database..."; \
+        "$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --output "$(CODEQL_ARTIFACT_DIR)/actions.sarif"
 
 codeql-go: ensure-codeql
 	@git -C "$(ROOT_DIR)" rev-parse --is-inside-work-tree >/dev/null
-	@mkdir -p "$(CODEQL_CACHE_DIR)" "$(CODEQL_ARTIFACT_DIR)"; \
+	@mkdir -p "$(CODEQL_CACHE_DIR)" "$(CODEQL_ARTIFACT_DIR)" "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
 	DB_DIR="$(CODEQL_CACHE_DIR)/go"; \
 	rm -rf "$$DB_DIR"; \
 	echo "Creating CodeQL database for Go..."; \
-	"$(CODEQL_BIN)" database create "$$DB_DIR" --language=go --source-root "$(ROOT_DIR)" --build-mode=autobuild; \
+	CODEQL_EXTRACTOR_GO_BUILD_TRACING=off "$(CODEQL_BIN)" database create "$$DB_DIR" --language=go --source-root "$(ROOT_DIR)" --command "env GOCACHE=$(GOCACHE_DIR) GOMODCACHE=$(GOMODCACHE_DIR) GOFLAGS=-mod=readonly $(GO) build ./..."; \
 	echo "Analyzing Go CodeQL database..."; \
 	"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --output "$(CODEQL_ARTIFACT_DIR)/go.sarif"
 
 codeql-all: codeql-actions codeql-go
 
-check: go-mod-download verify-git-hooks tidy lint lint-makefile lint-workflows test coverage agents
+check: go-mod-download verify-git-hooks tidy lint lint-makefile lint-workflows test coverage codeql-all agents
 
 actionlint: ensure-actionlint
 	@if [ ! -d ".github/workflows" ]; then \
