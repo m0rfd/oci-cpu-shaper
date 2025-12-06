@@ -5,15 +5,17 @@ permissions:
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
   pull_request:
     branches: [main]
   merge_group:
-  push:
-    tags:
-      - "v*" # release on v* tags (assumed from main)
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.id || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -22,6 +24,8 @@ env:
   SHELLCHECK_VERSION: "0.10.0"
   PYFLAKES_VERSION: "3.2.0"
   ACTIONLINT_VERSION: "v1.7.9"
+  TAG_NAME: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+  RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 defaults:
   run:
@@ -39,24 +43,61 @@ jobs:
     permissions:
       contents: read
       actions: write
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: |
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
       GOBIN: ${{ github.workspace }}/bin
 
     steps:
+      - name: Download CI artifacts for tag
+        id: download-ci-artifacts
+        continue-on-error: true
+        uses: actions/download-artifact@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.event.workflow_run.repository.full_name }}
+          run-id: ${{ github.event.workflow_run.id }}
+          path: artifacts
+
+      - name: Check CI artifact availability
+        id: ci-artifacts
+        run: |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          check_log=artifacts/make-check-logs/make-check.log
+          coverage_out=artifacts/coverage-report/coverage.out
+          coverage_txt=artifacts/coverage-report/coverage.txt
+
+          if [ -f "$check_log" ] && [ -f "$coverage_out" ] && [ -f "$coverage_txt" ]; then
+            echo "available=1" >>"$GITHUB_OUTPUT"
+          else
+            echo "available=0" >>"$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout
+        if: steps.ci-artifacts.outputs.available != '1'
         uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_SHA }}
 
       - name: Record golangci-lint version
+        if: steps.ci-artifacts.outputs.available != '1'
         run: echo "GOLANGCI_LINT_VERSION=$(make -s print-golangci-lint-version)" >>"$GITHUB_ENV"
 
       - name: Set up Go with cache
+        if: steps.ci-artifacts.outputs.available != '1'
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
 
       - name: Cache golangci-lint workspace
+        if: steps.ci-artifacts.outputs.available != '1'
         uses: actions/cache@v4
         with:
           path: .cache/golangci
@@ -65,6 +106,7 @@ jobs:
             ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Cache golangci-lint binary
+        if: steps.ci-artifacts.outputs.available != '1'
         uses: actions/cache@v4
         with:
           path: ${{ env.GOBIN }}/golangci-lint
@@ -73,9 +115,11 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-golangci-${{ env.GOLANGCI_LINT_VERSION }}-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Set up lint tools
+        if: steps.ci-artifacts.outputs.available != '1'
         uses: ./.github/actions/setup-lint-tools
 
       - name: Cache actionlint binary
+        if: steps.ci-artifacts.outputs.available != '1'
         uses: actions/cache@v4
         with:
           path: ${{ env.GOBIN }}/actionlint
@@ -84,6 +128,7 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-actionlint-${{ env.ACTIONLINT_VERSION }}-
 
       - name: Run lint
+        if: steps.ci-artifacts.outputs.available != '1'
         run: |
           set -o pipefail
           mkdir -p artifacts
@@ -92,13 +137,14 @@ jobs:
           GOBIN: ${{ env.GOBIN }}
 
       - name: Upload lint logs
-        if: always()
+        if: always() && steps.ci-artifacts.outputs.available != '1'
         uses: actions/upload-artifact@v5
         with:
           name: lint-logs
           path: artifacts/make-lint.log
 
       - name: Run actionlint for release workflow
+        if: steps.ci-artifacts.outputs.available != '1'
         run: |
           set -o pipefail
           mkdir -p artifacts
@@ -107,84 +153,38 @@ jobs:
           GOBIN: ${{ env.GOBIN }}
 
       - name: Upload actionlint logs
-        if: always()
+        if: always() && steps.ci-artifacts.outputs.available != '1'
         uses: actions/upload-artifact@v5
         with:
           name: actionlint-logs-release
           path: artifacts/release-actionlint.log
 
       - name: Check Makefile formatting
+        if: steps.ci-artifacts.outputs.available != '1'
         run: make lint-makefile
 
       - name: Run tests
+        if: steps.ci-artifacts.outputs.available != '1'
         run: make test
 
-      - name: Locate CI workflow run for this commit
-        id: locate-ci-run
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -o errexit
-          set -o nounset
-          set -o pipefail
-
-          run_id=$(gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
-            --field per_page=50 \
-            --field event=push \
-            --jq "(.workflow_runs[] | select(.head_sha==\"${GITHUB_SHA}\") | .id)" \
-            | head -n 1)
-
-          if [ -z "$run_id" ]; then
-            echo "No CI workflow run found for commit ${GITHUB_SHA}; skipping integration coverage reuse"
-            exit 0
-          fi
-
-          echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
-
-      - name: Download integration coverage (if available)
-        id: download-integration-coverage
-        if: steps.locate-ci-run.outputs.run-id != ''
-        continue-on-error: true
-        uses: actions/download-artifact@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          repository: ${{ github.repository }}
-          run-id: ${{ steps.locate-ci-run.outputs.run-id }}
-          name: integration-coverage
-          path: artifacts
-
-      - name: Check integration coverage availability
-        id: integration-coverage-availability
-        run: |
-          set -o errexit
-          set -o nounset
-          set -o pipefail
-
-          if [ "${{ steps.download-integration-coverage.outcome || '' }}" = "success" ] && [ -f artifacts/integration-coverage.out ]; then
-            echo "available=1" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=0" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Run coverage
+        if: steps.ci-artifacts.outputs.available != '1'
         env:
           MIN_COVERAGE: "96"
           COVERAGE_PROFILE: coverage.out
           COVERAGE_SUMMARY: coverage.txt
-          REUSE_INTEGRATION_COVERAGE: ${{ steps.integration-coverage-availability.outputs.available || '0' }}
+          REUSE_INTEGRATION_COVERAGE: "0"
           INTEGRATION_COVERAGE_PROFILE: artifacts/integration-coverage.out
         run: |
           set -o errexit
           set -o nounset
           set -o pipefail
 
-          integration_available="${REUSE_INTEGRATION_COVERAGE:-0}"
-
           coverage_env=(
             "MIN_COVERAGE=$MIN_COVERAGE"
             "COVERAGE_PROFILE=$COVERAGE_PROFILE"
             "COVERAGE_SUMMARY=$COVERAGE_SUMMARY"
-            "REUSE_INTEGRATION_COVERAGE=$integration_available"
+            "REUSE_INTEGRATION_COVERAGE=$REUSE_INTEGRATION_COVERAGE"
             "INTEGRATION_COVERAGE_PROFILE=$INTEGRATION_COVERAGE_PROFILE"
           )
 
@@ -423,7 +423,11 @@ jobs:
     name: Release multi-arch images (tagged)
     runs-on: ubuntu-latest
     needs: verify-tag
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: |
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
     permissions:
       contents: read
       actions: write # artifacts (upload)
@@ -434,6 +438,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_SHA }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -452,13 +458,15 @@ jobs:
       - name: Extract version
         id: vars
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${TAG_NAME#v}"
+          MAJOR="${VERSION%%.*}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "major=${MAJOR:-${VERSION}}" >> "$GITHUB_OUTPUT"
 
       - name: Prepare build metadata
         id: build_meta
         run: |
-          commit_date=$(git show -s --format=%cI "${GITHUB_SHA}" || true)
+          commit_date=$(git show -s --format=%cI "${RELEASE_SHA}" || true)
           echo "build_date=${commit_date:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}" >> "$GITHUB_OUTPUT"
 
       # ------ Metadata (tags + labels) with docker/metadata-action ------
@@ -470,21 +478,21 @@ jobs:
           images: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=tag                               # v1.2.3
-            type=ref,event=tag,suffix=-rootless              # v1.2.3-rootless
-            type=semver,pattern={{version}}                  # 1.2.3
-            type=semver,pattern={{version}},suffix=-rootless # 1.2.3-rootless
-            type=semver,pattern={{major}}                    # 1
-            type=semver,pattern={{major}},suffix=-rootless   # 1-rootless
-            type=semver,pattern=v{{major}}                   # v1
-            type=semver,pattern=v{{major}},suffix=-rootless  # v1-rootless
-            type=raw,value=rootless                          # rootless
+            type=raw,value=${{ env.TAG_NAME }}               # v1.2.3
+            type=raw,value=${{ env.TAG_NAME }}-rootless      # v1.2.3-rootless
+            type=raw,value=${{ steps.vars.outputs.version }}                  # 1.2.3
+            type=raw,value=${{ steps.vars.outputs.version }}-rootless        # 1.2.3-rootless
+            type=raw,value=${{ steps.vars.outputs.major }}                   # 1
+            type=raw,value=${{ steps.vars.outputs.major }}-rootless          # 1-rootless
+            type=raw,value=v${{ steps.vars.outputs.major }}                  # v1
+            type=raw,value=v${{ steps.vars.outputs.major }}-rootless         # v1-rootless
+            type=raw,value=rootless                                          # rootless
           flavor: |
             latest=true                                      # also tag :latest
           labels: |
             org.opencontainers.image.title=${{ github.repository }}
             org.opencontainers.image.source=${{ github.repositoryUrl }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ env.RELEASE_SHA }}
             org.opencontainers.image.version=${{ steps.vars.outputs.version }}
 
       # Rootful variant – tags prefixed with rootful-
@@ -495,18 +503,18 @@ jobs:
           images: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=tag               # v1.2.3-rootful
-            type=semver,pattern={{version}}  # 1.2.3-rootful
-            type=semver,pattern={{major}}    # 1-rootful
-            type=semver,pattern=v{{major}}   # v1-rootful
-            type=raw,value=rootful,suffix=   # rootful
+            type=raw,value=${{ env.TAG_NAME }}-rootful      # v1.2.3-rootful
+            type=raw,value=${{ steps.vars.outputs.version }}-rootful        # 1.2.3-rootful
+            type=raw,value=${{ steps.vars.outputs.major }}-rootful          # 1-rootful
+            type=raw,value=v${{ steps.vars.outputs.major }}-rootful         # v1-rootful
+            type=raw,value=rootful,suffix=                                   # rootful
           flavor: |
             latest=false                     # auto by default; latest is for rootless only
             suffix=-rootful,onlatest=true    # add -rootful to each tag
           labels: |
             org.opencontainers.image.title=${{ github.repository }} (rootful)
             org.opencontainers.image.source=${{ github.repositoryUrl }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ env.RELEASE_SHA }}
             org.opencontainers.image.version=${{ steps.vars.outputs.version }}
 
       # ------ Build & push rootless (multi-arch, with cache, SBOM, provenance) ------
@@ -524,7 +532,7 @@ jobs:
           labels: ${{ steps.meta_rootless.outputs.labels }}
           build-args: |
             VERSION=${{ steps.vars.outputs.version }}
-            GIT_COMMIT=${{ github.sha }}
+            GIT_COMMIT=${{ env.RELEASE_SHA }}
             BUILD_DATE=${{ steps.build_meta.outputs.build_date }}
             IMAGE_SOURCE=${{ github.repositoryUrl }}
           provenance: true
@@ -547,7 +555,7 @@ jobs:
           labels: ${{ steps.meta_rootful.outputs.labels }}
           build-args: |
             VERSION=${{ steps.vars.outputs.version }}
-            GIT_COMMIT=${{ github.sha }}
+            GIT_COMMIT=${{ env.RELEASE_SHA }}
             BUILD_DATE=${{ steps.build_meta.outputs.build_date }}
             IMAGE_SOURCE=${{ github.repositoryUrl }}
           provenance: true
@@ -589,7 +597,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.33.1
         continue-on-error: true
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG_NAME }}
           format: "sarif"
           output: "trivy-results-rootless.sarif"
           vuln-type: "os,library"
@@ -615,25 +623,25 @@ jobs:
       - name: Generate SBOM (SPDX JSON) for rootless
         uses: aquasecurity/trivy-action@0.33.1
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG_NAME }}
           format: "spdx-json"
           output: "sbom-rootless.spdx.json"
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v5
         with:
-          name: sbom-rootless-${{ github.ref_name }}
+          name: sbom-rootless-${{ env.TAG_NAME }}
           path: sbom-rootless.spdx.json
 
       - name: Generate SBOM (SPDX JSON) for rootful
         uses: aquasecurity/trivy-action@0.33.1
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-rootful
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG_NAME }}-rootful
           format: "spdx-json"
           output: "sbom-rootful.spdx.json"
 
       - name: Upload SBOM artifact for rootful
         uses: actions/upload-artifact@v5
         with:
-          name: sbom-rootful-${{ github.ref_name }}
+          name: sbom-rootful-${{ env.TAG_NAME }}
           path: sbom-rootful.spdx.json
