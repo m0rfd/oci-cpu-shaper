@@ -92,8 +92,6 @@ jobs:
       - name: Set up Go with cache
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
-        with:
-          cache-dependency-path: "**/go.sum"
 
       - name: Cache golangci-lint workspace
         uses: actions/cache@v4
