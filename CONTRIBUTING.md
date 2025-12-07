@@ -25,6 +25,13 @@ Run the following helpers from the repository root before every pull request:
 - `make test` to run `go test -race ./...` so race conditions surface early.
 - `make coverage MIN_COVERAGE=96` to regenerate `coverage.out`/`coverage.txt` and
   prove repository-wide statement coverage stays at or above the required 96 %.
+- `make codeql`, `make codeql-actions`, `make codeql-go`, or `make codeql-all`
+  to mirror the PR CodeQL checks (optional; not part of `make check`). These
+  targets install the CLI via `make tools`/`make ensure-codeql`, need GitHub
+  Packages read access to download the default `security-and-quality` packs,
+  emit SARIF files to `artifacts/codeql/`, and rely on the baked-in Go build
+  command so no manual build steps are required. Override the query packs with
+  `CODEQL_ACTIONS_QUERY_PACK` or `CODEQL_GO_QUERY_PACK` when testing variants.
 
 Use `make check` when you want linting and race-enabled tests in one step. Run
 `make integration`, `make e2e`, or `make bench` whenever you touch the packages
