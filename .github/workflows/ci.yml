@@ -79,6 +79,7 @@ jobs:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
       GOBIN: ${{ github.workspace }}/bin
+      CHECK_INCLUDE_CODEQL: "1"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
