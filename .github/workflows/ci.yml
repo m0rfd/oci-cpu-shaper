@@ -90,6 +90,20 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
 
+      - name: Prepare Go cache directories
+        run: mkdir -p .cache/go .cache/gomod
+
+      - name: Restore Go build and module caches
+        id: restore-go-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .cache/go
+            .cache/gomod
+          key: ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-
+
       - name: Cache golangci-lint workspace
         uses: actions/cache@v4
         with:
@@ -111,6 +125,15 @@ jobs:
           set -o pipefail
           mkdir -p artifacts
           make check 2>&1 | tee artifacts/make-check.log
+
+      - name: Save Go build and module caches
+        if: always() && steps.restore-go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cache/go
+            .cache/gomod
+          key: ${{ steps.restore-go-cache.outputs.cache-primary-key }}
 
       - name: Publish coverage summary
         if: success() && hashFiles('coverage.txt') != ''
