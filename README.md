@@ -83,8 +83,8 @@ welcome! Please:
    - `make lint` to run checks only.
    - `make test` to execute the suite with the Go race detector enabled.
    - `make coverage MIN_COVERAGE=96` to confirm the repository-wide coverage threshold documented in §11 of the implementation plan.
-   - `make check` to run linting, tests, coverage enforcement, both CodeQL analyses, and agent verification in one pass.
-   - `make codeql-actions`, `make codeql-go`, or `make codeql-all` to create local CodeQL databases under `.cache/codeql` and emit SARIF results to `artifacts/codeql/` for GitHub Actions and Go code.
+   - `make check` to run linting, tests, coverage enforcement, and agent verification in one pass.
+   - `make codeql`, `make codeql-actions`, `make codeql-go`, or `make codeql-all` to mirror the PR CodeQL checks (optional; not part of `make check`). These targets install the CodeQL CLI via `make tools`/`make ensure-codeql`, rely on GitHub Packages read access to download the default `security-and-quality` packs, and emit SARIF artifacts to `artifacts/codeql/`. Go analysis uses the baked-in build command (no extra manual steps) and you can override the query suites with `CODEQL_ACTIONS_QUERY_PACK`/`CODEQL_GO_QUERY_PACK` when experimenting locally.
    - `make integration` to verify Docker connectivity, ensure the cgroup v2 CPU controller is present, build the distroless rootful and rootless images, and run the CPU weight responsiveness tests with logs mirrored to `artifacts/integration.log`.
    - `make build` to ensure binaries compile successfully.
 4. Include tests and documentation updates when adding new functionality.
