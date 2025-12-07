@@ -408,21 +408,81 @@ codeql-actions: ensure-codeql
 	@git -C "$(ROOT_DIR)" rev-parse --is-inside-work-tree >/dev/null
 	@mkdir -p "$(CODEQL_CACHE_DIR)" "$(CODEQL_ARTIFACT_DIR)"; \
 	DB_DIR="$(CODEQL_CACHE_DIR)/actions"; \
+	SARIF_FILE="$(CODEQL_ARTIFACT_DIR)/actions.sarif"; \
 	rm -rf "$$DB_DIR"; \
-        echo "Creating CodeQL database for GitHub Actions..."; \
-        "$(CODEQL_BIN)" database create "$$DB_DIR" --language=actions --source-root "$(ROOT_DIR)"; \
-        echo "Analyzing GitHub Actions CodeQL database..."; \
-        "$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --output "$(CODEQL_ARTIFACT_DIR)/actions.sarif"
+	echo "Creating CodeQL database for GitHub Actions..."; \
+	"$(CODEQL_BIN)" database create "$$DB_DIR" --language=actions --source-root "$(ROOT_DIR)"; \
+	echo "Analyzing GitHub Actions CodeQL database..."; \
+	"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --output "$$SARIF_FILE"; \
+	SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="GitHub Actions" python - <<'PY'
+	import json
+	import os
+	import pathlib
+	import sys
+
+	sarif_path = pathlib.Path(os.environ["SARIF_FILE"])
+	scope = os.environ["CODEQL_SCOPE"]
+
+	if not sarif_path.exists():
+	    print(f"SARIF report not found: {sarif_path}")
+	    sys.exit(1)
+
+	with sarif_path.open("r", encoding="utf-8") as sarif_fp:
+	    sarif = json.load(sarif_fp)
+
+	issues = [
+	    result
+	for run in sarif.get("runs", [])
+	for result in run.get("results", [])
+	    if not result.get("suppressions")
+	]
+
+	if issues:
+	    print(f"CodeQL found {len(issues)} issue(s) in {scope}.")
+	    sys.exit(1)
+
+	print(f"No CodeQL issues found in {scope}.")
+	PY
 
 codeql-go: ensure-codeql
 	@git -C "$(ROOT_DIR)" rev-parse --is-inside-work-tree >/dev/null
 	@mkdir -p "$(CODEQL_CACHE_DIR)" "$(CODEQL_ARTIFACT_DIR)" "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
 	DB_DIR="$(CODEQL_CACHE_DIR)/go"; \
+	SARIF_FILE="$(CODEQL_ARTIFACT_DIR)/go.sarif"; \
 	rm -rf "$$DB_DIR"; \
 	echo "Creating CodeQL database for Go..."; \
 	CODEQL_EXTRACTOR_GO_BUILD_TRACING=off "$(CODEQL_BIN)" database create "$$DB_DIR" --language=go --source-root "$(ROOT_DIR)" --command "env GOCACHE=$(GOCACHE_DIR) GOMODCACHE=$(GOMODCACHE_DIR) GOFLAGS=-mod=readonly $(GO) build ./..."; \
 	echo "Analyzing Go CodeQL database..."; \
-	"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --output "$(CODEQL_ARTIFACT_DIR)/go.sarif"
+	"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --output "$$SARIF_FILE"; \
+	SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="Go" python - <<'PY'
+	import json
+	import os
+	import pathlib
+	import sys
+
+	sarif_path = pathlib.Path(os.environ["SARIF_FILE"])
+	scope = os.environ["CODEQL_SCOPE"]
+
+	if not sarif_path.exists():
+	    print(f"SARIF report not found: {sarif_path}")
+	    sys.exit(1)
+
+	with sarif_path.open("r", encoding="utf-8") as sarif_fp:
+	    sarif = json.load(sarif_fp)
+
+	issues = [
+	    result
+	for run in sarif.get("runs", [])
+	for result in run.get("results", [])
+	    if not result.get("suppressions")
+	]
+
+	if issues:
+	    print(f"CodeQL found {len(issues)} issue(s) in {scope}.")
+	    sys.exit(1)
+
+	print(f"No CodeQL issues found in {scope}.")
+	PY
 
 codeql-all: codeql-actions codeql-go
 
