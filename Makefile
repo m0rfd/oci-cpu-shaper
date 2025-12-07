@@ -20,7 +20,8 @@ PYTHON ?= python3
 
 MODULE := $(shell $(GO) list -m 2>/dev/null)
 PKGS := $(shell $(GO) list ./... 2>/dev/null)
-COVERAGE_EXCLUDES ?= $(if $(MODULE),$(MODULE)/cmd/agentscheck% $(MODULE)/hack/%,)
+COVERAGE_EXCLUDES_BASE := $(if $(MODULE),$(MODULE)/cmd/agentscheck% $(MODULE)/hack/%,)
+COVERAGE_EXCLUDES ?= $(COVERAGE_EXCLUDES_BASE)
 PROD_PATTERNS := ./cmd/... ./internal/... ./pkg/...
 PROD_PKGS := $(shell $(GO) list $(PROD_PATTERNS) 2>/dev/null)
 COVERAGE_PKGS := $(filter-out $(COVERAGE_EXCLUDES),$(PROD_PKGS))
@@ -83,6 +84,13 @@ GOLANGCI_LINT_CACHE_DIR ?= $(ROOT_DIR)/.cache/golangci
 CODEQL_CACHE_DIR ?= $(ROOT_DIR)/.cache/codeql
 CODEQL_ARTIFACT_DIR ?= $(ROOT_DIR)/artifacts/codeql
 CODEQL_INSTALL_DIR ?= $(ROOT_DIR)/.cache/tools/codeql
+CODEQL_SARIF_CHECK ?= $(ROOT_DIR)/hack/check_codeql_sarif.py
+CODEQL_ACTIONS_QUERY_PACK ?= codeql/actions-queries:codeql-suites/actions-security-and-quality.qls
+CODEQL_GO_QUERY_PACK ?= codeql/go-queries:codeql-suites/go-security-and-quality.qls
+CODEQL_ACTIONS_IGNORE_RULES ?= actions/unpinned-tag
+CODEQL_ACTIONS_IGNORE_PATHS ?=
+CODEQL_GO_IGNORE_RULES ?=
+CODEQL_GO_IGNORE_PATHS ?= hack/
 
 GOLANGCI_LINT_BIN ?= $(GO_BIN_PATH)/golangci-lint
 GOLANGCI_LINT ?= $(GOLANGCI_LINT_BIN)
@@ -329,51 +337,53 @@ coverage: go-mod-download
 		if [ -n "$$excluded" ]; then \
 			echo "Excluding packages from coverage: $$excluded"; \
 		fi; \
-	coverage_pkgs="$(strip $(COVERAGE_PKGS))"; \
-	coverage_csv=$$(printf '%s' "$$coverage_pkgs" | tr ' \n' ',' | sed 's/,,*/,/g; s/^,//; s/,$$//'); \
-	mkdir -p "$(dir $(COVERAGE_PROFILE))" "$(dir $(COVERAGE_SUMMARY))" "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
-	rm -f $(COVERAGE_PROFILE) $(COVERAGE_SUMMARY); \
-	unit_profile="coverage-unit.out"; \
-	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$unit_profile" $(COVERAGE_PKGS); \
-	cat "$$unit_profile" > $(COVERAGE_PROFILE); \
-	rm -f "$$unit_profile"; \
-	if [ -n "$(strip $(INTEGRATION_PKGS))" ]; then \
-		integration_profile="$(strip $(INTEGRATION_COVERAGE_PROFILE))"; \
-		if [ -z "$$integration_profile" ]; then \
-			integration_profile="coverage-integration.out"; \
-		fi; \
-	reuse_integration="$(strip $(REUSE_INTEGRATION_COVERAGE))"; \
-	if [ "$$reuse_integration" = "1" ]; then \
-		if [ ! -f "$$integration_profile" ]; then \
-			echo "Integration coverage profile '$$integration_profile' not found."; \
-			exit 1; \
-		fi; \
-	else \
-	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=integration $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$integration_profile" $(INTEGRATION_PKGS); \
-	fi; \
-	tail -n +2 "$$integration_profile" >> $(COVERAGE_PROFILE); \
-	if [ "$$reuse_integration" != "1" ]; then \
-		rm -f "$$integration_profile"; \
-	fi; \
-	fi; \
-	e2e_pkgs="$(strip $(E2E_PKGS))"; \
-	if [ -n "$$e2e_pkgs" ]; then \
-		if [ "$(strip $(RUN_E2E_TESTS))" = "1" ]; then \
-			e2e_profile="coverage-e2e.out"; \
-			if GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $$e2e_pkgs; then \
-				tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
-			else \
-				echo "Skipping e2e coverage due to test failures"; \
+		coverage_pkgs="$(strip $(COVERAGE_PKGS))"; \
+		coverage_csv=$$(printf '%s' "$$coverage_pkgs" | tr $$' \n' ',' | sed 's/,,*/,/g; s/^,//; s/,$$//'); \
+		mkdir -p "$(dir $(COVERAGE_PROFILE))" "$(dir $(COVERAGE_SUMMARY))" "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
+		rm -f $(COVERAGE_PROFILE) $(COVERAGE_SUMMARY); \
+		unit_profile="coverage-unit.out"; \
+		GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$unit_profile" $(COVERAGE_PKGS); \
+		cat "$$unit_profile" > $(COVERAGE_PROFILE); \
+		rm -f "$$unit_profile"; \
+		if [ -n "$(strip $(INTEGRATION_PKGS))" ]; then \
+			integration_profile="$(strip $(INTEGRATION_COVERAGE_PROFILE))"; \
+			if [ -z "$$integration_profile" ]; then \
+				integration_profile="coverage-integration.out"; \
 			fi; \
-	rm -f "$$e2e_profile"; \
-	else \
-	echo "Skipping e2e coverage; set RUN_E2E_TESTS=1 to enable."; \
-	fi; \
-	fi; \
-	$(GO) tool cover -func=$(COVERAGE_PROFILE) | tee $(COVERAGE_SUMMARY); \
-	"$(ROOT_DIR)/hack/coverage_summary_check.sh" "$(COVERAGE_SUMMARY)" "$(MIN_COVERAGE)"; \
+			reuse_integration="$(strip $(REUSE_INTEGRATION_COVERAGE))"; \
+			if [ "$$reuse_integration" = "1" ]; then \
+				if [ ! -f "$$integration_profile" ]; then \
+					echo "Integration coverage profile '$$integration_profile' not found."; \
+					exit 1; \
+				fi; \
+			else \
+				GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=integration $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$integration_profile" $(INTEGRATION_PKGS); \
+			fi; \
+			tail -n +2 "$$integration_profile" >> $(COVERAGE_PROFILE); \
+			if [ "$$reuse_integration" != "1" ]; then \
+				rm -f "$$integration_profile"; \
+			fi; \
+		fi; \
+		e2e_pkgs="$(strip $(E2E_PKGS))"; \
+		if [ -n "$$e2e_pkgs" ]; then \
+			if [ "$(strip $(RUN_E2E_TESTS))" = "1" ]; then \
+				e2e_profile="coverage-e2e.out"; \
+				if GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $$e2e_pkgs; then \
+					tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
+				else \
+					echo "Skipping e2e coverage due to test failures"; \
+				fi; \
+				rm -f "$$e2e_profile"; \
+			else \
+				echo "Skipping e2e coverage; set RUN_E2E_TESTS=1 to enable."; \
+			fi; \
+		fi; \
+		tmp_profile="coverage-no-tests.out"; \
+		{ IFS= read -r mode_line || true; echo "$$mode_line"; tail -n +2 "$(COVERAGE_PROFILE)" | grep -vE '_test\\.go:'; } < "$(COVERAGE_PROFILE)" > "$$tmp_profile"; \
+		mv "$$tmp_profile" "$(COVERAGE_PROFILE)"; \
+		$(GO) tool cover -func=$(COVERAGE_PROFILE) | tee $(COVERAGE_SUMMARY); \
+		"$(ROOT_DIR)/hack/coverage_summary_check.sh" "$(COVERAGE_SUMMARY)" "$(MIN_COVERAGE)"; \
 	fi
-
 agents: verify-go-version
 	@mkdir -p "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
 	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) run ./cmd/agentscheck
@@ -407,23 +417,26 @@ govulncheck: verify-go-version
 codeql-actions: ensure-codeql
 	@git -C "$(ROOT_DIR)" rev-parse --is-inside-work-tree >/dev/null
 	@mkdir -p "$(CODEQL_CACHE_DIR)" "$(CODEQL_ARTIFACT_DIR)"; \
-	DB_DIR="$(CODEQL_CACHE_DIR)/actions"; \
-	rm -rf "$$DB_DIR"; \
-        echo "Creating CodeQL database for GitHub Actions..."; \
-        "$(CODEQL_BIN)" database create "$$DB_DIR" --language=actions --source-root "$(ROOT_DIR)"; \
-        echo "Analyzing GitHub Actions CodeQL database..."; \
-        "$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --output "$(CODEQL_ARTIFACT_DIR)/actions.sarif"
+		DB_DIR="$(CODEQL_CACHE_DIR)/actions"; \
+		SARIF_FILE="$(CODEQL_ARTIFACT_DIR)/actions.sarif"; \
+		rm -rf "$$DB_DIR"; \
+		echo "Creating CodeQL database for GitHub Actions..."; \
+		"$(CODEQL_BIN)" database create "$$DB_DIR" --language=actions --source-root "$(ROOT_DIR)"; \
+		echo "Analyzing GitHub Actions CodeQL database..."; \
+		"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --output "$$SARIF_FILE" $(strip $(CODEQL_ACTIONS_QUERY_PACK)); \
+		SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="GitHub Actions" CODEQL_REPO_ROOT="$(ROOT_DIR)" CODEQL_IGNORE_RULES="$(strip $(CODEQL_ACTIONS_IGNORE_RULES))" CODEQL_IGNORE_PATHS="$(strip $(CODEQL_ACTIONS_IGNORE_PATHS))" $(PYTHON) "$(CODEQL_SARIF_CHECK)"
 
 codeql-go: ensure-codeql
 	@git -C "$(ROOT_DIR)" rev-parse --is-inside-work-tree >/dev/null
 	@mkdir -p "$(CODEQL_CACHE_DIR)" "$(CODEQL_ARTIFACT_DIR)" "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
-	DB_DIR="$(CODEQL_CACHE_DIR)/go"; \
-	rm -rf "$$DB_DIR"; \
-	echo "Creating CodeQL database for Go..."; \
-	CODEQL_EXTRACTOR_GO_BUILD_TRACING=off "$(CODEQL_BIN)" database create "$$DB_DIR" --language=go --source-root "$(ROOT_DIR)" --command "env GOCACHE=$(GOCACHE_DIR) GOMODCACHE=$(GOMODCACHE_DIR) GOFLAGS=-mod=readonly $(GO) build ./..."; \
-	echo "Analyzing Go CodeQL database..."; \
-	"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --output "$(CODEQL_ARTIFACT_DIR)/go.sarif"
-
+		DB_DIR="$(CODEQL_CACHE_DIR)/go"; \
+		SARIF_FILE="$(CODEQL_ARTIFACT_DIR)/go.sarif"; \
+		rm -rf "$$DB_DIR"; \
+		echo "Creating CodeQL database for Go..."; \
+		CODEQL_EXTRACTOR_GO_BUILD_TRACING=off "$(CODEQL_BIN)" database create "$$DB_DIR" --language=go --source-root "$(ROOT_DIR)" --command "env GOCACHE=$(GOCACHE_DIR) GOMODCACHE=$(GOMODCACHE_DIR) GOFLAGS=-mod=readonly $(GO) build ./..."; \
+		echo "Analyzing Go CodeQL database..."; \
+		"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --output "$$SARIF_FILE" $(strip $(CODEQL_GO_QUERY_PACK)); \
+		SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="Go" CODEQL_REPO_ROOT="$(ROOT_DIR)" CODEQL_GOMODCACHE="$(GOMODCACHE_DIR)" CODEQL_IGNORE_RULES="$(strip $(CODEQL_GO_IGNORE_RULES))" CODEQL_IGNORE_PATHS="$(strip $(CODEQL_GO_IGNORE_PATHS))" $(PYTHON) "$(CODEQL_SARIF_CHECK)"
 codeql-all: codeql-actions codeql-go
 
 check: go-mod-download verify-git-hooks tidy lint lint-makefile lint-dockerfile lint-workflows test coverage codeql-all agents
