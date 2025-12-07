@@ -138,6 +138,7 @@ ensure-codeql:
 		platform=""; \
 		case "$(GO_DL_ARCH)" in \
 			amd64) platform="linux64" ;; \
+			arm64) platform="linux64" ;; \
 			*) echo "Unsupported CodeQL architecture: $(GO_DL_ARCH)"; exit 1 ;; \
 		esac; \
 		requested_version="$(strip $(CODEQL_VERSION))"; \
@@ -181,26 +182,26 @@ ensure-codeql:
 				if curl -fsSL "$$checksum_url" -o "$$checksum_path"; then \
 					break; \
 				fi; \
-		if [ $$i -lt $$attempts ]; then \
-			sleep $$i; \
-		else \
-			echo "Failed to download CodeQL checksum after $$attempts attempts"; \
-			exit 1; \
-		fi; \
-		done; \
+				if [ $$i -lt $$attempts ]; then \
+					sleep $$i; \
+				else \
+					echo "Failed to download CodeQL checksum after $$attempts attempts"; \
+					exit 1; \
+				fi; \
+			done; \
 		fi; \
 		if [ ! -f "$$tarball_path" ]; then \
 			for i in $$(seq 1 $$attempts); do \
 				if curl -fsSL "$$url" -o "$$tarball_path"; then \
 					break; \
 				fi; \
-		if [ $$i -lt $$attempts ]; then \
-			sleep $$i; \
-		else \
-			echo "Failed to download CodeQL bundle after $$attempts attempts"; \
-			exit 1; \
-		fi; \
-		done; \
+				if [ $$i -lt $$attempts ]; then \
+					sleep $$i; \
+				else \
+					echo "Failed to download CodeQL bundle after $$attempts attempts"; \
+					exit 1; \
+				fi; \
+			done; \
 		fi; \
 		(cd "$$download_dir" && sha256sum -c "$$checksum_path"); \
 		extract_dir="$(CODEQL_CACHE_DIR)/releases/$$resolved_version"; \
@@ -437,7 +438,7 @@ codeql-actions: ensure-codeql
 	echo "Creating CodeQL database for actions..."; \
 	"$(CODEQL_BIN)" database create "$$db_dir" --language=actions --source-root="$(ROOT_DIR)" --build-mode=none --overwrite --log-to-stderr --threads=0; \
 	echo "Analyzing CodeQL database for actions..."; \
-	"$(CODEQL_BIN)" database analyze "$$db_dir" --format=sarifv2 --output="$$sarif_dir/actions.sarif" --log-to-stderr --threads=0
+"$(CODEQL_BIN)" database analyze "$$db_dir" --format=sarif-latest --output="$$sarif_dir/actions.sarif" --log-to-stderr --threads=0
 
 codeql-go: verify-go-version go-mod-download ensure-codeql
 	@db_dir="$(CODEQL_CACHE_DIR)/databases/go"; \
@@ -447,11 +448,11 @@ codeql-go: verify-go-version go-mod-download ensure-codeql
 	echo "Creating CodeQL database for Go..."; \
 	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" "$(CODEQL_BIN)" database create "$$db_dir" --language=go --source-root="$(ROOT_DIR)" --build-mode=autobuild --overwrite --log-to-stderr --threads=0; \
 	echo "Analyzing CodeQL database for Go..."; \
-	"$(CODEQL_BIN)" database analyze "$$db_dir" --format=sarifv2 --output="$$sarif_dir/go.sarif" --log-to-stderr --threads=0
+"$(CODEQL_BIN)" database analyze "$$db_dir" --format=sarif-latest --output="$$sarif_dir/go.sarif" --log-to-stderr --threads=0
 
 codeql: codeql-actions codeql-go
 
-check: go-mod-download verify-git-hooks tidy lint lint-makefile lint-workflows test coverage agents
+check: go-mod-download verify-git-hooks tidy lint lint-makefile lint-workflows test coverage agents codeql
 
 actionlint: ensure-actionlint
 	@if [ ! -d ".github/workflows" ]; then \
