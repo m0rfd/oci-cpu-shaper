@@ -43,6 +43,8 @@ GOLANGCI_LINT_SHA256_linux_arm64 := 1c22b899f2dd84f9638e0e0352a319a2867b0bb082c5
 GOVULNCHECK_VERSION ?= v1.1.4
 ACTIONLINT_VERSION ?= v1.7.9
 MBAKE_VERSION ?= 1.4.3
+CODEQL_VERSION ?= latest
+CODEQL_DOWNLOAD_URL ?= https://github.com/github/codeql-action/releases/download
 TIDY_VERIFY ?= 1
 
 GO_BIN_PATH := $(strip $(GOBIN))
@@ -76,9 +78,12 @@ ACTIONLINT_PATHS ?=
 MBAKE_BIN ?= $(HOME)/.local/bin/mbake
 MBAKE ?= $(MBAKE_BIN)
 MBAKE_FORMAT_PATHS ?= Makefile
+CODEQL_BIN ?= $(GO_BIN_PATH)/codeql
+CODEQL_CACHE_DIR ?= $(ROOT_DIR)/.cache/codeql
+CODEQL_ARTIFACTS_DIR ?= $(ROOT_DIR)/artifacts/codeql
 
-.PHONY: actionlint agents bench build check clean coverage e2e echo ensure-actionlint ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools verify-git-hooks verify-go-version
-HELP_TARGETS := lint lint-makefile lint-workflows test coverage build check govulncheck integration e2e agents actionlint help clean verify-git-hooks
+.PHONY: actionlint agents bench build check clean codeql codeql-actions codeql-go coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools verify-git-hooks verify-go-version
+HELP_TARGETS := lint lint-makefile lint-workflows test coverage build check govulncheck integration e2e agents actionlint codeql codeql-actions codeql-go help clean verify-git-hooks
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-mbake
 
@@ -86,44 +91,125 @@ print-golangci-lint-version:
 	@printf "%s\n" "$(GOLANGCI_LINT_VERSION)"
 
 ensure-golangci-lint:
-	@mkdir -p "$(GO_BIN_PATH)"; \
-	BIN="$(GOLANGCI_LINT_BIN)"; \
-	CURRENT_VERSION=""; \
-	if [ -x "$$BIN" ]; then \
-		CURRENT_VERSION="v$$($$BIN version --short 2>/dev/null || true)"; \
-	fi; \
-	if [ "$$CURRENT_VERSION" = "$(GOLANGCI_LINT_VERSION)" ]; then \
-		echo "golangci-lint $$CURRENT_VERSION already installed at $$BIN"; \
-		exit 0; \
-	fi; \
-	if [ "$(GOLANGCI_LINT_OS)" != "linux" ]; then \
-		echo "Unsupported golangci-lint OS: $(GOLANGCI_LINT_OS)"; \
-		exit 1; \
-	fi; \
-	case "$(GOLANGCI_LINT_ARCH)" in \
-		amd64) CHECKSUM="$(GOLANGCI_LINT_SHA256_linux_amd64)" ;; \
-		arm64) CHECKSUM="$(GOLANGCI_LINT_SHA256_linux_arm64)" ;; \
-		*) echo "Unsupported golangci-lint arch: $(GOLANGCI_LINT_ARCH)"; exit 1 ;; \
-	esac; \
-	TMP_DIR="$$(mktemp -d)"; \
-	trap "rm -rf \"$$TMP_DIR\"" EXIT; \
-	echo "Downloading golangci-lint $(GOLANGCI_LINT_VERSION) from $(GOLANGCI_LINT_DOWNLOAD_URL)"; \
-	attempts=3; \
-	for i in $$(seq 1 $$attempts); do \
-		if curl -fsSL "$(GOLANGCI_LINT_DOWNLOAD_URL)" -o "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)"; then \
-			break; \
+		@mkdir -p "$(GO_BIN_PATH)"; \
+		BIN="$(GOLANGCI_LINT_BIN)"; \
+		CURRENT_VERSION=""; \
+		if [ -x "$$BIN" ]; then \
+			CURRENT_VERSION="v$$($$BIN version --short 2>/dev/null || true)"; \
 		fi; \
+		if [ "$$CURRENT_VERSION" = "$(GOLANGCI_LINT_VERSION)" ]; then \
+			echo "golangci-lint $$CURRENT_VERSION already installed at $$BIN"; \
+			exit 0; \
+		fi; \
+		if [ "$(GOLANGCI_LINT_OS)" != "linux" ]; then \
+			echo "Unsupported golangci-lint OS: $(GOLANGCI_LINT_OS)"; \
+			exit 1; \
+		fi; \
+		case "$(GOLANGCI_LINT_ARCH)" in \
+			amd64) CHECKSUM="$(GOLANGCI_LINT_SHA256_linux_amd64)" ;; \
+			arm64) CHECKSUM="$(GOLANGCI_LINT_SHA256_linux_arm64)" ;; \
+			*) echo "Unsupported golangci-lint arch: $(GOLANGCI_LINT_ARCH)"; exit 1 ;; \
+		esac; \
+		TMP_DIR="$$(mktemp -d)"; \
+		trap "rm -rf \"$$TMP_DIR\"" EXIT; \
+		echo "Downloading golangci-lint $(GOLANGCI_LINT_VERSION) from $(GOLANGCI_LINT_DOWNLOAD_URL)"; \
+		attempts=3; \
+		for i in $$(seq 1 $$attempts); do \
+			if curl -fsSL "$(GOLANGCI_LINT_DOWNLOAD_URL)" -o "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)"; then \
+				break; \
+			fi; \
 		if [ $$i -lt $$attempts ]; then \
 			sleep $$i; \
 		else \
 			echo "Failed to download golangci-lint after $$attempts attempts"; \
 			exit 1; \
 		fi; \
-	done; \
-	printf "%s  %s\n" "$$CHECKSUM" "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)" | sha256sum -c -; \
-	tar -xzf "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)" -C "$$TMP_DIR"; \
-	install -m 0755 "$$TMP_DIR/golangci-lint-$(GOLANGCI_LINT_VERSION_STRIPPED)-$(GOLANGCI_LINT_OS)-$(GOLANGCI_LINT_ARCH)/golangci-lint" "$(GOLANGCI_LINT_BIN)"; \
-	echo "Installed golangci-lint $(GOLANGCI_LINT_VERSION) to $(GOLANGCI_LINT_BIN)"
+		done; \
+		printf "%s  %s\n" "$$CHECKSUM" "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)" | sha256sum -c -; \
+		tar -xzf "$$TMP_DIR/$(GOLANGCI_LINT_TARBALL)" -C "$$TMP_DIR"; \
+		install -m 0755 "$$TMP_DIR/golangci-lint-$(GOLANGCI_LINT_VERSION_STRIPPED)-$(GOLANGCI_LINT_OS)-$(GOLANGCI_LINT_ARCH)/golangci-lint" "$(GOLANGCI_LINT_BIN)"; \
+		echo "Installed golangci-lint $(GOLANGCI_LINT_VERSION) to $(GOLANGCI_LINT_BIN)"
+
+ensure-codeql:
+		@mkdir -p "$(CODEQL_CACHE_DIR)" "$(GO_BIN_PATH)"; \
+		platform=""; \
+		case "$(GO_DL_ARCH)" in \
+			amd64) platform="linux64" ;; \
+			arm64) platform="linux64" ;; \
+			*) echo "Unsupported CodeQL architecture: $(GO_DL_ARCH)"; exit 1 ;; \
+		esac; \
+		requested_version="$(strip $(CODEQL_VERSION))"; \
+		release_tag=""; \
+		resolved_version=""; \
+		if [ -z "$$requested_version" ] || [ "$$requested_version" = "latest" ]; then \
+			release_tag="$$(curl -fsSL https://api.github.com/repos/github/codeql-action/releases/latest | $(PYTHON) -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"; \
+			resolved_version="$${release_tag#codeql-bundle-v}"; \
+		else \
+			resolved_version="$${requested_version#v}"; \
+			release_tag="codeql-bundle-v$$resolved_version"; \
+		fi; \
+		if [ -z "$$release_tag" ] || [ -z "$$resolved_version" ]; then \
+			echo "Failed to resolve CodeQL version (requested '$(CODEQL_VERSION)')."; \
+			exit 1; \
+		fi; \
+		current_version=""; \
+		if [ -x "$(CODEQL_BIN)" ]; then \
+			current_version="$$($(CODEQL_BIN) version --format=terse 2>/dev/null | head -n1)"; \
+		fi; \
+		if [ "$$current_version" = "$$resolved_version" ]; then \
+			echo "CodeQL $$current_version already installed at $(CODEQL_BIN)"; \
+			exit 0; \
+		fi; \
+		download_base="$(strip $(CODEQL_DOWNLOAD_URL))"; \
+		if [ -z "$$download_base" ]; then \
+			echo "CODEQL_DOWNLOAD_URL is not set"; \
+			exit 1; \
+		fi; \
+		download_dir="$(CODEQL_CACHE_DIR)/downloads/$$resolved_version"; \
+		tarball_basename="codeql-bundle-$$platform.tar.gz"; \
+		checksum_basename="$$tarball_basename.checksum.txt"; \
+		tarball_path="$$download_dir/$$tarball_basename"; \
+		checksum_path="$$download_dir/$$checksum_basename"; \
+		url="$$download_base/$$release_tag/$$tarball_basename"; \
+		checksum_url="$$download_base/$$release_tag/$$checksum_basename"; \
+		mkdir -p "$$download_dir"; \
+		attempts=3; \
+		if [ ! -f "$$checksum_path" ]; then \
+			for i in $$(seq 1 $$attempts); do \
+				if curl -fsSL "$$checksum_url" -o "$$checksum_path"; then \
+					break; \
+				fi; \
+				if [ $$i -lt $$attempts ]; then \
+					sleep $$i; \
+				else \
+					echo "Failed to download CodeQL checksum after $$attempts attempts"; \
+					exit 1; \
+				fi; \
+			done; \
+		fi; \
+		if [ ! -f "$$tarball_path" ]; then \
+			for i in $$(seq 1 $$attempts); do \
+				if curl -fsSL "$$url" -o "$$tarball_path"; then \
+					break; \
+				fi; \
+				if [ $$i -lt $$attempts ]; then \
+					sleep $$i; \
+				else \
+					echo "Failed to download CodeQL bundle after $$attempts attempts"; \
+					exit 1; \
+				fi; \
+			done; \
+		fi; \
+		(cd "$$download_dir" && sha256sum -c "$$checksum_path"); \
+		extract_dir="$(CODEQL_CACHE_DIR)/releases/$$resolved_version"; \
+		TMP_DIR="$$(mktemp -d)"; \
+		trap 'rm -rf "$$TMP_DIR"' EXIT; \
+		tar -xzf "$$tarball_path" -C "$$TMP_DIR"; \
+		rm -rf "$$extract_dir"; \
+		mkdir -p "$(CODEQL_CACHE_DIR)/releases"; \
+		mv "$$TMP_DIR/codeql" "$$extract_dir"; \
+		ln -sf "$$extract_dir/codeql" "$(CODEQL_BIN)"; \
+		echo "Installed CodeQL $$resolved_version to $(CODEQL_BIN)"
 
 lint: go-mod-download ensure-golangci-lint
 	@mkdir -p "$(GOLANGCI_LINT_CACHE_DIR)"
@@ -156,6 +242,9 @@ help:
 			coverage) desc="Run coverage with minimum threshold enforcement";; \
 			build) desc="Compile all modules with cache isolation";; \
 			check) desc="Run lint, coverage, tests, and agent checks";; \
+			codeql) desc="Run CodeQL analysis for Actions and Go";; \
+			codeql-actions) desc="Run CodeQL analysis for GitHub Actions workflows";; \
+			codeql-go) desc="Run CodeQL analysis for Go";; \
 			govulncheck) desc="Scan dependencies with govulncheck";; \
 			integration) desc="Execute integration suite (requires Docker + cgroup v2)";; \
 			e2e) desc="Execute end-to-end suite";; \
@@ -297,7 +386,29 @@ govulncheck: verify-go-version
 	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" GOVULNCHECK_CACHE="$(GOVULNCHECK_CACHE_DIR)" \
 	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 
-check: go-mod-download verify-git-hooks tidy lint lint-makefile lint-workflows test coverage agents
+codeql-actions: ensure-codeql
+	@db_dir="$(CODEQL_CACHE_DIR)/databases/actions"; \
+	sarif_dir="$(CODEQL_ARTIFACTS_DIR)"; \
+	mkdir -p "$$sarif_dir" "$(CODEQL_CACHE_DIR)/databases"; \
+	rm -rf "$$db_dir"; \
+	echo "Creating CodeQL database for actions..."; \
+	"$(CODEQL_BIN)" database create "$$db_dir" --language=actions --source-root="$(ROOT_DIR)" --build-mode=none --overwrite --log-to-stderr --threads=0; \
+	echo "Analyzing CodeQL database for actions..."; \
+"$(CODEQL_BIN)" database analyze "$$db_dir" --format=sarif-latest --output="$$sarif_dir/actions.sarif" --log-to-stderr --threads=0
+
+codeql-go: verify-go-version go-mod-download ensure-codeql
+	@db_dir="$(CODEQL_CACHE_DIR)/databases/go"; \
+	sarif_dir="$(CODEQL_ARTIFACTS_DIR)"; \
+	mkdir -p "$$sarif_dir" "$(CODEQL_CACHE_DIR)/databases" "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
+	rm -rf "$$db_dir"; \
+	echo "Creating CodeQL database for Go..."; \
+	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" "$(CODEQL_BIN)" database create "$$db_dir" --language=go --source-root="$(ROOT_DIR)" --build-mode=autobuild --overwrite --log-to-stderr --threads=0; \
+	echo "Analyzing CodeQL database for Go..."; \
+"$(CODEQL_BIN)" database analyze "$$db_dir" --format=sarif-latest --output="$$sarif_dir/go.sarif" --log-to-stderr --threads=0
+
+codeql: codeql-actions codeql-go
+
+check: go-mod-download verify-git-hooks tidy lint lint-makefile lint-workflows test coverage agents codeql
 
 actionlint: ensure-actionlint
 	@if [ ! -d ".github/workflows" ]; then \
@@ -516,7 +627,7 @@ tidy: go-mod-download
 	fi
 
 clean:
-	@rm -rf "$(COVERAGE_PROFILE)" "$(COVERAGE_SUMMARY)" coverage-*.out "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)" "$(GOLANGCI_LINT_CACHE_DIR)" "$(GOVULNCHECK_CACHE_DIR)" artifacts
+	@rm -rf "$(COVERAGE_PROFILE)" "$(COVERAGE_SUMMARY)" coverage-*.out "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)" "$(GOLANGCI_LINT_CACHE_DIR)" "$(GOVULNCHECK_CACHE_DIR)" "$(CODEQL_CACHE_DIR)" "$(CODEQL_ARTIFACTS_DIR)" artifacts
 
 lint-autofix: lint-fix
 
