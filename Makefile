@@ -42,6 +42,7 @@ GOLANGCI_LINT_SHA256_linux_amd64 := c22e188e46aff9b140588abe6828ba271b600ae82b2d
 GOLANGCI_LINT_SHA256_linux_arm64 := 1c22b899f2dd84f9638e0e0352a319a2867b0bb082c5323ad50d8713b65bb793
 GOVULNCHECK_VERSION ?= v1.1.4
 ACTIONLINT_VERSION ?= v1.7.9
+HADOLINT_VERSION ?= v2.12.0
 MBAKE_VERSION ?= 1.4.3
 CODEQL_VERSION ?= v2.23.7
 CODEQL_VERSION_STRIPPED := $(patsubst v%,%,$(CODEQL_VERSION))
@@ -53,6 +54,10 @@ CODEQL_DOWNLOAD_URL_linux_arm64 := https://github.com/github/codeql-action/relea
 CODEQL_SHA256_linux_amd64 := dab3fe81dc4ae16ddaf231d8d5d2abc626c279cce042ecaa952673be89a221c8
 CODEQL_SHA256_linux_arm64 := dab3fe81dc4ae16ddaf231d8d5d2abc626c279cce042ecaa952673be89a221c8
 TIDY_VERIFY ?= 1
+HADOLINT_OS ?= Linux
+HADOLINT_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),x86_64,$(if $(filter aarch64 arm64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
+HADOLINT_DOWNLOAD_URL := https://github.com/hadolint/hadolint/releases/download/$(HADOLINT_VERSION)/hadolint-$(HADOLINT_OS)-$(HADOLINT_ARCH)
+HADOLINT_BASENAME := hadolint-$(HADOLINT_OS)-$(HADOLINT_ARCH)
 
 GO_BIN_PATH := $(strip $(GOBIN))
 ifeq ($(GO_BIN_PATH),)
@@ -89,11 +94,15 @@ MBAKE_BIN ?= $(HOME)/.local/bin/mbake
 MBAKE ?= $(MBAKE_BIN)
 MBAKE_FORMAT_PATHS ?= Makefile
 CODEQL_BIN ?= $(GO_BIN_PATH)/codeql
+HADOLINT_BIN ?= $(GO_BIN_PATH)/hadolint
+HADOLINT ?= $(HADOLINT_BIN)
+HADOLINT_DOCKERFILE ?= $(ROOT_DIR)/Dockerfile
+HADOLINT_ARGS ?= --no-fail
 
-.PHONY: actionlint agents bench build check clean codeql-actions codeql-all codeql-go coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools verify-git-hooks verify-go-version
-HELP_TARGETS := lint lint-makefile lint-workflows test coverage build check govulncheck integration e2e agents actionlint codeql-actions codeql-go codeql-all help clean verify-git-hooks
+.PHONY: actionlint agents bench build check clean codeql-actions codeql-all codeql-go coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-hadolint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-dockerfile lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools verify-git-hooks verify-go-version
+HELP_TARGETS := lint lint-makefile lint-workflows lint-dockerfile test coverage build check govulncheck integration e2e agents actionlint codeql-actions codeql-go codeql-all help clean verify-git-hooks
 
-tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-mbake
+tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-hadolint ensure-mbake
 
 print-golangci-lint-version:
 	@printf "%s\n" "$(GOLANGCI_LINT_VERSION)"
@@ -149,6 +158,14 @@ lint-makefile: ensure-mbake
 	@echo "Running mbake check..."
 	@$(MBAKE) format --check $(MBAKE_FORMAT_PATHS)
 
+lint-dockerfile: ensure-hadolint
+	@if [ ! -f "$(HADOLINT_DOCKERFILE)" ]; then \
+		echo "Dockerfile not found at $(HADOLINT_DOCKERFILE); skipping hadolint."; \
+	else \
+		echo "Running hadolint..."; \
+		$(HADOLINT) $(strip $(HADOLINT_ARGS)) "$(HADOLINT_DOCKERFILE)"; \
+	fi
+
 lint-fix: go-mod-download ensure-golangci-lint mbake
 	@mkdir -p "$(GOLANGCI_LINT_CACHE_DIR)"
 	@echo "Running mbake format..."
@@ -162,6 +179,7 @@ help:
 		case $$target in \
 			lint) desc="Run golangci-lint";; \
 			lint-makefile) desc="Run mbake validate and check";; \
+			lint-dockerfile) desc="Run hadolint against the Dockerfile";; \
 			lint-workflows) desc="Run actionlint against GitHub workflows";; \
 			lint-fix) desc="Run golangci-lint with autofix";; \
 			verify-git-hooks) desc="Verify pre-commit hook matches repository template";; \
@@ -195,6 +213,41 @@ ensure-actionlint: verify-go-version
 		echo "Installing actionlint $(ACTIONLINT_VERSION)"; \
 		GOBIN="$(GO_BIN_PATH)" $(GO) install github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION); \
 	fi
+
+ensure-hadolint:
+	@mkdir -p "$(GO_BIN_PATH)"; \
+	BIN="$(HADOLINT_BIN)"; \
+	CURRENT_VERSION=""; \
+	if [ -x "$$BIN" ]; then \
+		CURRENT_VERSION="v$$($$BIN --version 2>/dev/null | awk '{print $$NF}')"; \
+	fi; \
+	if [ "$$CURRENT_VERSION" = "$(HADOLINT_VERSION)" ]; then \
+		echo "hadolint $$CURRENT_VERSION already installed at $$BIN"; \
+		exit 0; \
+	fi; \
+	if [ "$(HADOLINT_OS)" != "Linux" ]; then \
+		echo "Unsupported hadolint OS: $(HADOLINT_OS)"; \
+		exit 1; \
+	fi; \
+	case "$(HADOLINT_ARCH)" in \
+		x86_64|arm64) ;; \
+		*) echo "Unsupported hadolint arch: $(HADOLINT_ARCH)"; exit 1 ;; \
+	esac; \
+	TMP_DIR="$$(mktemp -d)"; \
+	trap "rm -rf \"$$TMP_DIR\"" EXIT; \
+	BASENAME="$(HADOLINT_BASENAME)"; \
+	ARCHIVE="$$TMP_DIR/$$BASENAME"; \
+	echo "Downloading hadolint $(HADOLINT_VERSION) from $(HADOLINT_DOWNLOAD_URL)"; \
+	if ! curl -fsSL "$(HADOLINT_DOWNLOAD_URL)" -o "$$ARCHIVE"; then \
+	echo "Failed to download hadolint binary"; \
+	exit 1; \
+	fi; \
+	if curl -fsSL "$(HADOLINT_DOWNLOAD_URL).sha256" -o "$$TMP_DIR/hadolint.sha256"; then \
+	sed -i "s|  .*|  $$ARCHIVE|" "$$TMP_DIR/hadolint.sha256"; \
+	sha256sum -c "$$TMP_DIR/hadolint.sha256"; \
+	fi; \
+	install -m 0755 "$$ARCHIVE" "$$BIN"; \
+	echo "Installed hadolint $(HADOLINT_VERSION) to $$BIN"
 
 ensure-codeql:
 	@mkdir -p "$(GO_BIN_PATH)" "$(dir $(CODEQL_INSTALL_DIR))"; \
@@ -373,7 +426,7 @@ codeql-go: ensure-codeql
 
 codeql-all: codeql-actions codeql-go
 
-check: go-mod-download verify-git-hooks tidy lint lint-makefile lint-workflows test coverage codeql-all agents
+check: go-mod-download verify-git-hooks tidy lint lint-makefile lint-dockerfile lint-workflows test coverage codeql-all agents
 
 actionlint: ensure-actionlint
 	@if [ ! -d ".github/workflows" ]; then \
