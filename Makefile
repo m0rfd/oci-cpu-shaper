@@ -20,7 +20,8 @@ PYTHON ?= python3
 
 MODULE := $(shell $(GO) list -m 2>/dev/null)
 PKGS := $(shell $(GO) list ./... 2>/dev/null)
-COVERAGE_EXCLUDES ?= $(if $(MODULE),$(MODULE)/cmd/agentscheck% $(MODULE)/hack/%,)
+COVERAGE_EXCLUDES_BASE := $(if $(MODULE),$(MODULE)/cmd/agentscheck% $(MODULE)/hack/%,)
+COVERAGE_EXCLUDES ?= $(COVERAGE_EXCLUDES_BASE)
 PROD_PATTERNS := ./cmd/... ./internal/... ./pkg/...
 PROD_PKGS := $(shell $(GO) list $(PROD_PATTERNS) 2>/dev/null)
 COVERAGE_PKGS := $(filter-out $(COVERAGE_EXCLUDES),$(PROD_PKGS))
@@ -42,10 +43,15 @@ GOLANGCI_LINT_SHA256_linux_amd64 := c22e188e46aff9b140588abe6828ba271b600ae82b2d
 GOLANGCI_LINT_SHA256_linux_arm64 := 1c22b899f2dd84f9638e0e0352a319a2867b0bb082c5323ad50d8713b65bb793
 GOVULNCHECK_VERSION ?= v1.1.4
 ACTIONLINT_VERSION ?= v1.7.9
+HADOLINT_VERSION ?= v2.12.0
 MBAKE_VERSION ?= 1.4.3
 CODEQL_VERSION ?= latest
 CODEQL_DOWNLOAD_URL ?= https://github.com/github/codeql-action/releases/download
 TIDY_VERIFY ?= 1
+HADOLINT_OS ?= Linux
+HADOLINT_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),x86_64,$(if $(filter aarch64 arm64,$(GO_MACHINE_ARCH)),arm64,$(GO_MACHINE_ARCH)))
+HADOLINT_DOWNLOAD_URL := https://github.com/hadolint/hadolint/releases/download/$(HADOLINT_VERSION)/hadolint-$(HADOLINT_OS)-$(HADOLINT_ARCH)
+HADOLINT_BASENAME := hadolint-$(HADOLINT_OS)-$(HADOLINT_ARCH)
 
 GO_BIN_PATH := $(strip $(GOBIN))
 ifeq ($(GO_BIN_PATH),)
@@ -71,6 +77,13 @@ GOLANGCI_LINT_CACHE_DIR ?= $(ROOT_DIR)/.cache/golangci
 CODEQL_CACHE_DIR ?= $(ROOT_DIR)/.cache/codeql
 CODEQL_ARTIFACT_DIR ?= $(ROOT_DIR)/artifacts/codeql
 CODEQL_INSTALL_DIR ?= $(ROOT_DIR)/.cache/tools/codeql
+CODEQL_SARIF_CHECK ?= $(ROOT_DIR)/hack/check_codeql_sarif.py
+CODEQL_ACTIONS_QUERY_PACK ?= codeql/actions-queries:codeql-suites/actions-security-and-quality.qls
+CODEQL_GO_QUERY_PACK ?= codeql/go-queries:codeql-suites/go-security-and-quality.qls
+CODEQL_ACTIONS_IGNORE_RULES ?= actions/unpinned-tag
+CODEQL_ACTIONS_IGNORE_PATHS ?=
+CODEQL_GO_IGNORE_RULES ?=
+CODEQL_GO_IGNORE_PATHS ?= hack/
 
 GOLANGCI_LINT_BIN ?= $(GO_BIN_PATH)/golangci-lint
 GOLANGCI_LINT ?= $(GOLANGCI_LINT_BIN)
@@ -88,7 +101,7 @@ CODEQL_ARTIFACTS_DIR ?= $(ROOT_DIR)/artifacts/codeql
 .PHONY: actionlint agents bench build check clean codeql codeql-actions codeql-go coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools verify-git-hooks verify-go-version
 HELP_TARGETS := lint lint-makefile lint-workflows test coverage build check govulncheck integration e2e agents actionlint codeql codeql-actions codeql-go help clean verify-git-hooks
 
-tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-mbake
+tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-hadolint ensure-mbake
 
 print-golangci-lint-version:
 	@printf "%s\n" "$(GOLANGCI_LINT_VERSION)"
@@ -225,6 +238,14 @@ lint-makefile: ensure-mbake
 	@echo "Running mbake check..."
 	@$(MBAKE) format --check $(MBAKE_FORMAT_PATHS)
 
+lint-dockerfile: ensure-hadolint
+	@if [ ! -f "$(HADOLINT_DOCKERFILE)" ]; then \
+		echo "Dockerfile not found at $(HADOLINT_DOCKERFILE); skipping hadolint."; \
+	else \
+		echo "Running hadolint..."; \
+		$(HADOLINT) $(strip $(HADOLINT_ARGS)) "$(HADOLINT_DOCKERFILE)"; \
+	fi
+
 lint-fix: go-mod-download ensure-golangci-lint mbake
 	@mkdir -p "$(GOLANGCI_LINT_CACHE_DIR)"
 	@echo "Running mbake format..."
@@ -238,6 +259,7 @@ help:
 		case $$target in \
 			lint) desc="Run golangci-lint";; \
 			lint-makefile) desc="Run mbake validate and check";; \
+			lint-dockerfile) desc="Run hadolint against the Dockerfile";; \
 			lint-workflows) desc="Run actionlint against GitHub workflows";; \
 			lint-fix) desc="Run golangci-lint with autofix";; \
 			verify-git-hooks) desc="Verify pre-commit hook matches repository template";; \
@@ -274,6 +296,41 @@ ensure-actionlint: verify-go-version
 		echo "Installing actionlint $(ACTIONLINT_VERSION)"; \
 		GOBIN="$(GO_BIN_PATH)" $(GO) install github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION); \
 	fi
+
+ensure-hadolint:
+	@mkdir -p "$(GO_BIN_PATH)"; \
+	BIN="$(HADOLINT_BIN)"; \
+	CURRENT_VERSION=""; \
+	if [ -x "$$BIN" ]; then \
+		CURRENT_VERSION="v$$($$BIN --version 2>/dev/null | awk '{print $$NF}')"; \
+	fi; \
+	if [ "$$CURRENT_VERSION" = "$(HADOLINT_VERSION)" ]; then \
+		echo "hadolint $$CURRENT_VERSION already installed at $$BIN"; \
+		exit 0; \
+	fi; \
+	if [ "$(HADOLINT_OS)" != "Linux" ]; then \
+		echo "Unsupported hadolint OS: $(HADOLINT_OS)"; \
+		exit 1; \
+	fi; \
+	case "$(HADOLINT_ARCH)" in \
+		x86_64|arm64) ;; \
+		*) echo "Unsupported hadolint arch: $(HADOLINT_ARCH)"; exit 1 ;; \
+	esac; \
+	TMP_DIR="$$(mktemp -d)"; \
+	trap "rm -rf \"$$TMP_DIR\"" EXIT; \
+	BASENAME="$(HADOLINT_BASENAME)"; \
+	ARCHIVE="$$TMP_DIR/$$BASENAME"; \
+	echo "Downloading hadolint $(HADOLINT_VERSION) from $(HADOLINT_DOWNLOAD_URL)"; \
+	if ! curl -fsSL "$(HADOLINT_DOWNLOAD_URL)" -o "$$ARCHIVE"; then \
+	echo "Failed to download hadolint binary"; \
+	exit 1; \
+	fi; \
+	if curl -fsSL "$(HADOLINT_DOWNLOAD_URL).sha256" -o "$$TMP_DIR/hadolint.sha256"; then \
+	sed -i "s|  .*|  $$ARCHIVE|" "$$TMP_DIR/hadolint.sha256"; \
+	sha256sum -c "$$TMP_DIR/hadolint.sha256"; \
+	fi; \
+	install -m 0755 "$$ARCHIVE" "$$BIN"; \
+	echo "Installed hadolint $(HADOLINT_VERSION) to $$BIN"
 
 ensure-codeql:
 	@mkdir -p "$(GO_BIN_PATH)" "$(dir $(CODEQL_INSTALL_DIR))"; \
@@ -355,51 +412,53 @@ coverage: go-mod-download
 		if [ -n "$$excluded" ]; then \
 			echo "Excluding packages from coverage: $$excluded"; \
 		fi; \
-	coverage_pkgs="$(strip $(COVERAGE_PKGS))"; \
-	coverage_csv=$$(printf '%s' "$$coverage_pkgs" | tr ' \n' ',' | sed 's/,,*/,/g; s/^,//; s/,$$//'); \
-	mkdir -p "$(dir $(COVERAGE_PROFILE))" "$(dir $(COVERAGE_SUMMARY))" "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
-	rm -f $(COVERAGE_PROFILE) $(COVERAGE_SUMMARY); \
-	unit_profile="coverage-unit.out"; \
-	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$unit_profile" $(COVERAGE_PKGS); \
-	cat "$$unit_profile" > $(COVERAGE_PROFILE); \
-	rm -f "$$unit_profile"; \
-	if [ -n "$(strip $(INTEGRATION_PKGS))" ]; then \
-		integration_profile="$(strip $(INTEGRATION_COVERAGE_PROFILE))"; \
-		if [ -z "$$integration_profile" ]; then \
-			integration_profile="coverage-integration.out"; \
-		fi; \
-	reuse_integration="$(strip $(REUSE_INTEGRATION_COVERAGE))"; \
-	if [ "$$reuse_integration" = "1" ]; then \
-		if [ ! -f "$$integration_profile" ]; then \
-			echo "Integration coverage profile '$$integration_profile' not found."; \
-			exit 1; \
-		fi; \
-	else \
-	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=integration $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$integration_profile" $(INTEGRATION_PKGS); \
-	fi; \
-	tail -n +2 "$$integration_profile" >> $(COVERAGE_PROFILE); \
-	if [ "$$reuse_integration" != "1" ]; then \
-		rm -f "$$integration_profile"; \
-	fi; \
-	fi; \
-	e2e_pkgs="$(strip $(E2E_PKGS))"; \
-	if [ -n "$$e2e_pkgs" ]; then \
-		if [ "$(strip $(RUN_E2E_TESTS))" = "1" ]; then \
-			e2e_profile="coverage-e2e.out"; \
-			if GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $$e2e_pkgs; then \
-				tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
-			else \
-				echo "Skipping e2e coverage due to test failures"; \
+		coverage_pkgs="$(strip $(COVERAGE_PKGS))"; \
+		coverage_csv=$$(printf '%s' "$$coverage_pkgs" | tr $$' \n' ',' | sed 's/,,*/,/g; s/^,//; s/,$$//'); \
+		mkdir -p "$(dir $(COVERAGE_PROFILE))" "$(dir $(COVERAGE_SUMMARY))" "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
+		rm -f $(COVERAGE_PROFILE) $(COVERAGE_SUMMARY); \
+		unit_profile="coverage-unit.out"; \
+		GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$unit_profile" $(COVERAGE_PKGS); \
+		cat "$$unit_profile" > $(COVERAGE_PROFILE); \
+		rm -f "$$unit_profile"; \
+		if [ -n "$(strip $(INTEGRATION_PKGS))" ]; then \
+			integration_profile="$(strip $(INTEGRATION_COVERAGE_PROFILE))"; \
+			if [ -z "$$integration_profile" ]; then \
+				integration_profile="coverage-integration.out"; \
 			fi; \
-	rm -f "$$e2e_profile"; \
-	else \
-	echo "Skipping e2e coverage; set RUN_E2E_TESTS=1 to enable."; \
-	fi; \
-	fi; \
-	$(GO) tool cover -func=$(COVERAGE_PROFILE) | tee $(COVERAGE_SUMMARY); \
-	"$(ROOT_DIR)/hack/coverage_summary_check.sh" "$(COVERAGE_SUMMARY)" "$(MIN_COVERAGE)"; \
+			reuse_integration="$(strip $(REUSE_INTEGRATION_COVERAGE))"; \
+			if [ "$$reuse_integration" = "1" ]; then \
+				if [ ! -f "$$integration_profile" ]; then \
+					echo "Integration coverage profile '$$integration_profile' not found."; \
+					exit 1; \
+				fi; \
+			else \
+				GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=integration $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$integration_profile" $(INTEGRATION_PKGS); \
+			fi; \
+			tail -n +2 "$$integration_profile" >> $(COVERAGE_PROFILE); \
+			if [ "$$reuse_integration" != "1" ]; then \
+				rm -f "$$integration_profile"; \
+			fi; \
+		fi; \
+		e2e_pkgs="$(strip $(E2E_PKGS))"; \
+		if [ -n "$$e2e_pkgs" ]; then \
+			if [ "$(strip $(RUN_E2E_TESTS))" = "1" ]; then \
+				e2e_profile="coverage-e2e.out"; \
+				if GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $$e2e_pkgs; then \
+					tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
+				else \
+					echo "Skipping e2e coverage due to test failures"; \
+				fi; \
+				rm -f "$$e2e_profile"; \
+			else \
+				echo "Skipping e2e coverage; set RUN_E2E_TESTS=1 to enable."; \
+			fi; \
+		fi; \
+		tmp_profile="coverage-no-tests.out"; \
+		{ IFS= read -r mode_line || true; echo "$$mode_line"; tail -n +2 "$(COVERAGE_PROFILE)" | grep -vE '_test\\.go:'; } < "$(COVERAGE_PROFILE)" > "$$tmp_profile"; \
+		mv "$$tmp_profile" "$(COVERAGE_PROFILE)"; \
+		$(GO) tool cover -func=$(COVERAGE_PROFILE) | tee $(COVERAGE_SUMMARY); \
+		"$(ROOT_DIR)/hack/coverage_summary_check.sh" "$(COVERAGE_SUMMARY)" "$(MIN_COVERAGE)"; \
 	fi
-
 agents: verify-go-version
 	@mkdir -p "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
 	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) run ./cmd/agentscheck
