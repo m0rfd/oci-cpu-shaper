@@ -26,9 +26,9 @@ Run the following helpers from the repository root before every pull request:
 - `make coverage MIN_COVERAGE=96` to regenerate `coverage.out`/`coverage.txt` and
   prove repository-wide statement coverage stays at or above the required 96 %.
 - `make codeql`, `make codeql-actions`, `make codeql-go`, or `make codeql-all`
-  to mirror the PR CodeQL checks. Run `CHECK_INCLUDE_CODEQL=1 make check` when
-  you want CodeQL bundled with the broader validation; the default keeps it
-  off for faster local iterations. These targets install the CLI via `make
+  to mirror the PR CodeQL checks. Run `CHECK_INCLUDE_CODEQL=0 make check` when
+  you want to match CI’s faster path without CodeQL; the default bundles
+  CodeQL into the broader validation locally. These targets install the CLI via `make
   tools`/`make ensure-codeql`, need GitHub Packages read access to download the
   default `security-and-quality` packs, emit SARIF files to `artifacts/codeql/`,
   and rely on the baked-in Go build command so no manual build steps are

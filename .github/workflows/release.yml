@@ -223,7 +223,7 @@ jobs:
 
       - name: Run checks before container build
         env:
-          CHECK_INCLUDE_CODEQL: "1"
+          CHECK_INCLUDE_CODEQL: "0"
         run: make check
 
       - name: Save Go build and module caches
@@ -341,7 +341,7 @@ jobs:
 
       - name: Run checks before container build
         env:
-          CHECK_INCLUDE_CODEQL: "1"
+          CHECK_INCLUDE_CODEQL: "0"
         run: make check
 
       - name: Save Go build and module caches
