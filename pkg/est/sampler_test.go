@@ -841,6 +841,49 @@ func TestSamplerTimeSourceFallbacksToNow(t *testing.T) {
 	}
 }
 
+func TestSamplerDefaultTickerStops(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	samplerr := NewSampler(
+		&fakeSource{
+			snapshots: []Snapshot{
+				{Idle: 0, Total: 10, Runnable: 0},
+				{Idle: 0, Total: 10, Runnable: 0},
+			},
+			err:           nil,
+			snapshotIndex: 0,
+		},
+		time.Millisecond,
+	)
+	samplerr.newTicker = nil
+	samplerr.now = func() time.Time { return time.Unix(0, 0) }
+
+	observations := samplerr.Run(ctx)
+
+	_ = receiveObservation(t, observations, "default ticker observation")
+
+	cancel()
+
+	done := make(chan struct{})
+
+	go func() {
+		for observation := range observations {
+			_ = observation
+		}
+
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected sampler to stop and close observations when using default ticker")
+	}
+}
+
 func TestParseCPUStatErrorCases(t *testing.T) {
 	t.Parallel()
 
