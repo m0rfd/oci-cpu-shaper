@@ -5,8 +5,11 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	runtimeconfig "oci-cpu-shaper/pkg/runtimeconfig"
 )
+
+const runtimeMetadataIncompleteMsg = "runtime metadata incomplete"
 
 func TestLogRuntimeConfig(t *testing.T) {
 	t.Parallel()
@@ -170,6 +173,10 @@ func TestLogMetadataResolutionOffline(t *testing.T) {
 	if offline, ok := fieldBool(entry.Context, "offline"); !ok || !offline {
 		t.Fatalf("expected offline flag true, got %v (present=%v)", offline, ok)
 	}
+
+	if warns := observed.FilterLevelExact(zapcore.WarnLevel).All(); len(warns) != 0 {
+		t.Fatalf("expected no warnings, got %d", len(warns))
+	}
 }
 
 func TestLogMetadataResolutionWarnsWhenIncomplete(t *testing.T) {
@@ -181,9 +188,57 @@ func TestLogMetadataResolutionWarnsWhenIncomplete(t *testing.T) {
 	logMetadataResolution(logger, modeEnforce, emptyMetadata, false)
 
 	entry := requireSingleEntry(t, observed, zap.WarnLevel)
-	if entry.Message != "runtime metadata incomplete" {
+	if entry.Message != runtimeMetadataIncompleteMsg {
 		t.Fatalf("unexpected log message: %q", entry.Message)
 	}
+
+	if offline, ok := fieldBool(entry.Context, "offline"); !ok || offline {
+		t.Fatalf("expected offline flag false, got %v (present=%v)", offline, ok)
+	}
+}
+
+func TestLogMetadataResolutionWarnsWhenCompartmentMissing(t *testing.T) {
+	t.Parallel()
+
+	logger, observed := newObservedLogger(zap.DebugLevel)
+
+	logMetadataResolution(
+		logger,
+		modeEnforce,
+		ociMetadata{Region: stubRegion}, //nolint:exhaustruct
+		false,
+	)
+
+	entry := requireSingleEntry(t, observed, zap.WarnLevel)
+	if entry.Message != runtimeMetadataIncompleteMsg {
+		t.Fatalf("unexpected log message: %q", entry.Message)
+	}
+
+	requireLogFieldString(t, entry, "region", stubRegion)
+
+	if offline, ok := fieldBool(entry.Context, "offline"); !ok || offline {
+		t.Fatalf("expected offline flag false, got %v (present=%v)", offline, ok)
+	}
+}
+
+func TestLogMetadataResolutionWarnsWhenRegionMissing(t *testing.T) {
+	t.Parallel()
+
+	logger, observed := newObservedLogger(zap.DebugLevel)
+
+	logMetadataResolution(
+		logger,
+		modeEnforce,
+		ociMetadata{CompartmentID: stubCompartmentID}, //nolint:exhaustruct
+		false,
+	)
+
+	entry := requireSingleEntry(t, observed, zap.WarnLevel)
+	if entry.Message != runtimeMetadataIncompleteMsg {
+		t.Fatalf("unexpected log message: %q", entry.Message)
+	}
+
+	requireLogFieldString(t, entry, "compartmentID", stubCompartmentID)
 
 	if offline, ok := fieldBool(entry.Context, "offline"); !ok || offline {
 		t.Fatalf("expected offline flag false, got %v (present=%v)", offline, ok)
@@ -204,4 +259,12 @@ func TestLogMetadataResolutionSkipsNoopMode(t *testing.T) {
 	}
 
 	requireLogFieldString(t, entry, "mode", modeNoop)
+
+	if infos := observed.FilterLevelExact(zapcore.InfoLevel).All(); len(infos) != 0 {
+		t.Fatalf("expected no info logs, got %d", len(infos))
+	}
+
+	if warns := observed.FilterLevelExact(zapcore.WarnLevel).All(); len(warns) != 0 {
+		t.Fatalf("expected no warnings, got %d", len(warns))
+	}
 }
