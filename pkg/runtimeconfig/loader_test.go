@@ -3,6 +3,7 @@ package runtimeconfig
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -199,6 +200,39 @@ func assertEnvOverrides(t *testing.T, cfg Config) {
 	assertBoolEqual(t, "offline", cfg.OCI.Offline, true)
 }
 
+func TestMergeRuntimeConfigFileReturnsReadError(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "nested")
+
+	err := os.Mkdir(path, testConfigFilePerm)
+	if err != nil {
+		t.Fatalf("create directory: %v", err)
+	}
+
+	var cfg Config
+
+	err = mergeRuntimeConfigFile(&cfg, path)
+	if err == nil {
+		t.Fatal("expected error for unreadable config path")
+	}
+
+	if !strings.Contains(err.Error(), fmt.Sprintf("read config file %q", path)) {
+		t.Fatalf("expected read error to reference path, got %v", err)
+	}
+
+	var pathErr *os.PathError
+
+	if !errors.As(err, &pathErr) {
+		t.Fatalf("expected wrapped PathError, got %v", err)
+	}
+
+	if pathErr.Path != path {
+		t.Fatalf("expected PathError to include %q, got %q", path, pathErr.Path)
+	}
+}
+
 func TestLoadConfigAllowsClearingHTTPBindViaEnv(t *testing.T) {
 	t.Setenv(envHTTPBind, "   ")
 
@@ -244,6 +278,46 @@ func TestLoadConfigRejectsTargetsExceedingSuppressResume(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "controller.targetStart") {
 		t.Fatalf("expected error to reference controller.targetStart, got %v", err)
+	}
+}
+
+func TestLoadConfigValidatesDefaultsWithEnvOverlays(t *testing.T) {
+	t.Setenv(envPoolWorkers, "5")
+	t.Setenv(envHTTPBind, ":9400")
+
+	cfg, err := Load(" \t ")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	assertIntEqual(t, "poolWorkers", cfg.Pool.Workers, 5)
+	assertStringEqual(t, "httpBind", cfg.HTTP.Bind, ":9400")
+
+	defaults := adaptDefault()
+
+	assertFloatEqual(t, "targetStart", cfg.Controller.TargetStart, defaults.TargetStart)
+	assertStringEqual(t, "compartmentID", cfg.OCI.CompartmentID, "")
+}
+
+func TestLoadConfigRejectsInvalidRunnableSuppressionBounds(t *testing.T) {
+	t.Setenv(envSuppressRunnableThreshold, "0.5")
+	t.Setenv(envSuppressRunnableResume, "0.6")
+
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("expected validation error when runnable suppression resume exceeds threshold")
+	}
+
+	if !errors.Is(err, adapt.ErrInvalidConfig) {
+		t.Fatalf("expected adapt.ErrInvalidConfig, got %v", err)
+	}
+
+	if !strings.Contains(err.Error(), "validate controller config") {
+		t.Fatalf("expected controller validation wrapper, got %v", err)
+	}
+
+	if !strings.Contains(err.Error(), "controller.suppressRunnableResume") {
+		t.Fatalf("expected error to reference runnable suppression resume bound, got %v", err)
 	}
 }
 
