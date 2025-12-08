@@ -86,9 +86,6 @@ jobs:
       - name: Record golangci-lint version
         run: echo "GOLANGCI_LINT_VERSION=$(make -s print-golangci-lint-version)" >>"$GITHUB_ENV"
 
-      - name: Prepare Go cache directories
-        run: mkdir -p .cache/go .cache/gomod
-
       - name: Set up Go with cache
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache

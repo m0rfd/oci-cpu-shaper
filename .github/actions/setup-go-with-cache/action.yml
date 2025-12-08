@@ -20,6 +20,16 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Prepare Go cache directories
+      shell: bash
+      run: |
+        if [ -n "${GOCACHE:-}" ]; then
+          mkdir -p "${GOCACHE}"
+        fi
+        if [ -n "${GOMODCACHE:-}" ]; then
+          mkdir -p "${GOMODCACHE}"
+        fi
+
     - name: Set up Go
       id: setup-go
       uses: actions/setup-go@v6
