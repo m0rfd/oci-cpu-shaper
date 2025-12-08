@@ -188,6 +188,131 @@ func TestGuardedSuppressionOverridesMetrics(t *testing.T) {
 	}
 }
 
+func TestTransitionSuppressionGuardedSwitch(t *testing.T) {
+	t.Parallel()
+
+	controller, shaper, cfg := newSuppressionHarness(t)
+
+	controller.mu.Lock()
+	controller.suppressed = false
+	controller.hostLoad = cfg.SuppressThreshold * 0.25
+	controller.hostRunnable = cfg.SuppressRunnableThreshold * 0.25
+	controller.applyTargetLocked(cfg.FallbackTarget * 1.2)
+	previously := controller.transitionSuppressionLocked(true)
+	controller.applySuppressionTargetsLocked(previously)
+	controller.updateEffectiveStateLocked()
+	target := controller.target
+	controller.mu.Unlock()
+
+	requireConditionf(t, !previously, "guarded suppression should return previous state")
+	assertState(t, controller, StateSuppressed, "guard path should force suppression")
+	assertTargetZero(t, controller, "guard path should zero target")
+
+	if shaper.Target() != target {
+		t.Fatalf(
+			"expected shaper target %.2f to match controller target %.2f",
+			shaper.Target(),
+			target,
+		)
+	}
+}
+
+func TestTransitionSuppressionUtilisation(t *testing.T) {
+	t.Parallel()
+
+	controller, shaper, cfg := newSuppressionHarness(t)
+
+	controller.mu.Lock()
+	controller.suppressed = false
+	controller.hostLoad = cfg.SuppressThreshold + 0.05
+	controller.hostRunnable = cfg.SuppressRunnableThreshold * 0.5
+	controller.applyTargetLocked(cfg.TargetMax)
+	utilisationSuppressed := controller.transitionSuppressionLocked(false)
+	controller.applySuppressionTargetsLocked(utilisationSuppressed)
+	controller.updateEffectiveStateLocked()
+	controller.mu.Unlock()
+
+	requireConditionf(
+		t,
+		controller.shouldSuppressForUtilisation(),
+		"host load should trigger utilisation suppression",
+	)
+	requireConditionf(
+		t,
+		!utilisationSuppressed,
+		"utilisation suppression should report previous false",
+	)
+	assertState(t, controller, StateSuppressed, "high utilisation should suppress controller")
+	assertTargetZero(t, controller, "utilisation suppression should zero target")
+
+	if shaper.Target() != 0 {
+		t.Fatalf("expected shaper to receive suppressed target, got %.2f", shaper.Target())
+	}
+}
+
+func TestTransitionSuppressionRunnables(t *testing.T) {
+	t.Parallel()
+
+	controller, shaper, cfg := newSuppressionHarness(t)
+
+	controller.mu.Lock()
+	controller.suppressed = false
+	controller.hostLoad = cfg.SuppressThreshold * 0.5
+	controller.hostRunnable = cfg.SuppressRunnableThreshold + 0.2
+	controller.applyTargetLocked(cfg.TargetMax)
+	runnableSuppressed := controller.transitionSuppressionLocked(false)
+	controller.applySuppressionTargetsLocked(runnableSuppressed)
+	controller.updateEffectiveStateLocked()
+	controller.mu.Unlock()
+
+	requireConditionf(
+		t,
+		controller.shouldSuppressForRunnables(),
+		"runnable surge should trigger suppression",
+	)
+	requireConditionf(t, !runnableSuppressed, "runnable suppression should report previous false")
+	assertState(t, controller, StateSuppressed, "runnable surge should suppress controller")
+	assertTargetZero(t, controller, "runnable suppression should zero target")
+
+	if shaper.Target() != 0 {
+		t.Fatalf("expected shaper to receive suppressed target, got %.2f", shaper.Target())
+	}
+}
+
+func TestTransitionSuppressionResumeRestoresTarget(t *testing.T) {
+	t.Parallel()
+
+	controller, shaper, cfg := newSuppressionHarness(t)
+
+	controller.mu.Lock()
+	controller.suppressed = true
+	controller.target = 0
+	controller.desired = cfg.TargetMax * 1.5
+	controller.hostLoad = cfg.SuppressResume * 0.8
+	controller.hostRunnable = cfg.SuppressRunnableResume * 0.8
+	previously := controller.transitionSuppressionLocked(false)
+	controller.applySuppressionTargetsLocked(previously)
+	controller.updateEffectiveStateLocked()
+	restored := controller.target
+	controller.mu.Unlock()
+
+	requireConditionf(t, previously, "resume should report previous suppression")
+	assertState(t, controller, StateFallback, "cooled metrics should resume controller")
+
+	expected := clamp(cfg.TargetMax*1.5, cfg.TargetMin, cfg.TargetMax)
+	if restored != expected {
+		t.Fatalf("expected restored target %.2f after resume, got %.2f", expected, restored)
+	}
+
+	if shaper.Target() != expected {
+		t.Fatalf(
+			"expected shaper to receive restored target %.2f, got %.2f",
+			expected,
+			shaper.Target(),
+		)
+	}
+}
+
 func TestConsumeEstimatorHandlesErrors(t *testing.T) {
 	t.Parallel()
 
