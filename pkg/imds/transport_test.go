@@ -102,6 +102,46 @@ func TestHTTPClientRetriesOnTransportError(t *testing.T) {
 	requireEqual(t, "Region()", gotRegion, "us-sanjose-1")
 }
 
+func TestHTTPClientRetryableStatusExhaustsBudgetWithFakeClient(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+
+	httpClient := newHTTPClient(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requireIMDSAuthHeader(t, req)
+
+		attempts.Add(1)
+
+		return newHTTPResponse(
+			http.StatusServiceUnavailable,
+			io.NopCloser(strings.NewReader("retry later")),
+			req,
+		), nil
+	}))
+
+	client := imds.NewClient(
+		httpClient,
+		imds.WithBaseURL("http://metadata.local/opc/v2"),
+		imds.WithMaxAttempts(3),
+		imds.WithBackoff(5*time.Millisecond),
+	)
+
+	_, err := client.Region(context.Background())
+	if err == nil {
+		t.Fatal("Region() expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "exhausted retry budget") {
+		t.Fatalf("Region() error = %v, want exhausted retry budget", err)
+	}
+
+	if !strings.Contains(err.Error(), "retryable status code") {
+		t.Fatalf("Region() error = %v, want retryable status", err)
+	}
+
+	requireEqual(t, "attempts", attempts.Load(), int32(3))
+}
+
 func TestHTTPClientContextCanceledDuringRequest(t *testing.T) {
 	t.Parallel()
 
@@ -233,6 +273,41 @@ func TestHTTPClientNonRetryableStatusIncludesBody(t *testing.T) {
 	if !strings.Contains(err.Error(), "body not found") {
 		t.Fatalf("Region() error = %v, want trimmed body", err)
 	}
+}
+
+func TestHTTPClientNonRetryableStatusStopsRetryAndIncludesBody(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+
+	httpClient := newHTTPClient(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requireIMDSAuthHeader(t, req)
+
+		attempts.Add(1)
+
+		return newHTTPResponse(
+			http.StatusBadRequest,
+			io.NopCloser(strings.NewReader("  bad request \n")),
+			req,
+		), nil
+	}))
+
+	client := imds.NewClient(httpClient, imds.WithBaseURL("http://metadata.local/opc/v2"))
+
+	_, err := client.Region(context.Background())
+	if err == nil {
+		t.Fatal("Region() expected error, got nil")
+	}
+
+	if strings.Contains(err.Error(), "exhausted retry budget") {
+		t.Fatalf("Region() error = %v, did not expect retry budget exhaustion", err)
+	}
+
+	if !strings.Contains(err.Error(), "body bad request") {
+		t.Fatalf("Region() error = %v, want trimmed body", err)
+	}
+
+	requireEqual(t, "attempts", attempts.Load(), int32(1))
 }
 
 func TestHTTPClientRetryBudgetExhaustedIncludesLastError(t *testing.T) {
@@ -373,6 +448,67 @@ func TestHTTPClientFetchCanceledDuringRetryWait(t *testing.T) {
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Region() error = %v, want wrapped context cancellation", err)
+	}
+
+	if !strings.Contains(err.Error(), "retry wait for region") {
+		t.Fatalf("Region() error = %v, want retry wait cancellation", err)
+	}
+
+	requireEqual(t, "attempts", attempts.Load(), int32(1))
+}
+
+func TestHTTPClientCancelDuringBackoffWithRetryableStatus(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+
+	firstAttempt := make(chan struct{}, 1)
+
+	httpClient := newHTTPClient(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requireIMDSAuthHeader(t, req)
+
+		attempts.Add(1)
+
+		select {
+		case firstAttempt <- struct{}{}:
+		default:
+		}
+
+		return newHTTPResponse(
+			http.StatusServiceUnavailable,
+			io.NopCloser(strings.NewReader("retryable")),
+			req,
+		), nil
+	}))
+
+	client := imds.NewClient(
+		httpClient,
+		imds.WithBaseURL("http://metadata.local/opc/v2"),
+		imds.WithMaxAttempts(3),
+		imds.WithBackoff(200*time.Millisecond),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	errCh := startRegionRequest(ctx, t, client)
+
+	select {
+	case <-firstAttempt:
+	case <-time.After(time.Second):
+		t.Fatal("Region() did not make the first attempt")
+	}
+
+	time.Sleep(25 * time.Millisecond)
+	cancel()
+
+	err := waitForRegionError(t, errCh, "Region() during backoff")
+	if err == nil {
+		t.Fatal("Region() expected error, got nil")
+	}
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Region() error = %v, want context cancellation", err)
 	}
 
 	if !strings.Contains(err.Error(), "retry wait for region") {
