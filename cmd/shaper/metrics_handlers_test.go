@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -18,6 +19,18 @@ type fakeMetricsExporter struct {
 	workerCount int
 	dutyCycle   time.Duration
 	serveCount  int
+}
+
+type panicPoolStarter struct{}
+
+func (panicPoolStarter) Start(context.Context) { panic("unexpected Start call") }
+
+func (panicPoolStarter) Workers() int { panic("unexpected Workers call") }
+
+func (panicPoolStarter) Quantum() time.Duration { panic("unexpected Quantum call") }
+
+func (panicPoolStarter) SetWorkerStartErrorHandler(func(error)) {
+	panic("unexpected SetWorkerStartErrorHandler call")
 }
 
 func (f *fakeMetricsExporter) SetWorkerCount(count int) { f.workerCount = count }
@@ -51,6 +64,30 @@ func TestConfigureMetricsWarnsAndSkipsExporterWhenMissing(t *testing.T) {
 	}
 
 	requireLogFieldString(t, warnEntries[0], "reason", "no exporter configured")
+}
+
+func TestConfigureMetricsSkipsPoolWhenExporterMissing(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zapcore.DebugLevel)
+	logger := zap.New(core)
+
+	handler := configureMetrics(logger, nil, panicPoolStarter{}, nil, nil)
+	if handler != nil {
+		t.Fatal("expected handler to be nil when exporter is missing")
+	}
+
+	warnEntries := observed.FilterLevelExact(zapcore.WarnLevel).All()
+	if len(warnEntries) != 1 {
+		t.Fatalf("expected warning log for missing exporter, got %+v", observed.All())
+	}
+
+	requireLogFieldString(t, warnEntries[0], "reason", "no exporter configured")
+
+	debugEntries := observed.FilterLevelExact(zapcore.DebugLevel).All()
+	if len(debugEntries) != 0 {
+		t.Fatalf("expected no debug logs when exporter missing, got %+v", debugEntries)
+	}
 }
 
 func TestConfigureMetricsIntegratesWithWorkerPoolAndLogsWhenMissing(t *testing.T) {
