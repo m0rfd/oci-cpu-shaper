@@ -85,6 +85,21 @@ func waitForBusyCount(tb testing.TB, manual *manualTicker, counter *atomic.Int32
 	tb.Fatalf("expected busy count >= %d, got %d", expected, counter.Load())
 }
 
+func waitForCount(tb testing.TB, counter *atomic.Int32, expected int32) {
+	tb.Helper()
+
+	deadline := time.Now().Add(25 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if counter.Load() >= expected {
+			return
+		}
+
+		time.Sleep(500 * time.Microsecond)
+	}
+
+	tb.Fatalf("expected count >= %d, got %d", expected, counter.Load())
+}
+
 type manualTicker struct {
 	ch chan time.Time
 }
