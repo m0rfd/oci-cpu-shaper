@@ -46,16 +46,14 @@ jobs:
         restore-keys: |
           codeql-qlpacks-${{ runner.os }}-
 
-    - name: Initialize CodeQL for cache warmup
-      uses: github/codeql-action/init@v4
+    - name: Install CodeQL CLI
+      uses: github/codeql-action/setup@v4
       with:
-        languages: go,actions
-        build-mode: none
-        dependency-caching: true
+        tools: latest
 
     - name: Resolve CodeQL qlpacks
       run: |
-        codeql resolve qlpacks --format=bylanguage go actions
+        codeql resolve qlpacks --download=always --format=bylanguage go actions
 
   analyze:
     name: Analyze (${{ matrix.language }})
