@@ -4,13 +4,17 @@ permissions:
   contents: read
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
   pull_request:
     branches: [main]
   merge_group:
-  push:
-    tags:
-      - "v*" # release on v* tags (assumed from main)
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -39,17 +43,78 @@ jobs:
     permissions:
       contents: read
       actions: write
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: |
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       startsWith(github.event.workflow_run.ref, 'refs/tags/v')) ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
       GOBIN: ${{ github.workspace }}/bin
+      CI_RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || '' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Download coverage from CI workflow
+        id: download-ci-coverage
+        if: github.event_name == 'workflow_run'
+        continue-on-error: true
+        uses: actions/download-artifact@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.CI_RUN_ID }}
+          name: coverage-report
+          path: artifacts/ci
+
+      - name: Download integration coverage from CI workflow
+        id: download-ci-integration-coverage
+        if: github.event_name == 'workflow_run'
+        continue-on-error: true
+        uses: actions/download-artifact@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.CI_RUN_ID }}
+          name: integration-coverage
+          path: artifacts/ci
+
+      - name: Locate CI artifacts
+        id: ci-artifacts
+        run: |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          coverage_out=$(find artifacts/ci -name 'coverage.out' -print -quit || true)
+          coverage_txt=$(find artifacts/ci -name 'coverage.txt' -print -quit || true)
+          integration_coverage=$(find artifacts/ci -name 'integration-coverage.out' -print -quit || true)
+
+          coverage_available=0
+          integration_available=0
+
+          if [ -n "${coverage_out}" ] && [ -n "${coverage_txt}" ]; then
+            coverage_available=1
+            cp "${coverage_out}" coverage.out
+            cp "${coverage_txt}" coverage.txt
+          fi
+
+          if [ -n "${integration_coverage}" ]; then
+            integration_available=1
+          fi
+
+          {
+            echo "coverage-available=${coverage_available}"
+            echo "integration-available=${integration_available}"
+            echo "integration-profile=${integration_coverage}"
+          } >>"$GITHUB_OUTPUT"
+
       - name: Record golangci-lint version
+        if: steps.ci-artifacts.outputs.coverage-available != '1'
         run: echo "GOLANGCI_LINT_VERSION=$(make -s print-golangci-lint-version)" >>"$GITHUB_ENV"
 
       - name: Set up Go with cache
@@ -57,6 +122,7 @@ jobs:
         uses: ./.github/actions/setup-go-with-cache
 
       - name: Cache golangci-lint workspace
+        if: steps.ci-artifacts.outputs.coverage-available != '1'
         uses: actions/cache@v4
         with:
           path: .cache/golangci
@@ -65,6 +131,7 @@ jobs:
             ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Cache golangci-lint binary
+        if: steps.ci-artifacts.outputs.coverage-available != '1'
         uses: actions/cache@v4
         with:
           path: ${{ env.GOBIN }}/golangci-lint
@@ -73,9 +140,11 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-golangci-${{ env.GOLANGCI_LINT_VERSION }}-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Set up lint tools
+        if: steps.ci-artifacts.outputs.coverage-available != '1'
         uses: ./.github/actions/setup-lint-tools
 
       - name: Cache actionlint binary
+        if: steps.ci-artifacts.outputs.coverage-available != '1'
         uses: actions/cache@v4
         with:
           path: ${{ env.GOBIN }}/actionlint
@@ -84,6 +153,7 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-actionlint-${{ env.ACTIONLINT_VERSION }}-
 
       - name: Run lint
+        if: steps.ci-artifacts.outputs.coverage-available != '1'
         run: |
           set -o pipefail
           mkdir -p artifacts
@@ -92,13 +162,14 @@ jobs:
           GOBIN: ${{ env.GOBIN }}
 
       - name: Upload lint logs
-        if: always()
+        if: steps.ci-artifacts.outputs.coverage-available != '1'
         uses: actions/upload-artifact@v5
         with:
           name: lint-logs
           path: artifacts/make-lint.log
 
       - name: Run actionlint for release workflow
+        if: steps.ci-artifacts.outputs.coverage-available != '1'
         run: |
           set -o pipefail
           mkdir -p artifacts
@@ -107,72 +178,28 @@ jobs:
           GOBIN: ${{ env.GOBIN }}
 
       - name: Upload actionlint logs
-        if: always()
+        if: steps.ci-artifacts.outputs.coverage-available != '1'
         uses: actions/upload-artifact@v5
         with:
           name: actionlint-logs-release
           path: artifacts/release-actionlint.log
 
       - name: Check Makefile formatting
+        if: steps.ci-artifacts.outputs.coverage-available != '1'
         run: make lint-makefile
 
       - name: Run tests
+        if: steps.ci-artifacts.outputs.coverage-available != '1'
         run: make test
 
-      - name: Locate CI workflow run for this commit
-        id: locate-ci-run
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -o errexit
-          set -o nounset
-          set -o pipefail
-
-          run_id=$(gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
-            --field per_page=50 \
-            --field event=push \
-            --jq "(.workflow_runs[] | select(.head_sha==\"${GITHUB_SHA}\") | .id)" \
-            | head -n 1)
-
-          if [ -z "$run_id" ]; then
-            echo "No CI workflow run found for commit ${GITHUB_SHA}; skipping integration coverage reuse"
-            exit 0
-          fi
-
-          echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
-
-      - name: Download integration coverage (if available)
-        id: download-integration-coverage
-        if: steps.locate-ci-run.outputs.run-id != ''
-        continue-on-error: true
-        uses: actions/download-artifact@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          repository: ${{ github.repository }}
-          run-id: ${{ steps.locate-ci-run.outputs.run-id }}
-          name: integration-coverage
-          path: artifacts
-
-      - name: Check integration coverage availability
-        id: integration-coverage-availability
-        run: |
-          set -o errexit
-          set -o nounset
-          set -o pipefail
-
-          if [ "${{ steps.download-integration-coverage.outcome || '' }}" = "success" ] && [ -f artifacts/integration-coverage.out ]; then
-            echo "available=1" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=0" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Run coverage
+        if: steps.ci-artifacts.outputs.coverage-available != '1'
         env:
           MIN_COVERAGE: "96"
           COVERAGE_PROFILE: coverage.out
           COVERAGE_SUMMARY: coverage.txt
-          REUSE_INTEGRATION_COVERAGE: ${{ steps.integration-coverage-availability.outputs.available || '0' }}
-          INTEGRATION_COVERAGE_PROFILE: artifacts/integration-coverage.out
+          REUSE_INTEGRATION_COVERAGE: ${{ steps.ci-artifacts.outputs.integration-available || '0' }}
+          INTEGRATION_COVERAGE_PROFILE: ${{ steps.ci-artifacts.outputs.integration-profile || '' }}
         run: |
           set -o errexit
           set -o nounset
@@ -185,8 +212,11 @@ jobs:
             "COVERAGE_PROFILE=$COVERAGE_PROFILE"
             "COVERAGE_SUMMARY=$COVERAGE_SUMMARY"
             "REUSE_INTEGRATION_COVERAGE=$integration_available"
-            "INTEGRATION_COVERAGE_PROFILE=$INTEGRATION_COVERAGE_PROFILE"
           )
+
+          if [ -n "${INTEGRATION_COVERAGE_PROFILE:-}" ]; then
+            coverage_env+=("INTEGRATION_COVERAGE_PROFILE=$INTEGRATION_COVERAGE_PROFILE")
+          fi
 
           env "${coverage_env[@]}" make coverage
 
@@ -427,7 +457,12 @@ jobs:
     name: Release multi-arch images (tagged)
     runs-on: ubuntu-latest
     needs: verify-tag
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: |
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       startsWith(github.event.workflow_run.ref, 'refs/tags/v')) ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
     permissions:
       contents: read
       actions: write # artifacts (upload)
