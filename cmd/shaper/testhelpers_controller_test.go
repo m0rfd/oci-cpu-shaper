@@ -119,6 +119,67 @@ func (s *stubPoolStarter) Quantum() time.Duration {
 	return s.quantum
 }
 
+type recordingMetricsRecorder struct {
+	modeCalls          int
+	stateCalls         int
+	targetCalls        int
+	intervalCalls      int
+	lastErrorCalls     int
+	relaxedSuccesses   int
+	ociCalls           int
+	hostCalls          int
+	mode               string
+	state              string
+	target             float64
+	interval           time.Duration
+	lastError          error
+	ociValue           float64
+	ociTimestamp       time.Time
+	hostUtilisation    float64
+	relaxedSuccessRuns []int
+}
+
+func (r *recordingMetricsRecorder) SetMode(mode string) {
+	r.modeCalls++
+	r.mode = mode
+}
+
+func (r *recordingMetricsRecorder) SetState(state string) {
+	r.stateCalls++
+	r.state = state
+}
+
+func (r *recordingMetricsRecorder) SetTarget(target float64) {
+	r.targetCalls++
+	r.target = target
+}
+
+func (r *recordingMetricsRecorder) ObserveOCIP95(value float64, fetchedAt time.Time) {
+	r.ociCalls++
+	r.ociValue = value
+	r.ociTimestamp = fetchedAt
+}
+
+func (r *recordingMetricsRecorder) ObserveHostCPU(utilisation float64) {
+	r.hostCalls++
+	r.hostUtilisation = utilisation
+}
+
+func (r *recordingMetricsRecorder) SetInterval(interval time.Duration) {
+	r.intervalCalls++
+	r.interval = interval
+}
+
+func (r *recordingMetricsRecorder) SetLastError(err error) {
+	r.lastErrorCalls++
+	r.lastError = err
+}
+
+func (r *recordingMetricsRecorder) SetRelaxedSuccesses(count int) {
+	r.relaxedSuccesses++
+	r.relaxedSuccessRuns = append(r.relaxedSuccessRuns, count)
+}
+
 func (*stubPoolStarter) SetWorkerStartErrorHandler(func(error)) {}
 
 type trackingPoolStarter struct {
