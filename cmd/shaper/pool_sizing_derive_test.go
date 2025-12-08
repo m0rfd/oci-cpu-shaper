@@ -2,60 +2,17 @@ package main
 
 import "testing"
 
-func TestDeriveWorkerCountFromOCPUs(t *testing.T) {
-	t.Parallel()
-
-	testCases := []struct {
-		name     string
-		ocpus    float64
-		fallback int
-		want     int
-		applied  bool
-		capped   bool
-	}{
-		{name: "fallback", ocpus: 0, fallback: 3, want: 3, applied: false, capped: false},
-		{name: "negative", ocpus: -8, fallback: 4, want: 4, applied: false, capped: false},
-		{name: "belowOne", ocpus: 0.25, fallback: 2, want: 1, applied: true, capped: false},
-		{name: "fractionalCeil", ocpus: 2.75, fallback: 2, want: 3, applied: true, capped: false},
-		{
-			name:     "maxCap",
-			ocpus:    64,
-			fallback: 2,
-			want:     maxAutoSizedWorkers,
-			applied:  true,
-			capped:   true,
-		},
-	}
-
-	for _, tc := range testCases {
-		testCase := tc
-
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-
-			assertDeriveWorkerCountFromOCPUs(
-				t,
-				testCase.ocpus,
-				testCase.fallback,
-				testCase.want,
-				testCase.applied,
-				testCase.capped,
-			)
-		})
-	}
+type deriveWorkerCountCase struct {
+	name     string
+	ocpus    float64
+	fallback int
+	want     int
+	applied  bool
+	capped   bool
 }
 
-func TestDeriveWorkerCountFromOCPUSBounds(t *testing.T) {
-	t.Parallel()
-
-	testCases := []struct {
-		name     string
-		ocpus    float64
-		fallback int
-		want     int
-		applied  bool
-		capped   bool
-	}{
+func deriveWorkerCountFromOCPUScases() []deriveWorkerCountCase {
+	return []deriveWorkerCountCase{
 		{
 			name:     "zeroOCPUsFallback",
 			ocpus:    0,
@@ -81,6 +38,14 @@ func TestDeriveWorkerCountFromOCPUSBounds(t *testing.T) {
 			capped:   false,
 		},
 		{
+			name:     "fractionalCeil",
+			ocpus:    2.75,
+			fallback: 2,
+			want:     3,
+			applied:  true,
+			capped:   false,
+		},
+		{
 			name:     "aboveMaxWorkers",
 			ocpus:    128,
 			fallback: 1,
@@ -89,8 +54,12 @@ func TestDeriveWorkerCountFromOCPUSBounds(t *testing.T) {
 			capped:   true,
 		},
 	}
+}
 
-	for _, tc := range testCases {
+func TestDeriveWorkerCountFromOCPUs(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range deriveWorkerCountFromOCPUScases() {
 		testCase := tc
 
 		t.Run(testCase.name, func(t *testing.T) {
