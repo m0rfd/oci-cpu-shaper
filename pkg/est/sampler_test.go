@@ -264,19 +264,41 @@ func TestBuildObservationNormalisesRunnables(t *testing.T) {
 	assertObservation(t, observation, 1, 2, 10, 10)
 }
 
+type nonPositiveCPUCountTestCase struct {
+	name     string
+	cpuCount int
+	previous Snapshot
+	current  Snapshot
+	util     float64
+	runnable float64
+	busy     uint64
+	total    uint64
+}
+
+func runNonPositiveCPUCountTest(t *testing.T, testCase nonPositiveCPUCountTestCase) {
+	t.Helper()
+
+	observation := buildObservationWithCPUCount(
+		time.Unix(0, 0),
+		testCase.previous,
+		testCase.current,
+		testCase.cpuCount,
+	)
+
+	assertObservation(
+		t,
+		observation,
+		testCase.util,
+		testCase.runnable,
+		testCase.busy,
+		testCase.total,
+	)
+}
+
 func TestBuildObservationClampsNonPositiveCPUCounts(t *testing.T) {
 	t.Parallel()
 
-	testCases := []struct {
-		name     string
-		cpuCount int
-		previous Snapshot
-		current  Snapshot
-		util     float64
-		runnable float64
-		busy     uint64
-		total    uint64
-	}{
+	testCases := []nonPositiveCPUCountTestCase{
 		{
 			name:     "zero-cpu-count",
 			cpuCount: 0,
@@ -303,21 +325,42 @@ func TestBuildObservationClampsNonPositiveCPUCounts(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			observation := buildObservationWithCPUCount(
-				time.Unix(0, 0),
-				testCase.previous,
-				testCase.current,
-				testCase.cpuCount,
-			)
+			runNonPositiveCPUCountTest(t, testCase)
+		})
+	}
+}
 
-			assertObservation(
-				t,
-				observation,
-				testCase.util,
-				testCase.runnable,
-				testCase.busy,
-				testCase.total,
-			)
+func TestBuildObservationClampsNonPositiveCPUCountsWithIdleDominantDeltas(t *testing.T) {
+	t.Parallel()
+
+	testCases := []nonPositiveCPUCountTestCase{
+		{
+			name:     "zero-cpu-count-idle-dominant",
+			cpuCount: 0,
+			previous: Snapshot{Idle: 100, Total: 200, Runnable: 0},
+			current:  Snapshot{Idle: 250, Total: 220, Runnable: 9},
+			util:     0,
+			runnable: 0,
+			busy:     0,
+			total:    20,
+		},
+		{
+			name:     "negative-cpu-count-wrap-idle-growth",
+			cpuCount: -4,
+			previous: Snapshot{Idle: 50, Total: 300, Runnable: 0},
+			current:  Snapshot{Idle: 80, Total: 100, Runnable: 3},
+			util:     0,
+			runnable: 0,
+			busy:     0,
+			total:    0,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			runNonPositiveCPUCountTest(t, testCase)
 		})
 	}
 }
