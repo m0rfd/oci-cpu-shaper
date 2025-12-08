@@ -763,7 +763,7 @@ verify-git-hooks:
 		exit 0; \
 	fi; \
 	echo "Warning: pre-commit hook missing or outdated at $$hook_path; attempting automatic installation." >&2; \
-	if ! $$(MAKE) --no-print-directory install-git-hooks; then \
+	if ! $(MAKE) --no-print-directory install-git-hooks; then \
 		echo "Automatic pre-commit hook installation failed; rerun 'make install-git-hooks' locally." >&2; \
 		exit 1; \
 	fi; \
