@@ -1,17 +1,104 @@
-package shape_test
+//nolint:testpackage // access internal pool state for pause threshold assertions
+package shape
 
 import (
 	"math"
 	"testing"
 	"time"
-
-	"oci-cpu-shaper/pkg/shape"
 )
+
+type pauseThresholdTestCase struct {
+	name           string
+	pause          float64
+	resume         float64
+	initialPaused  bool
+	expectedPause  float64
+	expectedResume float64
+	expectedPaused bool
+}
+
+func TestPoolSetPauseThresholdsNormalisesAndStores(t *testing.T) {
+	t.Parallel()
+
+	testCases := []pauseThresholdTestCase{
+		{
+			name:           "NaN inputs reset thresholds",
+			pause:          math.NaN(),
+			resume:         math.NaN(),
+			initialPaused:  true,
+			expectedPause:  0,
+			expectedResume: 0,
+			expectedPaused: false,
+		},
+		{
+			name:           "Infinite inputs clamp to one",
+			pause:          math.Inf(1),
+			resume:         math.Inf(1),
+			initialPaused:  false,
+			expectedPause:  1,
+			expectedResume: 1,
+			expectedPaused: false,
+		},
+		{
+			name:           "Negative values clamp to zero",
+			pause:          -0.4,
+			resume:         -0.2,
+			initialPaused:  true,
+			expectedPause:  0,
+			expectedResume: 0,
+			expectedPaused: false,
+		},
+		{
+			name:           "Resume exceeds pause caps to pause",
+			pause:          0.3,
+			resume:         0.8,
+			initialPaused:  false,
+			expectedPause:  0.3,
+			expectedResume: 0.3,
+			expectedPaused: false,
+		},
+		{
+			name:           "Zero pause disables feature",
+			pause:          0,
+			resume:         0.6,
+			initialPaused:  true,
+			expectedPause:  0,
+			expectedResume: 0,
+			expectedPaused: false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			runPauseThresholdTestCase(t, testCase)
+		})
+	}
+}
+
+func runPauseThresholdTestCase(t *testing.T, testCase pauseThresholdTestCase) {
+	t.Helper()
+
+	pool, err := NewPool(1, time.Millisecond)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if testCase.initialPaused {
+		pool.paused.Store(1)
+	}
+
+	pool.SetPauseThresholds(testCase.pause, testCase.resume)
+
+	assertPauseThresholds(t, pool, testCase.expectedPause, testCase.expectedResume)
+	assertPausedState(t, pool, testCase.expectedPaused)
+}
 
 func TestPoolObserveHostLoadTransitions(t *testing.T) {
 	t.Parallel()
 
-	pool, err := shape.NewPool(1, time.Millisecond)
+	pool, err := NewPool(1, time.Millisecond)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -53,7 +140,7 @@ func TestPoolObserveHostLoadTransitions(t *testing.T) {
 func TestPoolSetPauseThresholdsResetOnNaN(t *testing.T) {
 	t.Parallel()
 
-	pool, err := shape.NewPool(1, time.Millisecond)
+	pool, err := NewPool(1, time.Millisecond)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -81,7 +168,7 @@ func TestPoolSetPauseThresholdsResetOnNaN(t *testing.T) {
 func TestPoolSetPauseThresholdsClampAndCap(t *testing.T) {
 	t.Parallel()
 
-	pool, err := shape.NewPool(1, time.Millisecond)
+	pool, err := NewPool(1, time.Millisecond)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -130,7 +217,7 @@ func TestPoolSetPauseThresholdsClampAndCap(t *testing.T) {
 func TestPoolObserveHostLoadNormalisesInput(t *testing.T) {
 	t.Parallel()
 
-	pool, err := shape.NewPool(1, time.Millisecond)
+	pool, err := NewPool(1, time.Millisecond)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -177,7 +264,7 @@ func TestPoolObserveHostLoadNormalisesInput(t *testing.T) {
 func TestPoolRunnableGuardPausesAndResumes(t *testing.T) {
 	t.Parallel()
 
-	pool, err := shape.NewPool(1, time.Millisecond)
+	pool, err := NewPool(1, time.Millisecond)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -220,7 +307,7 @@ func TestPoolObserveHostLoadNormalisesRunnable(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			pool, err := shape.NewPool(1, time.Millisecond)
+			pool, err := NewPool(1, time.Millisecond)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -245,7 +332,7 @@ func TestPoolObserveHostLoadNormalisesRunnable(t *testing.T) {
 func TestPoolRunnableGuardClampsInvalidInputs(t *testing.T) {
 	t.Parallel()
 
-	pool, err := shape.NewPool(1, time.Millisecond)
+	pool, err := NewPool(1, time.Millisecond)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
