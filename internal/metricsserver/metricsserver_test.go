@@ -16,15 +16,12 @@ import (
 func TestStartServerRequiresContext(t *testing.T) {
 	t.Parallel()
 
-	core, _ := observer.New(zap.InfoLevel)
-	logger := zap.New(core)
-
 	handler := http.NewServeMux()
 	handler.HandleFunc("/", func(http.ResponseWriter, *http.Request) {})
 
 	var nilCtx context.Context
 
-	shutdown, err := metricsserver.StartServer(nilCtx, logger, "127.0.0.1:0", handler)
+	shutdown, err := metricsserver.StartServer(nilCtx, zap.NewNop(), "127.0.0.1:0", handler)
 	if !errors.Is(err, metricsserver.ErrContextRequired) {
 		t.Fatalf("expected ErrContextRequired, got %v", err)
 	}
@@ -52,6 +49,10 @@ func TestStartServerNilHandler(t *testing.T) {
 	entries := logs.FilterMessage("metrics server disabled").All()
 	if len(entries) != 1 {
 		t.Fatalf("expected one disable log entry, got %d", len(entries))
+	}
+
+	if entries[0].Entry.Level != zap.WarnLevel {
+		t.Fatalf("expected warning log level, got %v", entries[0].Entry.Level)
 	}
 
 	if reason := entries[0].ContextMap()["reason"]; reason != "handler missing" {
@@ -128,17 +129,17 @@ func TestStartServerHappyPath(t *testing.T) {
 
 	waitForServer(t, &client, addr)
 
-	start := time.Now()
-
-	cancel()
-
 	shutdownCtx, cancelShutdown := context.WithTimeout(
 		context.Background(),
 		metricsserver.ShutdownTimeout,
 	)
 	defer cancelShutdown()
 
+	start := time.Now()
+
 	shutdown(shutdownCtx)
+
+	cancel()
 
 	if elapsed := time.Since(start); elapsed > metricsserver.ShutdownTimeout {
 		t.Fatalf(
@@ -240,6 +241,28 @@ func TestStartEndpointMissingDeps(t *testing.T) {
 
 	if reason := entries[0].ContextMap()["reason"]; reason != "start function missing" {
 		t.Fatalf("expected reason 'start function missing', got %v", reason)
+	}
+}
+
+func TestStartEndpointNilContext(t *testing.T) {
+	t.Parallel()
+
+	handler := http.NewServeMux()
+	handler.HandleFunc("/", func(http.ResponseWriter, *http.Request) {})
+
+	shutdown, cancel, err := metricsserver.StartEndpoint(
+		nil,
+		metricsserver.EndpointDeps{StartServer: metricsserver.StartServer},
+		zap.NewNop(),
+		"127.0.0.1:8080",
+		handler,
+	)
+	if !errors.Is(err, metricsserver.ErrContextRequired) {
+		t.Fatalf("expected ErrContextRequired, got %v", err)
+	}
+
+	if shutdown != nil || cancel != nil {
+		t.Fatalf("expected shutdown and cancel to be nil when context missing")
 	}
 }
 
