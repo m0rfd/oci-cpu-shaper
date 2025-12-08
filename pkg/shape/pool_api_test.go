@@ -1,6 +1,7 @@
 package shape_test
 
 import (
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -55,9 +56,17 @@ func TestPoolSetTargetBoundsInput(t *testing.T) {
 func TestNewPoolRejectsNonPositiveWorkerCount(t *testing.T) {
 	t.Parallel()
 
-	_, err := shape.NewPool(0, shape.DefaultQuantum)
-	if err == nil {
-		t.Fatal("expected error when worker count is non-positive")
+	testCases := []int{0, -2}
+
+	for _, workers := range testCases {
+		t.Run(fmt.Sprintf("workers=%d", workers), func(t *testing.T) {
+			t.Parallel()
+
+			_, err := shape.NewPool(workers, shape.DefaultQuantum)
+			if err == nil {
+				t.Fatalf("expected error when worker count is %d", workers)
+			}
+		})
 	}
 }
 
@@ -71,6 +80,15 @@ func TestNewPoolClampsQuantumWithinBounds(t *testing.T) {
 
 	if got := tooSmall.Quantum(); got != shape.DefaultQuantum {
 		t.Fatalf("expected quantum to clamp to %s, got %s", shape.DefaultQuantum, got)
+	}
+
+	zeroQuantum, err := shape.NewPool(1, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := zeroQuantum.Quantum(); got != shape.DefaultQuantum {
+		t.Fatalf("expected zero quantum to clamp to %s, got %s", shape.DefaultQuantum, got)
 	}
 
 	tooLarge, err := shape.NewPool(1, 50*time.Millisecond)

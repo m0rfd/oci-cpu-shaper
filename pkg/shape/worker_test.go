@@ -268,6 +268,38 @@ func TestPoolWorkerStartHookErrorPropagates(t *testing.T) {
 	}
 }
 
+func TestPoolInvokesWorkerStartErrorHandlerOnSchedIdleFailure(t *testing.T) {
+	t.Parallel()
+
+	pool, err := NewPool(1, time.Millisecond)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var handlerCount atomic.Int32
+
+	pool.workerStartHook = func() error {
+		return errTestSchedIdle
+	}
+
+	pool.workerStartErrorHandler = func(err error) {
+		if !errors.Is(err, errTestSchedIdle) {
+			t.Fatalf("unexpected error propagated: %v", err)
+		}
+
+		handlerCount.Add(1)
+	}
+
+	pool.sleepFunc = func(time.Duration) {}
+	pool.yieldFunc = func() {}
+
+	ctx := t.Context()
+
+	pool.Start(ctx)
+
+	waitForCount(t, &handlerCount, 1)
+}
+
 func TestPoolWorkerSkipsSleepWhenTargetIsFullyBusy(t *testing.T) {
 	t.Parallel()
 
