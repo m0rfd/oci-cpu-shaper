@@ -222,6 +222,8 @@ jobs:
             ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Run checks before container build
+        env:
+          CHECK_INCLUDE_CODEQL: "0"
         run: make check
 
       - name: Save Go build and module caches
@@ -338,6 +340,8 @@ jobs:
             ${{ runner.os }}-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Run checks before container build
+        env:
+          CHECK_INCLUDE_CODEQL: "0"
         run: make check
 
       - name: Save Go build and module caches

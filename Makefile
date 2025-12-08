@@ -16,6 +16,7 @@ COVERAGE_SUMMARY ?= coverage.txt
 INTEGRATION_COVERAGE_PROFILE ?=
 REUSE_INTEGRATION_COVERAGE ?= 0
 RUN_E2E_TESTS ?= 0
+CHECK_INCLUDE_CODEQL ?= 1
 PYTHON ?= python3
 
 MODULE := $(shell $(GO) list -m 2>/dev/null)
@@ -439,7 +440,13 @@ codeql-go: ensure-codeql
 		SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="Go" CODEQL_REPO_ROOT="$(ROOT_DIR)" CODEQL_GOMODCACHE="$(GOMODCACHE_DIR)" CODEQL_IGNORE_RULES="$(strip $(CODEQL_GO_IGNORE_RULES))" CODEQL_IGNORE_PATHS="$(strip $(CODEQL_GO_IGNORE_PATHS))" $(PYTHON) "$(CODEQL_SARIF_CHECK)"
 codeql-all: codeql-actions codeql-go
 
-check: go-mod-download verify-git-hooks tidy lint lint-makefile lint-dockerfile lint-workflows test coverage codeql-all agents
+CHECK_TARGETS := go-mod-download verify-git-hooks tidy lint lint-makefile lint-dockerfile lint-workflows test coverage
+ifeq ($(CHECK_INCLUDE_CODEQL),1)
+CHECK_TARGETS += codeql-all
+endif
+CHECK_TARGETS += agents
+
+check: $(CHECK_TARGETS)
 
 actionlint: ensure-actionlint
 	@if [ ! -d ".github/workflows" ]; then \
