@@ -1,6 +1,7 @@
 package cgroup
 
 import (
+	"bufio"
 	"errors"
 	"os"
 	"path/filepath"
@@ -95,6 +96,55 @@ func TestReadSelfCgroupSkipsInvalidLines(t *testing.T) {
 	_, err = readSelfCgroup(procPath)
 	if !errors.Is(err, errCgroupPathNotFound) {
 		t.Fatalf("expected errCgroupPathNotFound, got %v", err)
+	}
+}
+
+func TestReadSelfCgroupHandlesMissingControllerEntries(t *testing.T) {
+	t.Parallel()
+
+	procPath := filepath.Join(t.TempDir(), "proc")
+
+	content := strings.Join([]string{
+		"not-even-close",              // malformed without expected parts
+		"0:cpu:/user.slice",           // controller present, should be skipped
+		"1:name=systemd:/slice.scope", // controllers populated, should be skipped
+		"2::   ",                      // missing path, should be skipped
+	}, "\n")
+
+	err := os.WriteFile(procPath, []byte(content+"\n"), 0o600)
+	if err != nil {
+		t.Fatalf("write cgroup file: %v", err)
+	}
+
+	_, err = readSelfCgroup(procPath)
+	if !errors.Is(err, errCgroupPathNotFound) {
+		t.Fatalf("expected errCgroupPathNotFound, got %v", err)
+	}
+}
+
+func TestReadSelfCgroupPropagatesScannerError(t *testing.T) {
+	t.Parallel()
+
+	procPath := filepath.Join(t.TempDir(), "proc")
+
+	longLine := strings.Repeat("x", bufio.MaxScanTokenSize+32)
+
+	err := os.WriteFile(procPath, []byte(longLine), 0o600)
+	if err != nil {
+		t.Fatalf("write oversized cgroup file: %v", err)
+	}
+
+	_, err = readSelfCgroup(procPath)
+	if err == nil {
+		t.Fatalf("expected scan error, got nil")
+	}
+
+	if !errors.Is(err, bufio.ErrTooLong) {
+		t.Fatalf("expected bufio.ErrTooLong, got %v", err)
+	}
+
+	if !strings.Contains(err.Error(), "scan "+procPath) {
+		t.Fatalf("expected scan path prefix, got %v", err)
 	}
 }
 
