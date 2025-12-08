@@ -63,6 +63,19 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v6
 
+    - name: Read CodeQL version
+      run: echo "CODEQL_VERSION=$(cat .github/workflows/.codeql-version)" >> "$GITHUB_ENV"
+
+    - name: Cache CodeQL CLI
+      id: codeql-cli-cache
+      uses: actions/cache@v4
+      with:
+        path: .cache/tools/codeql
+        key: codeql-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/.codeql-version') }}
+
+    - name: Ensure CodeQL CLI
+      run: make ensure-codeql
+
     # Add any setup steps before running the `github/codeql-action/init` action.
     # This includes steps like installing compilers or runtimes (`actions/setup-node`
     # or others). This is typically only required for manual builds.
