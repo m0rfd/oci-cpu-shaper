@@ -84,6 +84,60 @@ type autosizeSkipCase struct {
 	offline bool
 }
 
+func TestApplyPoolSizingFromShapeSkipsWhenUnavailableWithoutIMDS(t *testing.T) {
+	t.Parallel()
+
+	testCases := []autosizeSkipCase{
+		{
+			name:    "noopModeSkipsWithoutIMDS",
+			mode:    modeNoop,
+			offline: false,
+		},
+		{
+			name:    "offlineSkipsWithoutIMDS",
+			mode:    modeEnforce,
+			offline: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := runtimeconfig.Default()
+			cfg.Pool.AutoSizeFromShape = true
+			cfg.Pool.Workers = 4
+			cfg.OCI.Offline = testCase.offline
+
+			updated, result, err := applyPoolSizingFromShape(
+				context.Background(),
+				cfg,
+				testCase.mode,
+				nil,
+			)
+			if err != nil {
+				t.Fatalf("applyPoolSizingFromShape returned error: %v", err)
+			}
+
+			if result.applied {
+				t.Fatal("expected sizing to be skipped")
+			}
+
+			if updated.Pool.Workers != cfg.Pool.Workers {
+				t.Fatalf(
+					"expected worker count to remain %d, got %d",
+					cfg.Pool.Workers,
+					updated.Pool.Workers,
+				)
+			}
+
+			if result.workers != cfg.Pool.Workers {
+				t.Fatalf("expected worker result %d, got %d", cfg.Pool.Workers, result.workers)
+			}
+		})
+	}
+}
+
 func TestApplyPoolSizingFromShapeIMDSEdgeOCPUs(t *testing.T) {
 	t.Parallel()
 
@@ -186,6 +240,38 @@ func TestApplyPoolSizingFromShapeSkipsAutosizingWhenUnavailable(t *testing.T) {
 			t.Parallel()
 			runAutosizingSkipCase(t, testCase)
 		})
+	}
+}
+
+func TestApplyPoolSizingFromShapeRequiresIMDSWhenAutosizingEnabled(t *testing.T) {
+	t.Parallel()
+
+	cfg := runtimeconfig.Default()
+	cfg.Pool.AutoSizeFromShape = true
+
+	updated, result, err := applyPoolSizingFromShape(context.Background(), cfg, modeEnforce, nil)
+	if err == nil {
+		t.Fatal("expected error when autosizing without IMDS client")
+	}
+
+	if !errors.Is(err, errControllerIMDSRequired) {
+		t.Fatalf("expected errControllerIMDSRequired, got %v", err)
+	}
+
+	if result.applied {
+		t.Fatal("expected sizing not to be applied when IMDS is missing")
+	}
+
+	if updated.Pool.Workers != cfg.Pool.Workers {
+		t.Fatalf(
+			"expected worker count to remain %d, got %d",
+			cfg.Pool.Workers,
+			updated.Pool.Workers,
+		)
+	}
+
+	if result.workers != cfg.Pool.Workers {
+		t.Fatalf("expected worker result %d, got %d", cfg.Pool.Workers, result.workers)
 	}
 }
 
