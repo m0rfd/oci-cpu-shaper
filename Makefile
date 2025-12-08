@@ -742,28 +742,42 @@ verify-git-hooks:
 		"" ) hook_dir="$$git_common_dir/hooks" ;; \
 		*) hook_dir="$$repo_root/$$hooks_path" ;; \
 	esac; \
-		script_path="hack/githooks/pre-commit"; \
-		hook_path="$$hook_dir/pre-commit"; \
-		if [ ! -f "$$script_path" ]; then \
-			echo "Hook template $$script_path not found" >&2; \
-			exit 1; \
-		fi; \
-		expected_checksum="$$(sha256sum "$$script_path" | awk '{print $$1}')"; \
-		if [ ! -f "$$hook_path" ]; then \
-			echo "Pre-commit hook missing at $$hook_path. Skipping verification; run 'make install-git-hooks' locally to install."; \
-			exit 0; \
-		fi; \
+	script_path="hack/githooks/pre-commit"; \
+	hook_path="$$hook_dir/pre-commit"; \
+	checksum_path="$$hook_path.sha256"; \
+	if [ ! -f "$$script_path" ]; then \
+		echo "Hook template $$script_path not found" >&2; \
+		exit 1; \
+	fi; \
+	expected_checksum="$$(sha256sum "$$script_path" | awk '{print $$1}')"; \
+	hook_checksum=""; \
+	if [ -f "$$hook_path" ]; then \
 		hook_checksum="$$(sha256sum "$$hook_path" | awk '{print $$1}')"; \
-		if [ "$$hook_checksum" != "$$expected_checksum" ]; then \
-			echo "Pre-commit hook at $$hook_path differs from template. Run 'make install-git-hooks'."; \
-			exit 1; \
-		fi; \
-		checksum_path="$$hook_path.sha256"; \
-		if [ -f "$$checksum_path" ]; then \
-			stored_checksum="$$(awk 'NR==1 {print $$1}' "$$checksum_path")"; \
-			if [ "$$stored_checksum" != "$$expected_checksum" ]; then \
-				echo "Stored checksum $$checksum_path differs from template. Run 'make install-git-hooks'."; \
-				exit 1; \
-			fi; \
-		fi; \
-		echo "Pre-commit hook verified at $$hook_path."
+	fi; \
+	stored_checksum=""; \
+	if [ -f "$$checksum_path" ]; then \
+		stored_checksum="$$(awk 'NR==1 {print $$1}' "$$checksum_path")"; \
+	fi; \
+	if [ "$$hook_checksum" = "$$expected_checksum" ] && [ "$$stored_checksum" = "$$expected_checksum" ]; then \
+		echo "Pre-commit hook already up to date."; \
+		exit 0; \
+	fi; \
+	echo "Warning: pre-commit hook missing or outdated at $$hook_path; attempting automatic installation." >&2; \
+	if ! $(MAKE) --no-print-directory install-git-hooks; then \
+		echo "Automatic pre-commit hook installation failed; rerun 'make install-git-hooks' locally." >&2; \
+		exit 1; \
+	fi; \
+	hook_checksum=""; \
+	if [ -f "$$hook_path" ]; then \
+		hook_checksum="$$(sha256sum "$$hook_path" | awk '{print $$1}')"; \
+	fi; \
+	stored_checksum=""; \
+	if [ -f "$$checksum_path" ]; then \
+		stored_checksum="$$(awk 'NR==1 {print $$1}' "$$checksum_path")"; \
+	fi; \
+	if [ "$$hook_checksum" = "$$expected_checksum" ] && [ "$$stored_checksum" = "$$expected_checksum" ]; then \
+		echo "Pre-commit hook refreshed automatically."; \
+		exit 0; \
+	fi; \
+	echo "Pre-commit hook at $$hook_path still mismatched after installation; rerun 'make install-git-hooks' locally." >&2; \
+	exit 1; \
