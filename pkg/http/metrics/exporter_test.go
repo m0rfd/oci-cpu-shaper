@@ -393,6 +393,24 @@ func TestExporterServeHTTPSanitizesCgroupMetrics(t *testing.T) {
 	}
 }
 
+func TestExporterServeHTTPReportsRenderErrors(t *testing.T) {
+	t.Parallel()
+
+	exporter := NewExporter()
+	exporter.bufferFactory = func() byteBuffer { return nil }
+
+	recorder := httptest.NewRecorder()
+	exporter.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("expected HTTP 500 when render fails, got %d", recorder.Code)
+	}
+
+	if !strings.Contains(recorder.Body.String(), errNilBuffer.Error()) {
+		t.Fatalf("expected error body to include render failure, got %s", recorder.Body.String())
+	}
+}
+
 func TestExporterWriteToPropagatesWriterErrors(t *testing.T) {
 	t.Parallel()
 
@@ -432,6 +450,33 @@ func TestExporterRenderRejectsNilBuffer(t *testing.T) {
 	}
 }
 
+func TestExporterRenderDefaultsBufferFactory(t *testing.T) {
+	t.Parallel()
+
+	exporter := NewExporter()
+	exporter.bufferFactory = nil
+
+	data, err := exporter.Render()
+	if err != nil {
+		t.Fatalf("Render() returned error: %v", err)
+	}
+
+	if len(data) == 0 {
+		t.Fatalf("expected Render to return metrics when bufferFactory is nil")
+	}
+
+	data[0] = '?'
+
+	fresh, err := exporter.Render()
+	if err != nil {
+		t.Fatalf("Render() returned error on second call: %v", err)
+	}
+
+	if strings.HasPrefix(string(fresh), "?") {
+		t.Fatalf("expected Render output to be cloned, got %s", string(fresh))
+	}
+}
+
 func TestExporterRenderClonesFactoryBuffer(t *testing.T) {
 	t.Parallel()
 
@@ -453,6 +498,19 @@ func TestExporterRenderClonesFactoryBuffer(t *testing.T) {
 
 	if strings.Contains(metricsOutput, "mutated") {
 		t.Fatalf("expected Render output to be cloned, got %s", metricsOutput)
+	}
+
+	if seed.String()[0] != 'p' {
+		t.Fatalf(
+			"expected seed buffer to remain unchanged after Render output mutation, got %s",
+			seed.String(),
+		)
+	}
+
+	data[0] = 'X'
+
+	if seed.String()[0] != 'p' {
+		t.Fatalf("expected seed buffer to be independent from cloned output, got %s", seed.String())
 	}
 }
 
