@@ -75,6 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - agents
+      - integration
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
@@ -83,6 +84,21 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - name: Download integration coverage
+        if: needs.integration.outputs.integration-succeeded == 'true'
+        uses: actions/download-artifact@v5
+        with:
+          name: integration-coverage
+          path: artifacts
+
+      - name: Prepare integration coverage reuse
+        run: |
+          profile="artifacts/integration-coverage.out"
+          if [ -f "$profile" ]; then
+            echo "REUSE_INTEGRATION_COVERAGE=1" >>"$GITHUB_ENV"
+            echo "INTEGRATION_COVERAGE_PROFILE=$profile" >>"$GITHUB_ENV"
+          fi
 
       - name: Record golangci-lint version
         run: echo "GOLANGCI_LINT_VERSION=$(make -s print-golangci-lint-version)" >>"$GITHUB_ENV"
@@ -309,12 +325,11 @@ jobs:
     name: integration tests (cgroup v2)
     # Integration suite usually finishes within ~1-2m; cap at 5m for retries.
     timeout-minutes: 5
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     permissions:
       contents: read
       actions: write # required for artifact uploads
     needs:
-      - check
+      - agents
     runs-on: ubuntu-latest
     outputs:
       integration-succeeded: ${{ steps.integration-status.outputs.succeeded }}
