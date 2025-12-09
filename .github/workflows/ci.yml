@@ -11,6 +11,7 @@ concurrency:
 env:
   SHELLCHECK_VERSION: "0.10.0"
   PYFLAKES_VERSION: "3.2.0"
+  ACTIONLINT_VERSION: "v1.7.9"
 
 defaults:
   run:
@@ -91,21 +92,19 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
 
-      - name: Cache golangci-lint workspace
-        uses: actions/cache@v4
+      - name: Restore Go and lint caches
+        id: restore-go-tools
+        uses: actions/cache/restore@v4
         with:
-          path: .cache/golangci
-          key: ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/.golangci.yml', '**/go.sum') }}
+          path: |
+            .cache/go
+            .cache/gomod
+            .cache/golangci
+            ${{ env.GOBIN }}/golangci-lint
+            ${{ env.GOBIN }}/actionlint
+          key: ${{ runner.os }}-${{ runner.arch }}-go-tools-${{ steps.setup-go.outputs.go-version }}-${{ env.GOLANGCI_LINT_VERSION }}-${{ env.ACTIONLINT_VERSION }}-${{ hashFiles('**/.golangci.yml', '**/go.sum', 'Makefile') }}
           restore-keys: |
-            ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-
-
-      - name: Cache golangci-lint binary
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.GOBIN }}/golangci-lint
-          key: ${{ runner.os }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('Makefile') }}
-          restore-keys: |
-            ${{ runner.os }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ steps.setup-go.outputs.go-version }}-
+            ${{ runner.os }}-${{ runner.arch }}-go-tools-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Run make check
         run: |
@@ -138,6 +137,18 @@ jobs:
         with:
           name: make-check-logs
           path: artifacts/make-check.log
+
+      - name: Save Go and lint caches
+        if: github.ref_protected == true && steps.restore-go-tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cache/go
+            .cache/gomod
+            .cache/golangci
+            ${{ env.GOBIN }}/golangci-lint
+            ${{ env.GOBIN }}/actionlint
+          key: ${{ steps.restore-go-tools.outputs.cache-primary-key }}
 
       - name: Ensure make check left no uncommitted changes
         run: |

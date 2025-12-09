@@ -83,6 +83,18 @@ jobs:
           name: integration-coverage
           path: artifacts/ci
 
+      - name: Download make check logs from CI workflow
+        id: download-ci-make-check-logs
+        if: github.event_name == 'workflow_run'
+        continue-on-error: true
+        uses: actions/download-artifact@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.CI_RUN_ID }}
+          name: make-check-logs
+          path: artifacts/ci
+
       - name: Locate CI artifacts
         id: ci-artifacts
         run: |
@@ -90,12 +102,20 @@ jobs:
           set -o nounset
           set -o pipefail
 
+          ci_succeeded=0
+          if [ "${{ github.event_name }}" = "workflow_run" ] && [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
+            ci_succeeded=1
+          fi
+
           coverage_out=$(find artifacts/ci -name 'coverage.out' -print -quit || true)
           coverage_txt=$(find artifacts/ci -name 'coverage.txt' -print -quit || true)
           integration_coverage=$(find artifacts/ci -name 'integration-coverage.out' -print -quit || true)
+          make_check_log=$(find artifacts/ci -name 'make-check.log' -print -quit || true)
 
           coverage_available=0
           integration_available=0
+          make_check_available=0
+          should_run_checks=1
 
           if [ -n "${coverage_out}" ] && [ -n "${coverage_txt}" ]; then
             coverage_available=1
@@ -107,53 +127,61 @@ jobs:
             integration_available=1
           fi
 
+          if [ -n "${make_check_log}" ]; then
+            make_check_available=1
+            mkdir -p artifacts
+            cp "${make_check_log}" artifacts/make-check.log
+          fi
+
+          if [ "$ci_succeeded" -eq 1 ]; then
+            should_run_checks=0
+          fi
+
           {
             echo "coverage-available=${coverage_available}"
             echo "integration-available=${integration_available}"
             echo "integration-profile=${integration_coverage}"
+            echo "make-check-available=${make_check_available}"
+            echo "ci-succeeded=${ci_succeeded}"
+            echo "should-run-checks=${should_run_checks}"
           } >>"$GITHUB_OUTPUT"
 
+      - name: Upload reused make check log
+        if: steps.ci-artifacts.outputs.make-check-available == '1'
+        uses: actions/upload-artifact@v5
+        with:
+          name: make-check-logs
+          path: artifacts/make-check.log
+
       - name: Record golangci-lint version
-        if: steps.ci-artifacts.outputs.coverage-available != '1'
+        if: steps.ci-artifacts.outputs.should-run-checks == '1'
         run: echo "GOLANGCI_LINT_VERSION=$(make -s print-golangci-lint-version)" >>"$GITHUB_ENV"
 
       - name: Set up Go with cache
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
 
-      - name: Cache golangci-lint workspace
-        if: steps.ci-artifacts.outputs.coverage-available != '1'
-        uses: actions/cache@v4
+      - name: Restore Go and lint caches
+        id: restore-go-tools
+        if: steps.ci-artifacts.outputs.should-run-checks == '1'
+        uses: actions/cache/restore@v4
         with:
-          path: .cache/golangci
-          key: ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/.golangci.yml', '**/go.sum') }}
+          path: |
+            .cache/go
+            .cache/gomod
+            .cache/golangci
+            ${{ env.GOBIN }}/golangci-lint
+            ${{ env.GOBIN }}/actionlint
+          key: ${{ runner.os }}-${{ runner.arch }}-go-tools-${{ steps.setup-go.outputs.go-version }}-${{ env.GOLANGCI_LINT_VERSION }}-${{ env.ACTIONLINT_VERSION }}-${{ hashFiles('**/.golangci.yml', '**/go.sum', 'Makefile') }}
           restore-keys: |
-            ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-
-
-      - name: Cache golangci-lint binary
-        if: steps.ci-artifacts.outputs.coverage-available != '1'
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.GOBIN }}/golangci-lint
-          key: ${{ runner.os }}-${{ runner.arch }}-golangci-${{ env.GOLANGCI_LINT_VERSION }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/.golangci.yml', '**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-golangci-${{ env.GOLANGCI_LINT_VERSION }}-go-${{ steps.setup-go.outputs.go-version }}-
+            ${{ runner.os }}-${{ runner.arch }}-go-tools-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Set up lint tools
-        if: steps.ci-artifacts.outputs.coverage-available != '1'
+        if: steps.ci-artifacts.outputs.should-run-checks == '1' && steps.restore-go-tools.outputs.cache-hit != 'true'
         uses: ./.github/actions/setup-lint-tools
 
-      - name: Cache actionlint binary
-        if: steps.ci-artifacts.outputs.coverage-available != '1'
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.GOBIN }}/actionlint
-          key: ${{ runner.os }}-${{ runner.arch }}-actionlint-${{ env.ACTIONLINT_VERSION }}-${{ hashFiles('Makefile') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-actionlint-${{ env.ACTIONLINT_VERSION }}-
-
       - name: Run lint
-        if: steps.ci-artifacts.outputs.coverage-available != '1'
+        if: steps.ci-artifacts.outputs.should-run-checks == '1'
         run: |
           set -o pipefail
           mkdir -p artifacts
@@ -162,14 +190,14 @@ jobs:
           GOBIN: ${{ env.GOBIN }}
 
       - name: Upload lint logs
-        if: steps.ci-artifacts.outputs.coverage-available != '1'
+        if: steps.ci-artifacts.outputs.should-run-checks == '1'
         uses: actions/upload-artifact@v5
         with:
           name: lint-logs
           path: artifacts/make-lint.log
 
       - name: Run actionlint for release workflow
-        if: steps.ci-artifacts.outputs.coverage-available != '1'
+        if: steps.ci-artifacts.outputs.should-run-checks == '1'
         run: |
           set -o pipefail
           mkdir -p artifacts
@@ -178,22 +206,22 @@ jobs:
           GOBIN: ${{ env.GOBIN }}
 
       - name: Upload actionlint logs
-        if: steps.ci-artifacts.outputs.coverage-available != '1'
+        if: steps.ci-artifacts.outputs.should-run-checks == '1'
         uses: actions/upload-artifact@v5
         with:
           name: actionlint-logs-release
           path: artifacts/release-actionlint.log
 
       - name: Check Makefile formatting
-        if: steps.ci-artifacts.outputs.coverage-available != '1'
+        if: steps.ci-artifacts.outputs.should-run-checks == '1'
         run: make lint-makefile
 
       - name: Run tests
-        if: steps.ci-artifacts.outputs.coverage-available != '1'
+        if: steps.ci-artifacts.outputs.should-run-checks == '1'
         run: make test
 
       - name: Run coverage
-        if: steps.ci-artifacts.outputs.coverage-available != '1'
+        if: steps.ci-artifacts.outputs.should-run-checks == '1'
         env:
           MIN_COVERAGE: "96"
           COVERAGE_PROFILE: coverage.out
