@@ -164,6 +164,42 @@ func TestSamplerPublishesErrorsAndContinuesSampling(t *testing.T) {
 	}
 }
 
+func TestSamplerPublishesErrorAndStopsOnContextCancel(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	responses := []snapshotResponse{
+		{snapshot: Snapshot{Idle: 0, Total: 10, Runnable: 0}, err: nil},
+		{snapshot: Snapshot{Idle: 0, Total: 0, Runnable: 0}, err: errTestBoom},
+	}
+
+	tickCh := make(chan time.Time, 1)
+	sampler := newManualSampler(responses, tickCh)
+
+	observations := sampler.Run(ctx)
+
+	tickCh <- time.Unix(0, 0)
+
+	errorObservation := receiveObservation(t, observations, "error observation")
+
+	if !errors.Is(errorObservation.Err, errTestBoom) {
+		t.Fatalf("expected publishError to propagate %v, got %v", errTestBoom, errorObservation.Err)
+	}
+
+	cancel()
+
+	select {
+	case _, ok := <-observations:
+		if ok {
+			t.Fatalf("expected observations channel to close after context cancellation")
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("timed out waiting for sampler to stop after context cancellation")
+	}
+}
+
 func TestSamplerEmitsObservations(t *testing.T) {
 	t.Parallel()
 
