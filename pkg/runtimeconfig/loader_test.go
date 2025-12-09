@@ -376,3 +376,78 @@ func TestLoadConfigReturnsDecodeError(t *testing.T) {
 		t.Fatal("expected error for malformed yaml")
 	}
 }
+
+func TestLoadConfigReturnsMergeError(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "nested")
+
+	err := os.Mkdir(path, testConfigFilePerm)
+	if err != nil {
+		t.Fatalf("create directory: %v", err)
+	}
+
+	_, err = Load(path)
+	if err == nil {
+		t.Fatal("expected merge error for invalid path")
+	}
+
+	if !strings.Contains(err.Error(), fmt.Sprintf("read config file %q", path)) {
+		t.Fatalf("expected read error to reference path, got %v", err)
+	}
+
+	var pathErr *os.PathError
+
+	if !errors.As(err, &pathErr) {
+		t.Fatalf("expected wrapped PathError, got %v", err)
+	}
+
+	if pathErr.Path != path {
+		t.Fatalf("expected PathError to include %q, got %q", path, pathErr.Path)
+	}
+}
+
+func TestLoadConfigWrapsValidationErrors(t *testing.T) {
+	t.Run("runtime validation", func(t *testing.T) {
+		t.Setenv(envTargetMin, "0.60")
+
+		_, err := Load("")
+		if err == nil {
+			t.Fatal("expected validation error for target bounds")
+		}
+
+		if !strings.Contains(err.Error(), "validate runtime config") {
+			t.Fatalf("expected runtime validation wrapper, got %v", err)
+		}
+
+		if !errors.Is(err, adapt.ErrInvalidConfig) {
+			t.Fatalf("expected adapt.ErrInvalidConfig, got %v", err)
+		}
+
+		if !strings.Contains(err.Error(), "controller.targetMin") {
+			t.Fatalf("expected error to reference controller target bounds, got %v", err)
+		}
+	})
+
+	t.Run("controller validation", func(t *testing.T) {
+		t.Setenv(envRelaxedConfirmations, "200")
+
+		_, err := Load("")
+		if err == nil {
+			t.Fatal("expected controller validation error for relaxed confirmations")
+		}
+
+		if !strings.Contains(err.Error(), "validate controller config") {
+			t.Fatalf("expected controller validation wrapper, got %v", err)
+		}
+
+		if !errors.Is(err, adapt.ErrInvalidConfig) {
+			t.Fatalf("expected adapt.ErrInvalidConfig, got %v", err)
+		}
+
+		if !strings.Contains(err.Error(), "controller.relaxedConfirmations") {
+			t.Fatalf("expected error to reference relaxed confirmations, got %v", err)
+		}
+	})
+}
