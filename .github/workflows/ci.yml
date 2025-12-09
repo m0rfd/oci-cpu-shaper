@@ -222,6 +222,8 @@ jobs:
     needs:
       - check
     runs-on: ubuntu-latest
+    env:
+      DOCKER_BUILDKIT: "1"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -236,15 +238,19 @@ jobs:
 
       - name: Build container image
         env:
-          RETRY_ATTEMPTS: "3"
+          RETRY_ATTEMPTS: "2"
+          RETRY_BACKOFF_SECONDS: "12"
+          BUILD_LOG: artifacts/docker-build.log
         run: |
           set -o errexit
           set -o nounset
           set -o pipefail
 
           attempt=1
+          mkdir -p "$(dirname "$BUILD_LOG")"
+          : > "$BUILD_LOG"
           while [ "$attempt" -le "$RETRY_ATTEMPTS" ]; do
-            echo "[build] attempt ${attempt}/${RETRY_ATTEMPTS}"
+            echo "[build] attempt ${attempt}/${RETRY_ATTEMPTS}" | tee -a "$BUILD_LOG"
             if docker buildx build \
               --file Dockerfile \
               --platform linux/amd64 \
@@ -255,8 +261,11 @@ jobs:
               --build-arg VERSION=dev \
               --build-arg GIT_COMMIT="${{ github.sha }}" \
               --build-arg BUILD_DATE="${{ steps.build-meta.outputs.build-date }}" \
-              .; then
-              echo "[build] succeeded on attempt ${attempt}"
+              --sbom=true \
+              --provenance=false \
+              . 2>&1 | tee -a "$BUILD_LOG"; then
+              echo "[build] succeeded on attempt ${attempt}" | tee -a "$BUILD_LOG"
+              rm -f "$BUILD_LOG"
               break
             fi
 
@@ -266,10 +275,17 @@ jobs:
             fi
 
             attempt=$((attempt + 1))
-            backoff=$((attempt * 10))
-            echo "[build] retrying in ${backoff}s"
-            sleep "$backoff"
+            echo "[build] retrying in ${RETRY_BACKOFF_SECONDS}s" | tee -a "$BUILD_LOG"
+            sleep "$RETRY_BACKOFF_SECONDS"
           done
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: container-build-log
+          path: artifacts/docker-build.log
+          if-no-files-found: error
 
       - name: Smoke test dry-run mode
         run: |
@@ -277,7 +293,9 @@ jobs:
           set -o nounset
           set -o pipefail
 
-          docker run --rm oci-cpu-shaper:test \
+          docker run --rm \
+            --security-opt=no-new-privileges:true \
+            oci-cpu-shaper:test \
             --mode dry-run \
             --log-level debug \
             --shutdown-after=4s 2>&1 | tee smoke.log

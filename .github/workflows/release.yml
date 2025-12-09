@@ -231,6 +231,7 @@ jobs:
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+      DOCKER_BUILDKIT: "1"
 
     steps:
       - name: Checkout
@@ -287,6 +288,8 @@ jobs:
           load: true
           cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-pr-build
           cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-pr-build,mode=max
+          provenance: false
+          sbom: true
           build-args: |
             VERSION=${{ steps.build_meta.outputs.version }}
             GIT_COMMIT=${{ github.sha }}
@@ -297,7 +300,7 @@ jobs:
       # basic container smoke test
       - name: Smoke test container
         run: |
-          output=$(docker run --rm pr-local/${{ github.repository }}:${{ github.sha }} --version)
+          output=$(docker run --rm --security-opt=no-new-privileges:true pr-local/${{ github.repository }}:${{ github.sha }} --version)
 
           expected=$(printf '{Version:%s GitCommit:%s BuildDate:%s}' \
             "${{ steps.build_meta.outputs.version }}" \
@@ -349,6 +352,7 @@ jobs:
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+      DOCKER_BUILDKIT: "1"
 
     steps:
       - name: Checkout
@@ -405,6 +409,8 @@ jobs:
           load: true
           cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-pr-build
           cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-pr-build,mode=max
+          provenance: false
+          sbom: true
           build-args: |
             VERSION=${{ steps.build_meta.outputs.version }}
             GIT_COMMIT=${{ github.sha }}
@@ -415,7 +421,7 @@ jobs:
       # basic container smoke test
       - name: Smoke test container
         run: |
-          output=$(docker run --rm pr-local/${{ github.repository }}:${{ github.sha }} --version)
+          output=$(docker run --rm --security-opt=no-new-privileges:true pr-local/${{ github.repository }}:${{ github.sha }} --version)
 
           expected=$(printf '{Version:%s GitCommit:%s BuildDate:%s}' \
             "${{ steps.build_meta.outputs.version }}" \
@@ -469,6 +475,9 @@ jobs:
       packages: write # GHCR push (release job)
       id-token: write # Cosign keyless (release job)
       security-events: write # Trivy SARIF upload
+
+    env:
+      DOCKER_BUILDKIT: "1"
 
     steps:
       - name: Checkout
