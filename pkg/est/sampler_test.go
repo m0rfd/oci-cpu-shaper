@@ -25,6 +25,10 @@ type fakeSource struct {
 	snapshotIndex int
 }
 
+type firstErrorThenSuccessSource struct {
+	calls atomic.Int32
+}
+
 type sequenceSource struct {
 	responses []snapshotResponse
 	index     int
@@ -85,6 +89,14 @@ func (f *fakeSource) Snapshot(_ context.Context) (Snapshot, error) {
 	f.snapshotIndex++
 
 	return snap, nil
+}
+
+func (f *firstErrorThenSuccessSource) Snapshot(_ context.Context) (Snapshot, error) {
+	if f.calls.Add(1) == 1 {
+		return Snapshot{}, errTestBoom
+	}
+
+	return Snapshot{Idle: 1, Total: 10, Runnable: 0}, nil
 }
 
 type SnapshotFunc func(context.Context) (Snapshot, error)
@@ -716,6 +728,40 @@ func TestSamplerRunInitialSnapshotError(t *testing.T) {
 	}
 }
 
+func TestSamplerRunInitialSnapshotErrorClosesChannel(t *testing.T) {
+	t.Parallel()
+
+	source := new(firstErrorThenSuccessSource)
+
+	sampler := NewSampler(source, time.Millisecond)
+	sampler.now = func() time.Time { return time.Unix(123, 0) }
+
+	ctx := context.Background()
+
+	observations := sampler.Run(ctx)
+
+	observation, ok := <-observations
+	if !ok {
+		t.Fatalf("expected error observation")
+	}
+
+	if observation.Err == nil || !strings.Contains(observation.Err.Error(), "initial snapshot") {
+		t.Fatalf("expected initial snapshot error, got %v", observation.Err)
+	}
+
+	if observation.Timestamp != time.Unix(123, 0) {
+		t.Fatalf("unexpected timestamp: %v", observation.Timestamp)
+	}
+
+	if source.calls.Load() != 1 {
+		t.Fatalf("expected one snapshot attempt, got %d", source.calls.Load())
+	}
+
+	if _, ok := <-observations; ok {
+		t.Fatalf("expected channel to be closed after publishing the error")
+	}
+}
+
 func TestSamplerRunRejectsDoubleStart(t *testing.T) {
 	t.Parallel()
 
@@ -755,6 +801,51 @@ func TestSamplerRunRejectsDoubleStart(t *testing.T) {
 	if _, ok := <-second; ok {
 		t.Fatalf("expected second channel to be closed")
 	}
+}
+
+func TestSamplerRunNilSourceUsesDefaultFileSource(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sampler := NewSampler(nil, time.Millisecond)
+	sampler.now = func() time.Time { return time.Unix(0, 0) }
+
+	ticks := make(chan time.Time, 1)
+	sampler.newTicker = func(time.Duration) ticker {
+		return manualTicker{ch: ticks}
+	}
+
+	observations := sampler.Run(ctx)
+
+	time.Sleep(10 * time.Millisecond)
+
+	ticks <- time.Unix(0, 0)
+
+	observation := receiveObservation(t, observations, "default file source observation")
+
+	if observation.Err != nil {
+		t.Fatalf("unexpected error from default file source: %v", observation.Err)
+	}
+
+	if observation.TotalJiffies == 0 {
+		t.Fatal("expected total jiffies to be reported from default file source")
+	}
+
+	done := make(chan struct{})
+
+	go func() {
+		for observation := range observations {
+			_ = observation
+		}
+
+		close(done)
+	}()
+
+	cancel()
+
+	assertLoopTermination(t, done)
 }
 
 func TestSamplerEmitsErrorObservationWhenLoopFails(t *testing.T) {
