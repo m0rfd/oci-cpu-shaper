@@ -61,6 +61,9 @@ HADOLINT_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),x86_64,$(if $(filter a
 HADOLINT_DOWNLOAD_URL := https://github.com/hadolint/hadolint/releases/download/$(HADOLINT_VERSION)/hadolint-$(HADOLINT_OS)-$(HADOLINT_ARCH)
 HADOLINT_BASENAME := hadolint-$(HADOLINT_OS)-$(HADOLINT_ARCH)
 
+HOOK_TEMPLATE := hack/githooks/pre-commit
+HOOK_TEMPLATE_CHECKSUM := $(HOOK_TEMPLATE).sha256
+
 GO_BIN_PATH := $(strip $(GOBIN))
 ifeq ($(GO_BIN_PATH),)
 GO_BIN_PATH := $(shell \
@@ -108,8 +111,8 @@ HADOLINT ?= $(HADOLINT_BIN)
 HADOLINT_DOCKERFILE ?= $(ROOT_DIR)/Dockerfile
 HADOLINT_ARGS ?= --no-fail
 
-.PHONY: actionlint agents bench build check clean codeql-actions codeql-all codeql-go coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-hadolint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-dockerfile lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools verify-git-hooks verify-go-version
-HELP_TARGETS := lint lint-makefile lint-workflows lint-dockerfile test coverage build check govulncheck integration e2e agents actionlint codeql-actions codeql-go codeql-all help clean verify-git-hooks
+.PHONY: actionlint agents bench build check clean codeql-actions codeql-all codeql-go coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-hadolint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-dockerfile lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools update-hook-template-checksum verify-git-hooks verify-go-version verify-hook-template
+HELP_TARGETS := lint lint-makefile lint-workflows lint-dockerfile test coverage build check govulncheck integration e2e agents actionlint codeql-actions codeql-go codeql-all help clean verify-git-hooks verify-hook-template update-hook-template-checksum
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-hadolint ensure-mbake
 
@@ -192,6 +195,8 @@ help:
 			lint-workflows) desc="Run actionlint against GitHub workflows";; \
 			lint-fix) desc="Run golangci-lint with autofix";; \
 			verify-git-hooks) desc="Verify pre-commit hook matches repository template";; \
+			verify-hook-template) desc="Ensure pre-commit template checksum matches tracked value";; \
+			update-hook-template-checksum) desc="Refresh tracked pre-commit template checksum";; \
 			test) desc="Run unit tests (excludes integration/e2e)";; \
 			coverage) desc="Run coverage with minimum threshold enforcement";; \
 			build) desc="Compile all modules with cache isolation";; \
@@ -440,7 +445,7 @@ codeql-go: ensure-codeql
 		SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="Go" CODEQL_REPO_ROOT="$(ROOT_DIR)" CODEQL_GOMODCACHE="$(GOMODCACHE_DIR)" CODEQL_IGNORE_RULES="$(strip $(CODEQL_GO_IGNORE_RULES))" CODEQL_IGNORE_PATHS="$(strip $(CODEQL_GO_IGNORE_PATHS))" $(PYTHON) "$(CODEQL_SARIF_CHECK)"
 codeql-all: codeql-actions codeql-go
 
-CHECK_TARGETS := go-mod-download verify-git-hooks tidy lint lint-makefile lint-dockerfile lint-workflows test coverage
+CHECK_TARGETS := go-mod-download verify-git-hooks verify-hook-template tidy lint lint-makefile lint-dockerfile lint-workflows test coverage
 ifeq ($(CHECK_INCLUDE_CODEQL),1)
 CHECK_TARGETS += codeql-all
 endif
@@ -668,6 +673,37 @@ clean:
 	@rm -rf "$(COVERAGE_PROFILE)" "$(COVERAGE_SUMMARY)" coverage-*.out "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)" "$(GOLANGCI_LINT_CACHE_DIR)" "$(GOVULNCHECK_CACHE_DIR)" artifacts
 
 lint-autofix: lint-fix
+
+verify-hook-template:
+	@if [ ! -f "$(HOOK_TEMPLATE)" ]; then \
+		echo "Hook template $(HOOK_TEMPLATE) not found; rerun 'git checkout -- $(HOOK_TEMPLATE)' to restore it." >&2; \
+		exit 1; \
+	fi; \
+	if [ ! -f "$(HOOK_TEMPLATE_CHECKSUM)" ]; then \
+		echo "Tracked checksum missing at $(HOOK_TEMPLATE_CHECKSUM); run 'make update-hook-template-checksum'." >&2; \
+		exit 1; \
+	fi; \
+	expected="$$(awk 'NR==1 {print $$1}' "$(HOOK_TEMPLATE_CHECKSUM)")"; \
+	if [ -z "$$expected" ]; then \
+		echo "Tracked checksum file $(HOOK_TEMPLATE_CHECKSUM) is empty; run 'make update-hook-template-checksum'." >&2; \
+		exit 1; \
+	fi; \
+	actual="$$(sha256sum "$(HOOK_TEMPLATE)" | awk '{print $$1}')"; \
+	if [ "$$actual" != "$$expected" ]; then \
+		echo "Pre-commit template hash changed; run 'make update-hook-template-checksum' and rerun 'make install-git-hooks' locally." >&2; \
+		echo "Expected $$expected but found $$actual." >&2; \
+		exit 1; \
+	fi; \
+	echo "Pre-commit hook template checksum verified."
+
+update-hook-template-checksum:
+	@if [ ! -f "$(HOOK_TEMPLATE)" ]; then \
+		echo "Hook template $(HOOK_TEMPLATE) not found; cannot compute checksum." >&2; \
+		exit 1; \
+	fi; \
+	checksum="$$(sha256sum "$(HOOK_TEMPLATE)" | awk '{print $$1}')"; \
+	printf "%s\n" "$$checksum" > "$(HOOK_TEMPLATE_CHECKSUM)"; \
+	echo "Updated $(HOOK_TEMPLATE_CHECKSUM) with checksum $$checksum."
 
 install-git-hooks:
 	@git_common_dir="$$(git rev-parse --git-common-dir 2>/dev/null || true)"; \
