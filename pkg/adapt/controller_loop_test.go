@@ -172,6 +172,58 @@ func TestConsumeEstimatorStopsOnClose(t *testing.T) {
 	}
 }
 
+func TestConsumeEstimatorStopsOnCancel(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_000_241, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	observations := make(chan est.Observation, 1)
+	done := make(chan struct{})
+
+	go func() {
+		controller.consumeEstimator(ctx, observations)
+		close(done)
+	}()
+
+	observations <- est.Observation{
+		Timestamp:    time.Unix(0, 0),
+		Utilisation:  0.5,
+		Runnable:     0,
+		BusyJiffies:  0,
+		TotalJiffies: 0,
+		Err:          nil,
+	}
+
+	waitForSignal := time.After(time.Second)
+
+	for len(shaper.HostSignals()) == 0 {
+		select {
+		case <-waitForSignal:
+			t.Fatal("expected host load to be observed before cancellation")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("consumeEstimator did not exit after context cancellation")
+	}
+}
+
 func TestAdaptiveControllerRunHandlesNilEstimatorChannel(t *testing.T) {
 	t.Parallel()
 
