@@ -10,11 +10,14 @@ GO_SHA256_linux_arm64 ?= a68e86d4b72c2c2fecf7dfed667680b6c2a071221bbdb6913cf83ce
 
 GO ?= go
 GO_REQUIRED_VERSION ?= 1.25.5
-MIN_COVERAGE ?= 96.0
+MIN_COVERAGE ?= 97.0
 COVERAGE_PROFILE ?= coverage.out
 COVERAGE_SUMMARY ?= coverage.txt
 INTEGRATION_COVERAGE_PROFILE ?=
 REUSE_INTEGRATION_COVERAGE ?= 0
+E2E_COVERAGE_PROFILE ?=
+REUSE_E2E_COVERAGE ?= 0
+KEEP_E2E_COVERAGE ?= 0
 RUN_E2E_TESTS ?= 0
 CHECK_INCLUDE_CODEQL ?= 1
 PYTHON ?= python3
@@ -365,20 +368,38 @@ coverage: go-mod-download
 				rm -f "$$integration_profile"; \
 			fi; \
 		fi; \
-		e2e_pkgs="$(strip $(E2E_PKGS))"; \
-		if [ -n "$$e2e_pkgs" ]; then \
-			if [ "$(strip $(RUN_E2E_TESTS))" = "1" ]; then \
-				e2e_profile="coverage-e2e.out"; \
-				if GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $$e2e_pkgs; then \
-					tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
-				else \
-					echo "Skipping e2e coverage due to test failures"; \
-				fi; \
-				rm -f "$$e2e_profile"; \
-			else \
-				echo "Skipping e2e coverage; set RUN_E2E_TESTS=1 to enable."; \
-			fi; \
-		fi; \
+                e2e_pkgs="$(strip $(E2E_PKGS))"; \
+                if [ -n "$$e2e_pkgs" ]; then \
+                        e2e_profile="$(strip $(E2E_COVERAGE_PROFILE))"; \
+                        if [ -z "$$e2e_profile" ]; then \
+                                e2e_profile="coverage-e2e.out"; \
+                        fi; \
+                        reuse_e2e="$(strip $(REUSE_E2E_COVERAGE))"; \
+                        keep_e2e="$(strip $(KEEP_E2E_COVERAGE))"; \
+                        run_e2e="$(strip $(RUN_E2E_TESTS))"; \
+                        e2e_profile_ready=0; \
+                        if [ "$$reuse_e2e" = "1" ]; then \
+                                if [ ! -f "$$e2e_profile" ]; then \
+                                        echo "E2E coverage profile '$$e2e_profile' not found."; \
+                                        exit 1; \
+                                fi; \
+                                e2e_profile_ready=1; \
+                        elif [ "$$run_e2e" = "1" ]; then \
+                                if GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $$e2e_pkgs; then \
+                                        e2e_profile_ready=1; \
+else \
+                                        echo "Skipping e2e coverage due to test failures"; \
+                                fi; \
+else \
+                                echo "Skipping e2e coverage; set RUN_E2E_TESTS=1 to enable."; \
+                        fi; \
+                        if [ "$$e2e_profile_ready" -eq 1 ]; then \
+                                tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
+                                if [ "$$keep_e2e" != "1" ] && [ "$$reuse_e2e" != "1" ]; then \
+                                        rm -f "$$e2e_profile"; \
+                                fi; \
+                        fi; \
+                fi; \
 		tmp_profile="coverage-no-tests.out"; \
 		{ IFS= read -r mode_line || true; echo "$$mode_line"; tail -n +2 "$(COVERAGE_PROFILE)" | grep -vE '_test\\.go:'; } < "$(COVERAGE_PROFILE)" > "$$tmp_profile"; \
 		mv "$$tmp_profile" "$(COVERAGE_PROFILE)"; \

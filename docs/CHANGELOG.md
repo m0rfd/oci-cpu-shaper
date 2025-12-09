@@ -3,7 +3,10 @@
 ## Unreleased
 
 ### Added
-_Note coverage-impacting additions: mention new test suites or tooling that shift the CI ≥96% statement coverage budget (§11)._
+_Note coverage-impacting additions: mention new test suites or tooling that shift the CI ≥97% statement coverage budget (§11)._ 
+- Scheduled GitHub Actions workflow that opts into the tagged CLI end-to-end suite with `RUN_E2E_TESTS=1`, runs `make test` plus
+  `make coverage` with `KEEP_E2E_COVERAGE=1`, uploads `coverage-e2e.out`, and merges the profile into the overall coverage
+  report so the ≥97% guardrail reflects the e2e harness when enabled (§§11, 14).
 - Optional worker-pool auto-sizing toggle (`pool.autoSizeFromShape`/`SHAPER_WORKER_AUTOSIZE`) that reads IMDS `shapeConfig.OCPUs`, clamps the result between 1 and 32 workers, and wires the derived count into controller startup with new unit coverage in `cmd/shaper` and `pkg/runtimeconfig` (§§3.1, 5.2, 9, 11).
 - Overview architecture now diagrams the runtime config pipeline, controller layers, and metrics surfaces, and README repository
   structure calls out the shared `pkg/runtimeconfig` package so §0, §3.1, and §5.2 references stay aligned.
@@ -15,21 +18,21 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
   environment knobs so estimator observations suspend the pool until the host cools.
   `pkg/shape` now exposes pause state helpers/tests, the controller forwards host CPU
   readings to the pool, and docs (§§3.1, 9) describe the new configuration and
-  behaviour. Updated tests cover pause transitions to keep the ≥96% coverage floor (§§3,
+  behaviour. Updated tests cover pause transitions to keep the ≥97% coverage floor (§§3,
   5, 9, 11).
 - Fast-loop suppression now ingests runnable-per-CPU signals from `/proc/stat` and
   pauses immediately when the run queue spikes. New controller knobs
   (`suppressRunnableThreshold`/`suppressRunnableResume`,
   `SHAPER_SUPPRESS_RUNNABLE_THRESHOLD`/`SHAPER_SUPPRESS_RUNNABLE_RESUME`) and docs (§§3.1,
   5.2, 9) cover the defaults, while unit tests validate runnable-triggered suppression
-  and the estimator’s runnable parsing to preserve the ≥96% coverage floor (§11).
+  and the estimator’s runnable parsing to preserve the ≥97% coverage floor (§11).
 - Cgroup telemetry helper that reads `/proc/self/cgroup`, parses the
   colocated `cpu.weight`/`cpu.max` files, and publishes the detected values via
   new `cgroup_cpu_weight`/`cgroup_cpu_max_*` metrics plus a `cgroup` block in
   `/healthz`. Startup logs now warn whenever the observed weight exceeds the
   low-weight defaults documented in §4 so Compose/Quadlet drift is obvious.
   Fresh unit tests cover the helper, metrics exporter, and `/healthz` handler to
-  keep the ≥96% coverage floor intact, and §§4, 9 describe the new telemetry
+  keep the ≥97% coverage floor intact, and §§4, 9 describe the new telemetry
   surfaces for operators.
 - Grafana dashboard export (`deploy/grafana/oci-cpu-shaper-dashboard.json`) covering OCI
   P95, controller target/state, and host CPU overlays, plus §5.4 import instructions so
@@ -43,7 +46,7 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - `/healthz` status handler on the metrics listener that surfaces controller
   state plus the last OCI Monitoring and estimator errors as JSON; unit tests
   cover `pkg/http/status` and the offline CLI E2E now exercises the endpoint to
-  keep the ≥96% statement coverage floor intact (§§5, 9, 11). The handler now
+  keep the ≥97% statement coverage floor intact (§§5, 9, 11). The handler now
   also reports the controller mode, and companion tests verify the `/metrics`
   export plus HTTP bind failures so the Prometheus listener fails fast when the
   port is unavailable (§§3.2, 4, 5, 9, 11).
@@ -69,7 +72,7 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
   explicitly granted, and asserts the sched_idle warning only appears when the
   capability is missing. README §10 now references the workflow so operators can
   validate hosts before enabling SCHED_IDLE (§§6, 10, 11).
-- Regression suite `TestControllerCpuUtilisationAcrossOCPUs` covering 1–4 OCPU CpuUtilization streams and the relaxed-interval clamp so the adaptive controller keeps the Always Free reclaim guardrails documented in §§3.1 and 5.2. Tests maintain the ≥96% statement floor by exercising the prolonged high-utilisation path in `pkg/adapt/controller.go` (§11).
+- Regression suite `TestControllerCpuUtilisationAcrossOCPUs` covering 1–4 OCPU CpuUtilization streams and the relaxed-interval clamp so the adaptive controller keeps the Always Free reclaim guardrails documented in §§3.1 and 5.2. Tests maintain the ≥97% statement floor by exercising the prolonged high-utilisation path in `pkg/adapt/controller.go` (§11).
 - Deterministic 24-hour-equivalent worker-pool load harness (`go test -tags=load ./pkg/shape -run TestPoolLoad24hEquivalent`) that logs CPU/RSS telemetry to `artifacts/load/pool-24h.log` and enforces the §10 budgets alongside nightly/manual CI coverage via `.github/workflows/load.yml` (§§10, 11.4).
 - Duty-cycle benchmark suite (`BenchmarkPoolDutyCycle`) plus the `hack/check_benchmarks.sh` guard script that record CPU usage, per-tick drift, and scheduler fairness across multiple quantums and targets, failing whenever the §10 duty-cycle or §5 scheduler limits regress (§§5, 10, 11).
 - Always Free Terraform stack under `deploy/terraform/self-hosted-runner/` that provisions a hardened GitHub Actions runner with instance-principal access scoped to test compartments, including cloud-init hardening and IAM automation (§§5, 8, 15).
@@ -79,9 +82,9 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - Runner maintenance and secrets rotation guidance in §15 of `docs/08-development.md`, covering patch cadence, token refresh, and repository variables linked to the new workflow (§§8, 12, 15).
 - Dependabot automation covering Go modules, GitHub Actions, and container Dockerfiles with weekly/monthly cadences to keep CI and release dependencies current (§§11, 14).
 - Documented the §8.7 issue triage workflow so contributors can acknowledge, classify, and reproduce reports consistently across tooling and coverage expectations (§§8, 11, 12, 15).
-- Adaptive controller wiring from `cmd/shaper` to the OCI Monitoring client, estimator sampler, and worker pool, plus layered YAML + environment configuration for controller targets, cadences, worker counts, and HTTP binding (§§3.1, 5.2). Tests cover configuration decoding, environment overrides, and controller factory success/error paths to preserve the ≥96% coverage floor (§11).
+- Adaptive controller wiring from `cmd/shaper` to the OCI Monitoring client, estimator sampler, and worker pool, plus layered YAML + environment configuration for controller targets, cadences, worker counts, and HTTP binding (§§3.1, 5.2). Tests cover configuration decoding, environment overrides, and controller factory success/error paths to preserve the ≥97% coverage floor (§11).
 - Fast-loop suppression mode that adds a `suppressed` controller state, host-load hysteresis, and configuration knobs (`controller.suppressThreshold`/`controller.suppressResume`, `SHAPER_SUPPRESS_THRESHOLD`/`SHAPER_SUPPRESS_RESUME`) so the estimator can drop the worker pool to zero until the host cools (§§3.1, 5.2). Unit tests now cover suppression entry/exit and estimator error recording while docs in §§4 and 9 describe the new telemetry and structured `controllerState` logging.
-- Instance-principal Monitoring client (`pkg/oci`) exposing `QueryP95CPU` with pagination, missing-data fallbacks, and HTTP-backed mocks that keep coverage above the ≥96% floor. Documented in §5 alongside troubleshooting guidance for tenancy policy and metric gaps.
+- Instance-principal Monitoring client (`pkg/oci`) exposing `QueryP95CPU` with pagination, missing-data fallbacks, and HTTP-backed mocks that keep coverage above the ≥97% floor. Documented in §5 alongside troubleshooting guidance for tenancy policy and metric gaps.
 - HTTP-backed IMDSv2 client with retried metadata lookups, shapeConfig decoding, and an overridable endpoint (`OCI_CPU_SHAPER_IMDS_ENDPOINT`), documented in §2 and backed by `httptest` unit coverage (§§2, 5, 11).
 - Repository-wide AGENTS policy check with `make agents` and CI coverage to enforce scoped instructions (§8.4).
 - Token-optimised AGENTS templates and directory-change checklist to keep scoped guidance current (§8.6).
@@ -103,13 +106,13 @@ _Note coverage-impacting additions: mention new test suites or tooling that shif
 - `/metrics` exporter and Prometheus integration surfaced through the CLI, including emitted series, sample scrape output, and Compose/HTTP_ADDR wiring documented across §§4–9.
 
 ### Changed
-_Record coverage reductions or mitigations so reviewers can audit the CI ≥96% threshold impact (§11)._
+_Record coverage reductions or mitigations so reviewers can audit the CI ≥97% threshold impact (§11)._
 - Raised the module `go` directive, `.tool-versions` pin, and container build ARG to Go 1.25.5 so CI, local builds, and release images stay on the latest patched toolchain (§14).
 - Release workflow pins Cosign installs to `v3.0.2` for predictable signing output; bump the pin and release docs together when upgrading (§14).
 - Documented the controller interval selection (normal, relaxed, fallback) plus the relaxed confirmation hysteresis and refreshed the metrics/`/healthz` field names in §§4–5 so the docs mirror the current defaults and telemetry exports.
 - Relaxed controller cadence now waits for two consecutive above-threshold P95 samples before switching to the four-hour loop.
   New `controller.relaxedConfirmations`/`SHAPER_RELAXED_CONFIRMATIONS` knobs carry a default of `2`, update the sample configs,
-  and ship unit coverage for the hysteresis counter so the ≥96% statement floor remains intact (§§3.1, 5.2, 9, 11).
+  and ship unit coverage for the hysteresis counter so the ≥97% statement floor remains intact (§§3.1, 5.2, 9, 11).
 - Refreshed `docs/05-execution-flow.txt` to document the CLI entrypoint file
   boundaries and responsibilities, and linked `docs/AGENTS.md` plus
   `cmd/shaper/AGENTS.md` back to the architecture section so wiring guidance
@@ -135,7 +138,7 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
 - Staged the CLI bootstrap into dedicated helpers for argument parsing, config/logging setup,
   metadata resolution, metrics bootstrap, and controller start to keep `cmd/shaper`
   wiring small and directly testable. Updated §3.1 to map the new helpers and added
-  focused unit suites per stage to preserve the ≥96% coverage contract (§§3.1, 8, 11, 12).
+  focused unit suites per stage to preserve the ≥97% coverage contract (§§3.1, 8, 11, 12).
 - Tightened the estimator default interval to 1 second (from 2 seconds) while
   keeping `SHAPER_FAST_INTERVAL` overrides intact across the YAML/env/CLI
   layers. Updated samples and docs to reflect the faster cadence (§§5.2, 9, 12).
@@ -169,14 +172,14 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
   exposing the endpoint while still recording metrics internally (§§6, 9).
 - `pkg/oci` constructors now accept a `ClientFactory` via the new `WithFactory(...)` option so tests and the CLI swap Monitoring
   mocks without mutating package-level globals. `cmd/shaper` wires the factory into the production constructor and §5 documents
-  the seam, keeping the existing ≥96% coverage floor intact by exercising the new paths in the unit suites.
+  the seam, keeping the existing ≥97% coverage floor intact by exercising the new paths in the unit suites.
 - CLI environment variable defaults now document the positive
   `SHAPER_STEP_UP`/`SHAPER_STEP_DOWN` values enforced in code and explain that
   `StepDown` stays positive because the controller subtracts it internally
   (§§3.1, 5.2, 9).
 - Runtime configuration loader now validates target/goal bounds, positive controller/estimator intervals, worker counts, and step
   sizes after layering YAML files with environment overrides, returning `adapt.ErrInvalidConfig` when misconfigured values are
-  detected. Fresh CLI unit tests cover invalid manifests and environment overrides so the ≥96% coverage target remains intact
+  detected. Fresh CLI unit tests cover invalid manifests and environment overrides so the ≥97% coverage target remains intact
   (§§3.1, 5.2, 9, 11).
 - Runtime configuration structs, defaults, YAML/env overlays, validation, and the
   controller translation helper moved from `cmd/shaper` into the shared
@@ -195,7 +198,7 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
 - Runtime metadata resolution now prefers IMDS compartment/region lookups and only
   falls back to YAML/environment overrides when the platform APIs fail or when
   `oci.offline` is set. Updated unit tests cover the IMDS-first and override fallback
-  behaviours so the ≥96% statement coverage floor remains intact (§§5, 11).
+  behaviours so the ≥97% statement coverage floor remains intact (§§5, 11).
 - Mode A/Mode B sample configs adopt less aggressive controller targets (0.20–0.32),
   smaller step adjustments, slower estimator cadence, and only two worker threads
   so production deployments consume less CPU while staying near the documented
@@ -210,19 +213,19 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥96% 
 - Extended `docs/00-overview.md` with the plan-required threat model and non-goals sections and replaced the placeholder Quick Start note with a link to the published §10 onboarding guide so operators can navigate the consolidated deployment references (§§0, 10, 12).
 - Clarified the documentation roadmap to mark the published CLI/deployment guides and onboarding workflows as complete while calibrating remaining milestones for future adaptive-controller and release updates (§12).
 - CLI now starts the metrics HTTP server using `http.bind`/`HTTP_ADDR`, shuts it down with the run context, and ships container/Compose updates (`EXPOSE 9108`, `${SHAPER_METRICS_BIND}`) so `/metrics` is reachable when enabled; the listener now logs structured bind/serve failures and returns an explicit shutdown hook so docs can describe the exporter lifecycle and monitoring workflow alignment (§§6, 9, 11).
-- CLI metadata resolution now populates `oci.compartmentId`/`OCI_COMPARTMENT_ID` alongside the new `oci.region`/`OCI_REGION` overrides using IMDS when online, threads the resolved region into the Monitoring client, and logs both identifiers for observability. Fresh unit coverage in §11 exercises the success, fallback, and error paths so the ≥96% statement floor holds.
+- CLI metadata resolution now populates `oci.compartmentId`/`OCI_COMPARTMENT_ID` alongside the new `oci.region`/`OCI_REGION` overrides using IMDS when online, threads the resolved region into the Monitoring client, and logs both identifiers for observability. Fresh unit coverage in §11 exercises the success, fallback, and error paths so the ≥97% statement floor holds.
 - Runtime metadata resolution now prefers the canonical region name exposed by IMDS and
   only falls back to the legacy `instance/region` endpoint when that lookup is missing or
   fails. Monitoring clients therefore receive the long-form OCI region identifiers even on
   regions that still return short codes, and the updated CLI tests cover both the canonical
-  and fallback flows to maintain the ≥96% coverage floor (§§2, 5, 11).
+  and fallback flows to maintain the ≥97% coverage floor (§§2, 5, 11).
 - CLI now installs `SIGINT`/`SIGTERM` handlers that cancel the run context so the controller, worker pool, and metrics HTTP server exit gracefully. The new `tests/e2e/signal_shutdown_test.go` suite delivers both signals to the binary and asserts the structured shutdown logs to keep §11’s coverage contract intact (§§5, 9, 11).
 - IMDS client now injects the required IMDSv2 authorisation header and exposes canonical-region plus compartment OCID lookups, with unit tests and docs refreshed to keep §2 aligned with the metadata surface.
 - Canonical-region lookups now read the `regionInfo` block returned by `/instance/`, aligning the IMDS client, CLI emulation server, and documentation with the current OCI metadata layout (§2).
 - CLI `--mode` handling now starts the adaptive controller in `dry-run`/`enforce`, keeps `noop` as a diagnostics bypass, and logs configuration failures surfaced by the new YAML/environment loader. Updated docs in §§5 and 9 describe the operating modes and tunable configuration.
 - Raised the CI statement coverage floor to 96% and filtered `make coverage` to exclude developer tooling packages (for example, `cmd/agentscheck`), bringing the latest production-only run to 96.0% while keeping the threshold focused on shipped code paths (§11).
 - CLI argument parsing now validates supported controller modes and normalises flag input before wiring placeholder subsystems.
-- §11 development workflow now mandates shipping changes only after `go test ./... -race` and `golangci-lint run` succeed, reinforcing the all-tests-pass requirement alongside the existing ≥96% coverage guardrail.
+- §11 development workflow now mandates shipping changes only after `go test ./... -race` and `golangci-lint run` succeed, reinforcing the all-tests-pass requirement alongside the existing ≥97% coverage guardrail.
 - CLI runtime configuration accepts an `oci.instanceId`/`OCI_INSTANCE_ID` override so dry-run and enforce modes can bootstrap when IMDS access is unavailable (e.g., CI smoke tests), with docs refreshed in §§2 and 9.
 - CLI runtime configuration now recognises `oci.offline`/`OCI_OFFLINE`, substituting a static metrics client and fallback instance ID so dry-run and enforce bootstrap without IMDS or Monitoring access. Container docs in §§8 and 9 cover the new smoke-test defaults.
 - Logger construction returns actionable errors for invalid levels while keeping structured output defaults consistent.

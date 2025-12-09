@@ -1,0 +1,72 @@
+name: E2E
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GOCACHE: ${{ github.workspace }}/.cache/go
+  GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+  GOBIN: ${{ github.workspace }}/bin
+  RUN_E2E_TESTS: "1"
+  KEEP_E2E_COVERAGE: "1"
+
+jobs:
+  e2e:
+    name: tagged e2e suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go with cache
+        id: setup-go
+        uses: ./.github/actions/setup-go-with-cache
+
+      - name: Run make test with tagged e2e
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/e2e
+          make test 2>&1 | tee artifacts/e2e/make-test.log
+
+      - name: Run coverage with e2e profile
+        env:
+          MIN_COVERAGE: "97"
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/e2e
+          make coverage 2>&1 | tee artifacts/e2e/make-coverage.log
+
+      - name: Publish coverage summary
+        if: success() && hashFiles('coverage.txt') != ''
+        run: |
+          { echo '### Coverage results'; echo; cat coverage.txt; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage artifacts
+        if: success()
+        uses: actions/upload-artifact@v5
+        with:
+          name: e2e-coverage
+          path: |
+            coverage.out
+            coverage.txt
+            coverage-e2e.out
+          if-no-files-found: error
+
+      - name: Upload e2e logs
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: e2e-logs
+          path: artifacts/e2e
+          if-no-files-found: error

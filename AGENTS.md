@@ -6,7 +6,7 @@
 - QA: add/refresh tests with every logic change, then run `make test` and `make lint` (or `make lint-fix` to autofix) until clean (§§11, 14); these helpers already seed `GOCACHE`/`GOLANGCI_LINT_CACHE` under `.cache` so avoid calling `go test` or `golangci-lint run` directly in constrained sandboxes.
 - Workflows: prefer `make lint` (check) or `make lint-fix` (autofix) instead of running `golangci-lint` manually so the helper sets `GOLANGCI_LINT_CACHE` in `.cache/golangci`; `make test` already sets `GOCACHE` to `.cache/go` so avoid invoking `go test`/`golangci-lint` directly from restricted sandboxes (the caches are ignored via `.gitignore`).
 - Linting: rely on `make lint-fix` to auto-apply fixable findings before results are reported; rerun `make lint` after edits to verify no residual warnings remain.
-- Coverage: keep statement coverage ≥96% via `make coverage MIN_COVERAGE=96`; extend suites when new paths appear.
+- Coverage: keep statement coverage ≥97% via `make coverage MIN_COVERAGE=97`; extend suites when new paths appear.
 - Coverage helper skips harness packages under `tests/internal/` so the threshold reflects production code—only exclude others when
   you have the same justification documented.
 - Docs: sync `docs/` (including `docs/CHANGELOG.md`) plus any impacted READMEs/config samples when behavior or config shifts (§12).
