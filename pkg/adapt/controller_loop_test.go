@@ -282,6 +282,44 @@ func TestRunControllerWithStepSurfacesNilEstimatorChannelError(t *testing.T) {
 	}
 }
 
+func TestStartEstimatorWrapsNilChannel(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_002_460, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	estimator := newNilObservationsEstimator()
+
+	controller, err := NewAdaptiveController(cfg, metrics, estimator, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	estimatorCh, startErr := startEstimator(t.Context(), controller)
+	if startErr == nil {
+		t.Fatal("expected startEstimator to wrap nil estimator channel error")
+	}
+
+	if estimatorCh != nil {
+		t.Fatalf("expected nil estimator channel, got %v", estimatorCh)
+	}
+
+	if !errors.Is(startErr, errEstimatorNilChannel) {
+		t.Fatalf("unexpected startEstimator error: %v", startErr)
+	}
+
+	if !strings.Contains(startErr.Error(), "adaptive controller run") {
+		t.Fatalf("expected wrapped error to include context, got %v", startErr)
+	}
+
+	if !estimator.started.Load() {
+		t.Fatal("expected estimator to be invoked")
+	}
+}
+
 func TestRunControllerWithStepResetsTickerForClosedEstimator(t *testing.T) {
 	t.Parallel()
 
@@ -336,6 +374,57 @@ func TestRunControllerWithStepResetsTickerForClosedEstimator(t *testing.T) {
 
 	if !estimator.started.Load() {
 		t.Fatal("expected closed estimator channel to be invoked")
+	}
+}
+
+func TestRunControllerWithStepUpdatesIntervalsFromStep(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_002_520, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+	cfg.Interval = 5 * time.Millisecond
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	intervals := []time.Duration{
+		controller.cfg.Interval,
+		2 * controller.cfg.Interval,
+		controller.cfg.Interval / 2,
+	}
+
+	intervalUpdates := make(chan time.Duration, len(intervals))
+	stepper := newFakeStep(intervals, cancel)
+
+	done := make(chan error, 1)
+
+	go func() {
+		done <- runControllerWithStep(ctx, controller, stepper.Step, intervalUpdates)
+	}()
+
+	waitFor(func() bool { return len(intervalUpdates) == len(intervals) }, time.Second)
+
+	runErr := <-done
+
+	if !errors.Is(runErr, context.Canceled) {
+		t.Fatalf("runControllerWithStep error: %v", runErr)
+	}
+
+	requireIntervalSequence(t, intervalUpdates, intervals)
+
+	if controller.interval != intervals[len(intervals)-1] {
+		t.Fatalf(
+			"expected controller interval to track last step interval, got %v",
+			controller.interval,
+		)
 	}
 }
 
