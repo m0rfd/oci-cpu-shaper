@@ -2,6 +2,7 @@
 package est
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"io"
@@ -18,6 +19,14 @@ import (
 )
 
 var errTestBoom = errors.New("test: boom")
+
+type errReader struct {
+	err error
+}
+
+func (r errReader) Read([]byte) (int, error) {
+	return 0, r.err
+}
 
 type fakeSource struct {
 	snapshots     []Snapshot
@@ -503,6 +512,113 @@ func TestBuildObservationClampsNonPositiveCPUCountsWithIdleDominantDeltas(t *tes
 	}
 }
 
+type buildObservationEdgeCase struct {
+	name        string
+	previous    Snapshot
+	current     Snapshot
+	cpuCount    int
+	utilisation float64
+	runnable    float64
+	busy        uint64
+	total       uint64
+}
+
+func buildObservationEdgeCaseTestCases() []buildObservationEdgeCase {
+	return []buildObservationEdgeCase{
+		{
+			name:        "total-delta-non-positive",
+			previous:    Snapshot{Idle: 40, Total: 120, Runnable: 4},
+			current:     Snapshot{Idle: 42, Total: 100, Runnable: 6},
+			cpuCount:    2,
+			utilisation: 0,
+			runnable:    3,
+			busy:        0,
+			total:       0,
+		},
+		{
+			name:        "idle-delta-exceeds-total",
+			previous:    Snapshot{Idle: 10, Total: 20, Runnable: 4},
+			current:     Snapshot{Idle: 30, Total: 24, Runnable: 8},
+			cpuCount:    4,
+			utilisation: 0,
+			runnable:    2,
+			busy:        0,
+			total:       4,
+		},
+		{
+			name:        "utilisation-clamped-at-one",
+			previous:    Snapshot{Idle: 0, Total: 10, Runnable: 0},
+			current:     Snapshot{Idle: 0, Total: 11, Runnable: 4},
+			cpuCount:    2,
+			utilisation: 1,
+			runnable:    2,
+			busy:        1,
+			total:       1,
+		},
+		{
+			name:        "zero-cpu-count-normalises-runnable",
+			previous:    Snapshot{Idle: 10, Total: 20, Runnable: 0},
+			current:     Snapshot{Idle: 12, Total: 30, Runnable: 8},
+			cpuCount:    0,
+			utilisation: 0.8,
+			runnable:    0,
+			busy:        8,
+			total:       10,
+		},
+	}
+}
+
+func TestBuildObservationClampsEdgeCasesAndNormalisesRunnable(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range buildObservationEdgeCaseTestCases() {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			observation := buildObservationWithCPUCount(
+				time.Unix(0, 0),
+				testCase.previous,
+				testCase.current,
+				testCase.cpuCount,
+			)
+
+			assertObservation(
+				t,
+				observation,
+				testCase.utilisation,
+				testCase.runnable,
+				testCase.busy,
+				testCase.total,
+			)
+		})
+	}
+}
+
+func TestClampUtilisation(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		input    float64
+		expected float64
+	}{
+		{name: "below-zero", input: -0.5, expected: 0},
+		{name: "within-range", input: 0.75, expected: 0.75},
+		{name: "above-one", input: 1.5, expected: 1},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := clampUtilisation(testCase.input)
+			if result != testCase.expected {
+				t.Fatalf("unexpected clamp result: got %.2f want %.2f", result, testCase.expected)
+			}
+		})
+	}
+}
+
 func TestBuildObservationHandlesZeroTotalDelta(t *testing.T) {
 	t.Parallel()
 
@@ -689,6 +805,42 @@ func TestParseCPUStat(t *testing.T) {
 
 	if snapshot.Runnable != 5 {
 		t.Fatalf("unexpected runnable: got %d want 5", snapshot.Runnable)
+	}
+}
+
+func TestParseRunnableCountErrorCases(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		reader      io.Reader
+		errContains string
+	}{
+		{
+			name:        "invalid-procs-running",
+			reader:      strings.NewReader("procs_running invalid\n"),
+			errContains: "parse procs_running",
+		},
+		{
+			name:        "scan-error",
+			reader:      errReader{err: errTestBoom},
+			errContains: "scan cpu lines",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := parseRunnableCount(bufio.NewScanner(testCase.reader))
+			if err == nil || !strings.Contains(err.Error(), testCase.errContains) {
+				t.Fatalf(
+					"parseRunnableCount expected error containing %q, got %v",
+					testCase.errContains,
+					err,
+				)
+			}
+		})
 	}
 }
 
@@ -1011,46 +1163,67 @@ func TestSamplerDefaultTickerStops(t *testing.T) {
 	}
 }
 
-func TestParseCPUStatErrorCases(t *testing.T) {
-	t.Parallel()
+type parseCPUStatErrorCase struct {
+	name    string
+	input   string
+	reader  io.Reader
+	matches error
+}
 
-	testCases := []struct {
-		name    string
-		input   string
-		matches error
-	}{
+func parseCPUStatErrorCaseTable() []parseCPUStatErrorCase {
+	return []parseCPUStatErrorCase{
 		{
 			name:    "empty",
 			input:   "",
+			reader:  nil,
 			matches: io.EOF,
 		},
 		{
 			name:    "unexpected prefix",
 			input:   "cpu0 1 2 3\n",
+			reader:  nil,
 			matches: ErrUnexpectedProcStatFormat,
 		},
 		{
 			name:    "too few fields",
 			input:   "cpu 1 2 3\n",
+			reader:  nil,
 			matches: ErrProcStatTooShort,
 		},
 		{
 			name:    "parse failure",
 			input:   "cpu 1 two 3 4 5\n",
+			reader:  nil,
 			matches: strconv.ErrSyntax,
 		},
 		{
 			name:    "invalid procs_running",
 			input:   "cpu 1 2 3 4 5\nprocs_running nope\n",
+			reader:  nil,
 			matches: strconv.ErrSyntax,
 		},
+		{
+			name:    "scan error",
+			input:   "",
+			reader:  errReader{err: errTestBoom},
+			matches: errTestBoom,
+		},
 	}
+}
 
-	for _, testCase := range testCases {
+func TestParseCPUStatErrorCases(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range parseCPUStatErrorCaseTable() {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := parseCPUStat(strings.NewReader(testCase.input))
+			reader := testCase.reader
+			if reader == nil {
+				reader = strings.NewReader(testCase.input)
+			}
+
+			_, err := parseCPUStat(reader)
 			if err == nil {
 				t.Fatalf("expected error for %s", testCase.name)
 			}
