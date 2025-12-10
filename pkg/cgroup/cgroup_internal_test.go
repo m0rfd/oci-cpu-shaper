@@ -122,6 +122,47 @@ func TestReadSelfCgroupHandlesMissingControllerEntries(t *testing.T) {
 	}
 }
 
+func TestReadSelfCgroupIgnoresNoiseAndSignalsNotFound(t *testing.T) {
+	t.Parallel()
+
+	procPath := filepath.Join(t.TempDir(), "proc")
+
+	cases := []struct {
+		name  string
+		lines []string
+	}{
+		{name: "empty file", lines: nil},
+		{name: "malformed only", lines: []string{"::", "still:wrong", "not-even-close"}},
+		{name: "non cpu controllers", lines: []string{"0:memory:/mem.slice", "1:hugetlb:/huge"}},
+		{
+			name:  "mixed noise",
+			lines: []string{"0:memory:/mem.slice", "garbage", "2::", "3:name=systemd:/slice"},
+		},
+	}
+
+	for _, rawCase := range cases {
+		testCase := rawCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			content := strings.Join(testCase.lines, "\n")
+			if content != "" {
+				content += "\n"
+			}
+
+			err := os.WriteFile(procPath, []byte(content), 0o600)
+			if err != nil {
+				t.Fatalf("write cgroup file: %v", err)
+			}
+
+			_, err = readSelfCgroup(procPath)
+			if !errors.Is(err, errCgroupPathNotFound) {
+				t.Fatalf("expected errCgroupPathNotFound, got %v", err)
+			}
+		})
+	}
+}
+
 func TestReadSelfCgroupPropagatesScannerError(t *testing.T) {
 	t.Parallel()
 
