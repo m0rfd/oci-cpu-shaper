@@ -105,7 +105,7 @@ jobs:
         GOMODCACHE: ${{ github.workspace }}/.cache/gomod
         GOFLAGS: -mod=readonly
       run: |
-        CODEQL_EXTRACTOR_GO_BUILD_TRACING=off go build ./...
+        go build ./...
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4
