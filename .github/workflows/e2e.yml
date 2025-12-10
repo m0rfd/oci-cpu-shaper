@@ -41,7 +41,7 @@ jobs:
 
       - name: Run coverage with e2e profile
         env:
-          MIN_COVERAGE: "97"
+          MIN_COVERAGE: "98"
         run: |
           set -o pipefail
           mkdir -p artifacts/e2e

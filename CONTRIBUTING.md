@@ -23,8 +23,8 @@ Run the following helpers from the repository root before every pull request:
 - `make lint` to run Go checks without modifying files.
 - `make lint-makefile` to validate and check Makefile formatting.
 - `make test` to run `go test -race ./...` so race conditions surface early.
-- `make coverage MIN_COVERAGE=97` to regenerate `coverage.out`/`coverage.txt` and
-  prove repository-wide statement coverage stays at or above the required 97 %.
+- `make coverage MIN_COVERAGE=98` to regenerate `coverage.out`/`coverage.txt` and
+  prove repository-wide statement coverage stays at or above the required 98 %.
 - `make codeql-setup` to install the CodeQL CLI into a versioned toolcache and
   prefetch the default query packs into `.cache/codeql/packs` for offline runs.
 - `make codeql`, `make codeql-actions`, `make codeql-go`, or `make codeql-all`
@@ -83,7 +83,7 @@ and verification signals required by §8.7.
    `Feature request`, or `Docs feedback`) under `.github/ISSUE_TEMPLATE/`. Each
    template captures OCI tenancy context, environment details, reproduction
    commands, and checkboxes for the `make lint`, `make test`, and
-   `make coverage MIN_COVERAGE=97` expectations from `docs/08-development.md`
+   `make coverage MIN_COVERAGE=98` expectations from `docs/08-development.md`
    §§11 & 14. Providing this data keeps triage focused on the failing surfaces
    instead of chasing missing configuration details.
 2. **Link supporting material.** Include log excerpts, OCI compartment/tenancy
@@ -100,7 +100,7 @@ and verification signals required by §8.7.
   keep the description clear: outline the behaviour change, verification, and
   any follow-ups required.
 - **Follow the development workflow.** Run `make lint`, `make test`, and
-  `make coverage MIN_COVERAGE=97` (or `make check` plus the coverage target)
+  `make coverage MIN_COVERAGE=98` (or `make check` plus the coverage target)
   locally before submitting changes. These commands already configure the caches
   referenced in `docs/08-development.md`, keeping results consistent across
   environments.
