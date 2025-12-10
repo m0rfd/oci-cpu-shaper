@@ -123,6 +123,33 @@ func TestNormalizeConfigAdjustsSuppressResume(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfigClampsNegativeSuppressThreshold(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.SuppressThreshold = -0.3
+	cfg.SuppressResume = 0.2
+
+	normalized, _, err := normalizeConfig(cfg)
+	if err != nil {
+		t.Fatalf("normalizeConfig returned error: %v", err)
+	}
+
+	if normalized.SuppressThreshold != 0 {
+		t.Fatalf(
+			"expected negative suppress threshold to clamp to 0, got %.2f",
+			normalized.SuppressThreshold,
+		)
+	}
+
+	if normalized.SuppressResume != 0 {
+		t.Fatalf(
+			"expected suppress resume to reset to 0 when threshold clamps to zero, got %.2f",
+			normalized.SuppressResume,
+		)
+	}
+}
+
 func TestNormalizeConfigMapsLegacyNormalMode(t *testing.T) {
 	t.Parallel()
 
@@ -136,6 +163,30 @@ func TestNormalizeConfigMapsLegacyNormalMode(t *testing.T) {
 
 	if mode != enforceModeLabel {
 		t.Fatalf("expected legacy mode to normalize to %q, got %q", enforceModeLabel, mode)
+	}
+
+	if normalized.Mode != enforceModeLabel {
+		t.Fatalf(
+			"expected normalized config mode to be %q, got %q",
+			enforceModeLabel,
+			normalized.Mode,
+		)
+	}
+}
+
+func TestNormalizeConfigTrimsLegacyModeLabel(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Mode = "  NORMAL  "
+
+	normalized, mode, err := normalizeConfig(cfg)
+	if err != nil {
+		t.Fatalf("normalizeConfig returned error: %v", err)
+	}
+
+	if mode != enforceModeLabel {
+		t.Fatalf("expected trimmed legacy mode to normalize to %q, got %q", enforceModeLabel, mode)
 	}
 
 	if normalized.Mode != enforceModeLabel {
@@ -214,6 +265,33 @@ func TestNormalizeConfigAdjustsRunnableResume(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfigClampsNegativeRunnableThreshold(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.SuppressRunnableThreshold = -1
+	cfg.SuppressRunnableResume = 0.7
+
+	normalized, _, err := normalizeConfig(cfg)
+	if err != nil {
+		t.Fatalf("normalizeConfig returned error: %v", err)
+	}
+
+	if normalized.SuppressRunnableThreshold != 0 {
+		t.Fatalf(
+			"expected negative runnable suppress threshold to clamp to 0, got %.2f",
+			normalized.SuppressRunnableThreshold,
+		)
+	}
+
+	if normalized.SuppressRunnableResume != 0 {
+		t.Fatalf(
+			"expected runnable resume to reset to 0 when threshold clamps to zero, got %.2f",
+			normalized.SuppressRunnableResume,
+		)
+	}
+}
+
 func TestNormalizeConfigDisablesRunnableSuppressionWhenThresholdZero(t *testing.T) {
 	t.Parallel()
 
@@ -229,6 +307,28 @@ func TestNormalizeConfigDisablesRunnableSuppressionWhenThresholdZero(t *testing.
 	if normalized.SuppressRunnableResume != 0 {
 		t.Fatalf(
 			"expected runnable resume reset to 0 when disabled, got %.2f",
+			normalized.SuppressRunnableResume,
+		)
+	}
+}
+
+func TestNormalizeConfigScalesRunnableResumeWhenExceedsThreshold(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.SuppressRunnableThreshold = 1.2
+	cfg.SuppressRunnableResume = 2.4
+
+	normalized, _, err := normalizeConfig(cfg)
+	if err != nil {
+		t.Fatalf("normalizeConfig returned error: %v", err)
+	}
+
+	expected := cfg.SuppressRunnableThreshold * suppressResumeScale
+	if math.Abs(normalized.SuppressRunnableResume-expected) > 1e-6 {
+		t.Fatalf(
+			"expected runnable resume to scale to %.2f when exceeding threshold, got %.2f",
+			expected,
 			normalized.SuppressRunnableResume,
 		)
 	}
