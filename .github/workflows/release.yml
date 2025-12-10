@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: write
+      actions: write # needed to download CI artifacts and publish logs
     if: |
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
@@ -195,7 +195,7 @@ jobs:
       - name: Run coverage
         if: steps.ci-artifacts.outputs.coverage-available != '1'
         env:
-          MIN_COVERAGE: "96"
+          MIN_COVERAGE: "98"
           COVERAGE_PROFILE: coverage.out
           COVERAGE_SUMMARY: coverage.txt
           REUSE_INTEGRATION_COVERAGE: ${{ steps.ci-artifacts.outputs.integration-available || '0' }}
@@ -257,7 +257,7 @@ jobs:
         run: make check
 
       - name: Save Go build and module caches
-        if: github.event.pull_request.head_repo.fork == false && steps.restore-go-cache.outputs.cache-hit != 'true' && github.ref_protected == true
+        if: github.event.pull_request.head.repo.fork == false && steps.restore-go-cache.outputs.cache-hit != 'true' && github.ref_protected == true
         uses: actions/cache/save@v4
         with:
           path: |

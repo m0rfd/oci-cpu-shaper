@@ -174,9 +174,9 @@ Invalid flag values are rejected during argument parsing: unknown controller mod
 
 Configuration validation shares this behaviour: when thresholds conflict with the suppression bounds, when targets/goals drift outside `targetMin`/`targetMax`, or when intervals/worker counts fall to zero the CLI prints the descriptive failure and exits with code `2`, preventing partially initialised controllers (§§3.1, 5.2).
 
-Smoke tests introduced in §11 now cover the dependency-injected entrypoint as well as adaptive-controller wiring, ensuring that enforce/dry-run builds start the OCI client, estimator sampler, and worker pool while `noop` preserves the bypass path for validation scenarios. Offline mode keeps this wiring intact by substituting the static metrics client so container smoke tests can run without live tenancy credentials, and new unit coverage exercises the IMDS-backed region/compartment resolver plus its failure modes to keep the ≥96% statement coverage guarantee intact.
+Smoke tests introduced in §11 now cover the dependency-injected entrypoint as well as adaptive-controller wiring, ensuring that enforce/dry-run builds start the OCI client, estimator sampler, and worker pool while `noop` preserves the bypass path for validation scenarios. Offline mode keeps this wiring intact by substituting the static metrics client so container smoke tests can run without live tenancy credentials, and new unit coverage exercises the IMDS-backed region/compartment resolver plus its failure modes to keep the ≥98% statement coverage guarantee intact.
 
-Local contributors can validate the CLI wiring the same way: run `make lint` (or `make lint-fix` to autofix) and `make test` before checking in changes and finish with `make coverage MIN_COVERAGE=96` to confirm the documentation’s QA promise remains true.
+Local contributors can validate the CLI wiring the same way: run `make lint` (or `make lint-fix` to autofix) and `make test` before checking in changes and finish with `make coverage MIN_COVERAGE=98` to confirm the documentation’s QA promise remains true.
 
 Rootful binaries built with `-tags rootful` now issue their
 `sched_setscheduler(0, SCHED_IDLE, ...)` request as soon as the worker pool is
@@ -247,7 +247,7 @@ cgroup_cpu_max_unlimited 0
 # EOF
 ```
 
-Offline mode continues to populate each series so smoke tests and container health checks can rely on the exporter without live tenancy credentials; only `oci_last_success_epoch` remains `0` until Monitoring calls succeed. Unit and CLI tests exercise the handler through `httptest.Server`, preserving the ≥96% coverage floor mandated in §11.
+Offline mode continues to populate each series so smoke tests and container health checks can rely on the exporter without live tenancy credentials; only `oci_last_success_epoch` remains `0` until Monitoring calls succeed. Unit and CLI tests exercise the handler through `httptest.Server`, preserving the ≥98% coverage floor mandated in §11.
 
 The cgroup gauges mirror the detected `/proc/self/cgroup` path and the files under `/sys/fs/cgroup/.../cpu.weight`/`cpu.max`. Unlimited ceilings keep `cgroup_cpu_max_quota` at `0` and flip `cgroup_cpu_max_unlimited` to `1`, making it easy to alarm on drift from the §4 recommendations without shelling into the host.
 
@@ -290,5 +290,5 @@ surface filesystem failures so Kubernetes probes can alarm on missing
 `pkg/http/status` verifies the handler’s JSON output while the end-to-end
 harness starts the CLI, injects a Monitoring outage, and polls `/healthz` until
 it reports the `fallback` state with the recorded error string. This keeps the
-≥96% coverage target documented in §11 intact and proves that health probes
+≥98% coverage target documented in §11 intact and proves that health probes
 surface Monitoring failures and cgroup drift without crashing the process.

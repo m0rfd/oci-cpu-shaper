@@ -17,6 +17,9 @@ jobs:
     name: worker pool load
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: write # required for artifact uploads
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
@@ -34,6 +37,7 @@ jobs:
             go.sum
 
       - name: Cache Go build and module downloads
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
         uses: actions/cache@v4
         with:
           path: |
