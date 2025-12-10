@@ -311,3 +311,152 @@ func TestRelaxedConfirmationsStaysInRelaxedMode(t *testing.T) {
 		StateNormal,
 	)
 }
+
+// TestRelaxedSuccessesSequence verifies the relaxedSuccesses counter increments,
+// switches intervals after the configured confirmations, resets on suppression or
+// low samples, and exports each update to the recorder.
+func TestRelaxedSuccessesSequence(t *testing.T) {
+	t.Parallel()
+
+	controller, stepper, recorder, steps := newRelaxedSequenceFixtures(t)
+
+	for index, step := range steps {
+		assertRelaxedSequenceStep(t, controller, stepper, recorder, index, step)
+	}
+}
+
+func newRelaxedSequenceFixtures(
+	t *testing.T,
+) (*AdaptiveController, controllerStepper, *stubMetricsRecorder, []relaxedSequenceStep) {
+	t.Helper()
+
+	cfg := DefaultConfig()
+	cfg.Interval = time.Minute
+	cfg.RelaxedInterval = time.Hour
+	cfg.RelaxedConfirmations = 3
+
+	metrics := relaxedSequenceMetrics(cfg)
+	shaper := newFakeShaper()
+	recorder := newStubMetricsRecorder()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, recorder)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	stepper, ok := any(controller).(controllerStepper)
+	if !ok {
+		t.Fatalf("controller does not expose stepper interface")
+	}
+
+	steps := relaxedSequenceSteps(cfg)
+
+	return controller, stepper, recorder, steps
+}
+
+func relaxedSequenceMetrics(cfg Config) *fakeMetrics {
+	return newFakeMetrics([]metricResult{
+		{value: cfg.RelaxedThreshold + 0.05, timestamp: time.Unix(1_700_000_600, 0), err: nil},
+		{value: cfg.RelaxedThreshold + 0.04, timestamp: time.Unix(1_700_000_660, 0), err: nil},
+		{value: cfg.RelaxedThreshold + 0.03, timestamp: time.Unix(1_700_000_720, 0), err: nil},
+		{value: cfg.RelaxedThreshold + 0.02, timestamp: time.Unix(1_700_000_780, 0), err: nil},
+		{value: cfg.RelaxedThreshold - 0.10, timestamp: time.Unix(1_700_000_840, 0), err: nil},
+	})
+}
+
+func relaxedSequenceSteps(cfg Config) []relaxedSequenceStep {
+	return []relaxedSequenceStep{
+		{
+			name:             "first-high-sample",
+			suppressed:       false,
+			expectedRelaxed:  1,
+			expectedInterval: cfg.Interval,
+		},
+		{
+			name:             "second-high-sample",
+			suppressed:       false,
+			expectedRelaxed:  2,
+			expectedInterval: cfg.Interval,
+		},
+		{
+			name:             "confirmation-switches-interval",
+			suppressed:       false,
+			expectedRelaxed:  cfg.RelaxedConfirmations,
+			expectedInterval: cfg.RelaxedInterval,
+		},
+		{
+			name:             "suppressed-resets-counter",
+			suppressed:       true,
+			expectedRelaxed:  0,
+			expectedInterval: cfg.Interval,
+		},
+		{
+			name:             "low-sample-keeps-counter-reset",
+			suppressed:       false,
+			expectedRelaxed:  0,
+			expectedInterval: cfg.Interval,
+		},
+	}
+}
+
+type relaxedSequenceStep struct {
+	name             string
+	suppressed       bool
+	expectedRelaxed  int
+	expectedInterval time.Duration
+}
+
+func assertRelaxedSequenceStep(
+	t *testing.T,
+	controller *AdaptiveController,
+	stepper controllerStepper,
+	recorder *stubMetricsRecorder,
+	index int,
+	step relaxedSequenceStep,
+) {
+	t.Helper()
+
+	controller.mu.Lock()
+	controller.suppressed = step.suppressed
+	controller.mu.Unlock()
+
+	interval := stepper.step(context.Background())
+
+	if interval != step.expectedInterval {
+		t.Fatalf(
+			"step %d interval: got %v want %v",
+			index,
+			interval,
+			step.expectedInterval,
+		)
+	}
+
+	if controller.RelaxedSuccesses() != step.expectedRelaxed {
+		t.Fatalf(
+			"step %d relaxedSuccesses: got %d want %d",
+			index,
+			controller.RelaxedSuccesses(),
+			step.expectedRelaxed,
+		)
+	}
+
+	relaxed, calls := recorder.relaxedSuccesses()
+	if relaxed != step.expectedRelaxed {
+		t.Fatalf(
+			"step %d recorder relaxedSuccesses: got %d want %d",
+			index,
+			relaxed,
+			step.expectedRelaxed,
+		)
+	}
+
+	expectedCalls := index + 1
+	if calls != expectedCalls {
+		t.Fatalf(
+			"step %d recorder relaxedSuccesses calls: got %d want %d",
+			index,
+			calls,
+			expectedCalls,
+		)
+	}
+}
