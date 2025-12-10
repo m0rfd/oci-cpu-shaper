@@ -1,7 +1,7 @@
 ## Summary
 - 
 
-> Coverage must remain ≥96 % and the linters must pass before requesting a
+> Coverage must remain ≥98 % and the linters must pass before requesting a
 > review. See [CONTRIBUTING.md](../CONTRIBUTING.md#tooling-workflow) for the
 > required commands.
 

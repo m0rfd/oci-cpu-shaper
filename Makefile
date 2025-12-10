@@ -10,11 +10,14 @@ GO_SHA256_linux_arm64 ?= a68e86d4b72c2c2fecf7dfed667680b6c2a071221bbdb6913cf83ce
 
 GO ?= go
 GO_REQUIRED_VERSION ?= 1.25.5
-MIN_COVERAGE ?= 96.0
+MIN_COVERAGE ?= 98.0
 COVERAGE_PROFILE ?= coverage.out
 COVERAGE_SUMMARY ?= coverage.txt
 INTEGRATION_COVERAGE_PROFILE ?=
 REUSE_INTEGRATION_COVERAGE ?= 0
+E2E_COVERAGE_PROFILE ?=
+REUSE_E2E_COVERAGE ?= 0
+KEEP_E2E_COVERAGE ?= 0
 RUN_E2E_TESTS ?= 0
 CHECK_INCLUDE_CODEQL ?= 1
 PYTHON ?= python3
@@ -61,6 +64,9 @@ HADOLINT_ARCH := $(if $(filter x86_64,$(GO_MACHINE_ARCH)),x86_64,$(if $(filter a
 HADOLINT_DOWNLOAD_URL := https://github.com/hadolint/hadolint/releases/download/$(HADOLINT_VERSION)/hadolint-$(HADOLINT_OS)-$(HADOLINT_ARCH)
 HADOLINT_BASENAME := hadolint-$(HADOLINT_OS)-$(HADOLINT_ARCH)
 
+HOOK_TEMPLATE := hack/githooks/pre-commit
+HOOK_TEMPLATE_CHECKSUM := $(HOOK_TEMPLATE).sha256
+
 GO_BIN_PATH := $(strip $(GOBIN))
 ifeq ($(GO_BIN_PATH),)
 GO_BIN_PATH := $(shell \
@@ -83,8 +89,12 @@ GOCACHE_DIR ?= $(ROOT_DIR)/.cache/go
 GOMODCACHE_DIR ?= $(ROOT_DIR)/.cache/gomod
 GOLANGCI_LINT_CACHE_DIR ?= $(ROOT_DIR)/.cache/golangci
 CODEQL_CACHE_DIR ?= $(ROOT_DIR)/.cache/codeql
+CODEQL_PACK_CACHE_DIR ?= $(CODEQL_CACHE_DIR)/packs
+CODEQL_DATABASE_ROOT ?= $(CODEQL_CACHE_DIR)/databases
 CODEQL_ARTIFACT_DIR ?= $(ROOT_DIR)/artifacts/codeql
-CODEQL_INSTALL_DIR ?= $(ROOT_DIR)/.cache/tools/codeql
+CODEQL_TOOLCACHE_DIR ?= $(ROOT_DIR)/.cache/tools/codeql
+CODEQL_INSTALL_DIR ?= $(CODEQL_TOOLCACHE_DIR)/$(CODEQL_VERSION_STRIPPED)/$(GO_DL_ARCH)
+CODEQL_CLI_DIR ?= $(CODEQL_INSTALL_DIR)
 CODEQL_SARIF_CHECK ?= $(ROOT_DIR)/hack/check_codeql_sarif.py
 CODEQL_ACTIONS_QUERY_PACK ?= codeql/actions-queries:codeql-suites/actions-security-and-quality.qls
 CODEQL_GO_QUERY_PACK ?= codeql/go-queries:codeql-suites/go-security-and-quality.qls
@@ -108,8 +118,8 @@ HADOLINT ?= $(HADOLINT_BIN)
 HADOLINT_DOCKERFILE ?= $(ROOT_DIR)/Dockerfile
 HADOLINT_ARGS ?= --no-fail
 
-.PHONY: actionlint agents bench build check clean codeql-actions codeql-all codeql-go coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-hadolint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-dockerfile lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools verify-git-hooks verify-go-version
-HELP_TARGETS := lint lint-makefile lint-workflows lint-dockerfile test coverage build check govulncheck integration e2e agents actionlint codeql-actions codeql-go codeql-all help clean verify-git-hooks
+.PHONY: actionlint agents bench build check clean codeql-actions codeql-all codeql-clean codeql-go codeql-setup coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-hadolint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-dockerfile lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools update-hook-template-checksum verify-git-hooks verify-go-version verify-hook-template
+HELP_TARGETS := lint lint-makefile lint-workflows lint-dockerfile test coverage build check govulncheck integration e2e agents actionlint codeql-setup codeql-actions codeql-go codeql-all codeql-clean help clean verify-git-hooks verify-hook-template update-hook-template-checksum
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-hadolint ensure-mbake
 
@@ -192,6 +202,8 @@ help:
 			lint-workflows) desc="Run actionlint against GitHub workflows";; \
 			lint-fix) desc="Run golangci-lint with autofix";; \
 			verify-git-hooks) desc="Verify pre-commit hook matches repository template";; \
+			verify-hook-template) desc="Ensure pre-commit template checksum matches tracked value";; \
+			update-hook-template-checksum) desc="Refresh tracked pre-commit template checksum";; \
 			test) desc="Run unit tests (excludes integration/e2e)";; \
 			coverage) desc="Run coverage with minimum threshold enforcement";; \
 			build) desc="Compile all modules with cache isolation";; \
@@ -201,9 +213,11 @@ help:
 			e2e) desc="Execute end-to-end suite";; \
 			agents) desc="Validate agent instructions";; \
 			actionlint) desc="Lint GitHub Actions workflows";; \
+			codeql-setup) desc="Install CodeQL and prefetch query packs";; \
 			codeql-actions) desc="Create and analyze the GitHub Actions CodeQL database";; \
 			codeql-go) desc="Create and analyze the Go CodeQL database";; \
 			codeql-all) desc="Run Go and GitHub Actions CodeQL analyses";; \
+			codeql-clean) desc="Remove CodeQL databases and SARIF artifacts";; \
 			clean) desc="Remove build caches and coverage artifacts";; \
 			help) desc="Show this help";; \
 			*) desc="";; \
@@ -258,22 +272,23 @@ ensure-hadolint:
 	install -m 0755 "$$ARCHIVE" "$$BIN"; \
 	echo "Installed hadolint $(HADOLINT_VERSION) to $$BIN"
 
-ensure-codeql:
-	@mkdir -p "$(GO_BIN_PATH)" "$(dir $(CODEQL_INSTALL_DIR))"; \
+codeql-setup:
+	@mkdir -p "$(GO_BIN_PATH)" "$(CODEQL_TOOLCACHE_DIR)" "$(CODEQL_PACK_CACHE_DIR)" "$(CODEQL_DATABASE_ROOT)"; \
 	BIN="$(CODEQL_BIN)"; \
+	CLI_BIN="$(CODEQL_CLI_DIR)/codeql"; \
 	CURRENT_VERSION=""; \
-	if [ -x "$$BIN" ]; then \
-		CURRENT_VERSION="$$($$BIN version --format=terse 2>/dev/null || true)"; \
+	if [ -x "$$CLI_BIN" ]; then \
+		CURRENT_VERSION="$$($$CLI_BIN version --format=terse 2>/dev/null || true)"; \
 	fi; \
 	if [ "$$CURRENT_VERSION" = "$(CODEQL_VERSION_STRIPPED)" ]; then \
+		ln -sf "$$CLI_BIN" "$$BIN"; \
 		echo "CodeQL $$CURRENT_VERSION already installed at $$BIN"; \
-		exit 0; \
-	fi; \
-	case "$(GO_DL_ARCH)" in \
-		amd64) ARCHIVE="$(CODEQL_BUNDLE_linux_amd64)"; DOWNLOAD_URL="$(CODEQL_DOWNLOAD_URL_linux_amd64)"; CHECKSUM="$(CODEQL_SHA256_linux_amd64)" ;; \
-		arm64) ARCHIVE="$(CODEQL_BUNDLE_linux_arm64)"; DOWNLOAD_URL="$(CODEQL_DOWNLOAD_URL_linux_arm64)"; CHECKSUM="$(CODEQL_SHA256_linux_arm64)" ;; \
-		*) echo "Unsupported CodeQL arch: $(GO_DL_ARCH)"; exit 1 ;; \
-	esac; \
+	else \
+		case "$(GO_DL_ARCH)" in \
+			amd64) ARCHIVE="$(CODEQL_BUNDLE_linux_amd64)"; DOWNLOAD_URL="$(CODEQL_DOWNLOAD_URL_linux_amd64)"; CHECKSUM="$(CODEQL_SHA256_linux_amd64)" ;; \
+			arm64) ARCHIVE="$(CODEQL_BUNDLE_linux_arm64)"; DOWNLOAD_URL="$(CODEQL_DOWNLOAD_URL_linux_arm64)"; CHECKSUM="$(CODEQL_SHA256_linux_arm64)" ;; \
+			*) echo "Unsupported CodeQL arch: $(GO_DL_ARCH)"; exit 1 ;; \
+		esac; \
 	TMP_DIR="$$(mktemp -d)"; \
 	trap "rm -rf \"$$TMP_DIR\"" EXIT; \
 	echo "Downloading CodeQL $(CODEQL_VERSION) from $$DOWNLOAD_URL"; \
@@ -291,10 +306,19 @@ ensure-codeql:
 	done; \
 	printf "%s  %s\n" "$$CHECKSUM" "$$TMP_DIR/$$ARCHIVE" | sha256sum -c -; \
 	tar -xzf "$$TMP_DIR/$$ARCHIVE" -C "$$TMP_DIR"; \
-	rm -rf "$(CODEQL_INSTALL_DIR)"; \
+	mkdir -p "$(dir $(CODEQL_INSTALL_DIR))"; \
+	if [ -d "$(CODEQL_INSTALL_DIR)" ]; then \
+		echo "Replacing existing CodeQL directory $(CODEQL_INSTALL_DIR)"; \
+		rm -rf "$(CODEQL_INSTALL_DIR)"; \
+	fi; \
 	mv "$$TMP_DIR/codeql" "$(CODEQL_INSTALL_DIR)"; \
-	ln -sf "$(CODEQL_INSTALL_DIR)/codeql" "$(CODEQL_BIN)"; \
-	echo "Installed CodeQL $(CODEQL_VERSION) to $(CODEQL_BIN)"
+	ln -sf "$(CODEQL_CLI_DIR)/codeql" "$$BIN"; \
+	echo "Installed CodeQL $(CODEQL_VERSION) to $(CODEQL_BIN)"; \
+	fi; \
+	echo "Prefetching CodeQL query packs into $(CODEQL_PACK_CACHE_DIR)..."; \
+	"$(CODEQL_BIN)" pack download --dir "$(CODEQL_PACK_CACHE_DIR)" --search-path "$(CODEQL_PACK_CACHE_DIR)" $(strip $(CODEQL_ACTIONS_QUERY_PACK)) $(strip $(CODEQL_GO_QUERY_PACK))
+
+ensure-codeql: codeql-setup
 
 ensure-mbake:
 	@BIN="$(MBAKE_BIN)"; \
@@ -365,20 +389,38 @@ coverage: go-mod-download
 				rm -f "$$integration_profile"; \
 			fi; \
 		fi; \
-		e2e_pkgs="$(strip $(E2E_PKGS))"; \
-		if [ -n "$$e2e_pkgs" ]; then \
-			if [ "$(strip $(RUN_E2E_TESTS))" = "1" ]; then \
-				e2e_profile="coverage-e2e.out"; \
-				if GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $$e2e_pkgs; then \
-					tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
-				else \
-					echo "Skipping e2e coverage due to test failures"; \
-				fi; \
-				rm -f "$$e2e_profile"; \
-			else \
-				echo "Skipping e2e coverage; set RUN_E2E_TESTS=1 to enable."; \
-			fi; \
-		fi; \
+                e2e_pkgs="$(strip $(E2E_PKGS))"; \
+                if [ -n "$$e2e_pkgs" ]; then \
+                        e2e_profile="$(strip $(E2E_COVERAGE_PROFILE))"; \
+                        if [ -z "$$e2e_profile" ]; then \
+                                e2e_profile="coverage-e2e.out"; \
+                        fi; \
+                        reuse_e2e="$(strip $(REUSE_E2E_COVERAGE))"; \
+                        keep_e2e="$(strip $(KEEP_E2E_COVERAGE))"; \
+                        run_e2e="$(strip $(RUN_E2E_TESTS))"; \
+                        e2e_profile_ready=0; \
+                        if [ "$$reuse_e2e" = "1" ]; then \
+                                if [ ! -f "$$e2e_profile" ]; then \
+                                        echo "E2E coverage profile '$$e2e_profile' not found."; \
+                                        exit 1; \
+                                fi; \
+                                e2e_profile_ready=1; \
+                        elif [ "$$run_e2e" = "1" ]; then \
+                                if GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $$e2e_pkgs; then \
+                                        e2e_profile_ready=1; \
+else \
+                                        echo "Skipping e2e coverage due to test failures"; \
+                                fi; \
+else \
+                                echo "Skipping e2e coverage; set RUN_E2E_TESTS=1 to enable."; \
+                        fi; \
+                        if [ "$$e2e_profile_ready" -eq 1 ]; then \
+                                tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
+                                if [ "$$keep_e2e" != "1" ] && [ "$$reuse_e2e" != "1" ]; then \
+                                        rm -f "$$e2e_profile"; \
+                                fi; \
+                        fi; \
+                fi; \
 		tmp_profile="coverage-no-tests.out"; \
 		{ IFS= read -r mode_line || true; echo "$$mode_line"; tail -n +2 "$(COVERAGE_PROFILE)" | grep -vE '_test\\.go:'; } < "$(COVERAGE_PROFILE)" > "$$tmp_profile"; \
 		mv "$$tmp_profile" "$(COVERAGE_PROFILE)"; \
@@ -417,30 +459,36 @@ govulncheck: verify-go-version
 
 codeql-actions: ensure-codeql
 	@git -C "$(ROOT_DIR)" rev-parse --is-inside-work-tree >/dev/null
-	@mkdir -p "$(CODEQL_CACHE_DIR)" "$(CODEQL_ARTIFACT_DIR)"; \
-		DB_DIR="$(CODEQL_CACHE_DIR)/actions"; \
-		SARIF_FILE="$(CODEQL_ARTIFACT_DIR)/actions.sarif"; \
-		rm -rf "$$DB_DIR"; \
-		echo "Creating CodeQL database for GitHub Actions..."; \
-		"$(CODEQL_BIN)" database create "$$DB_DIR" --language=actions --source-root "$(ROOT_DIR)"; \
-		echo "Analyzing GitHub Actions CodeQL database..."; \
-		"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --output "$$SARIF_FILE" $(strip $(CODEQL_ACTIONS_QUERY_PACK)); \
-		SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="GitHub Actions" CODEQL_REPO_ROOT="$(ROOT_DIR)" CODEQL_IGNORE_RULES="$(strip $(CODEQL_ACTIONS_IGNORE_RULES))" CODEQL_IGNORE_PATHS="$(strip $(CODEQL_ACTIONS_IGNORE_PATHS))" $(PYTHON) "$(CODEQL_SARIF_CHECK)"
+	@mkdir -p "$(CODEQL_DATABASE_ROOT)" "$(CODEQL_ARTIFACT_DIR)"; \
+	DB_DIR="$(CODEQL_DATABASE_ROOT)/actions"; \
+	SARIF_FILE="$(CODEQL_ARTIFACT_DIR)/actions.sarif"; \
+	SEARCH_PATH="$(CODEQL_PACK_CACHE_DIR)"; \
+	rm -rf "$$DB_DIR"; \
+	echo "Creating CodeQL database for GitHub Actions..."; \
+	"$(CODEQL_BIN)" database create "$$DB_DIR" --language=actions --source-root "$(ROOT_DIR)" --search-path "$$SEARCH_PATH"; \
+	echo "Analyzing GitHub Actions CodeQL database..."; \
+	"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --threads=0 --output "$$SARIF_FILE" --search-path "$$SEARCH_PATH" $(strip $(CODEQL_ACTIONS_QUERY_PACK)); \
+	SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="GitHub Actions" CODEQL_REPO_ROOT="$(ROOT_DIR)" CODEQL_IGNORE_RULES="$(strip $(CODEQL_ACTIONS_IGNORE_RULES))" CODEQL_IGNORE_PATHS="$(strip $(CODEQL_ACTIONS_IGNORE_PATHS))" $(PYTHON) "$(CODEQL_SARIF_CHECK)"
 
 codeql-go: ensure-codeql
 	@git -C "$(ROOT_DIR)" rev-parse --is-inside-work-tree >/dev/null
-	@mkdir -p "$(CODEQL_CACHE_DIR)" "$(CODEQL_ARTIFACT_DIR)" "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
-		DB_DIR="$(CODEQL_CACHE_DIR)/go"; \
-		SARIF_FILE="$(CODEQL_ARTIFACT_DIR)/go.sarif"; \
-		rm -rf "$$DB_DIR"; \
-		echo "Creating CodeQL database for Go..."; \
-		CODEQL_EXTRACTOR_GO_BUILD_TRACING=off "$(CODEQL_BIN)" database create "$$DB_DIR" --language=go --source-root "$(ROOT_DIR)" --command "env GOCACHE=$(GOCACHE_DIR) GOMODCACHE=$(GOMODCACHE_DIR) GOFLAGS=-mod=readonly $(GO) build ./..."; \
-		echo "Analyzing Go CodeQL database..."; \
-		"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --output "$$SARIF_FILE" $(strip $(CODEQL_GO_QUERY_PACK)); \
-		SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="Go" CODEQL_REPO_ROOT="$(ROOT_DIR)" CODEQL_GOMODCACHE="$(GOMODCACHE_DIR)" CODEQL_IGNORE_RULES="$(strip $(CODEQL_GO_IGNORE_RULES))" CODEQL_IGNORE_PATHS="$(strip $(CODEQL_GO_IGNORE_PATHS))" $(PYTHON) "$(CODEQL_SARIF_CHECK)"
+	@mkdir -p "$(CODEQL_DATABASE_ROOT)" "$(CODEQL_ARTIFACT_DIR)" "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
+	DB_DIR="$(CODEQL_DATABASE_ROOT)/go"; \
+	SARIF_FILE="$(CODEQL_ARTIFACT_DIR)/go.sarif"; \
+	SEARCH_PATH="$(CODEQL_PACK_CACHE_DIR)"; \
+	rm -rf "$$DB_DIR"; \
+	echo "Creating CodeQL database for Go..."; \
+	CODEQL_EXTRACTOR_GO_BUILD_TRACING=off "$(CODEQL_BIN)" database create "$$DB_DIR" --language=go --source-root "$(ROOT_DIR)" --command "env GOCACHE=$(GOCACHE_DIR) GOMODCACHE=$(GOMODCACHE_DIR) GOFLAGS=-mod=readonly $(GO) build ./..." --search-path "$$SEARCH_PATH"; \
+	echo "Analyzing Go CodeQL database..."; \
+	"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --threads=0 --output "$$SARIF_FILE" --search-path "$$SEARCH_PATH" $(strip $(CODEQL_GO_QUERY_PACK)); \
+	SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="Go" CODEQL_REPO_ROOT="$(ROOT_DIR)" CODEQL_GOMODCACHE="$(GOMODCACHE_DIR)" CODEQL_IGNORE_RULES="$(strip $(CODEQL_GO_IGNORE_RULES))" CODEQL_IGNORE_PATHS="$(strip $(CODEQL_GO_IGNORE_PATHS))" $(PYTHON) "$(CODEQL_SARIF_CHECK)"
 codeql-all: codeql-actions codeql-go
 
-CHECK_TARGETS := go-mod-download verify-git-hooks tidy lint lint-makefile lint-dockerfile lint-workflows test coverage
+codeql-clean:
+	@echo "Removing CodeQL databases and artifacts..."
+	rm -rf "$(CODEQL_DATABASE_ROOT)" "$(CODEQL_ARTIFACT_DIR)"
+
+CHECK_TARGETS := go-mod-download verify-git-hooks verify-hook-template tidy lint lint-makefile lint-dockerfile lint-workflows test coverage
 ifeq ($(CHECK_INCLUDE_CODEQL),1)
 CHECK_TARGETS += codeql-all
 endif
@@ -668,6 +716,37 @@ clean:
 	@rm -rf "$(COVERAGE_PROFILE)" "$(COVERAGE_SUMMARY)" coverage-*.out "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)" "$(GOLANGCI_LINT_CACHE_DIR)" "$(GOVULNCHECK_CACHE_DIR)" artifacts
 
 lint-autofix: lint-fix
+
+verify-hook-template:
+	@if [ ! -f "$(HOOK_TEMPLATE)" ]; then \
+		echo "Hook template $(HOOK_TEMPLATE) not found; rerun 'git checkout -- $(HOOK_TEMPLATE)' to restore it." >&2; \
+		exit 1; \
+	fi; \
+	if [ ! -f "$(HOOK_TEMPLATE_CHECKSUM)" ]; then \
+		echo "Tracked checksum missing at $(HOOK_TEMPLATE_CHECKSUM); run 'make update-hook-template-checksum'." >&2; \
+		exit 1; \
+	fi; \
+	expected="$$(awk 'NR==1 {print $$1}' "$(HOOK_TEMPLATE_CHECKSUM)")"; \
+	if [ -z "$$expected" ]; then \
+		echo "Tracked checksum file $(HOOK_TEMPLATE_CHECKSUM) is empty; run 'make update-hook-template-checksum'." >&2; \
+		exit 1; \
+	fi; \
+	actual="$$(sha256sum "$(HOOK_TEMPLATE)" | awk '{print $$1}')"; \
+	if [ "$$actual" != "$$expected" ]; then \
+		echo "Pre-commit template hash changed; run 'make update-hook-template-checksum' and rerun 'make install-git-hooks' locally." >&2; \
+		echo "Expected $$expected but found $$actual." >&2; \
+		exit 1; \
+	fi; \
+	echo "Pre-commit hook template checksum verified."
+
+update-hook-template-checksum:
+	@if [ ! -f "$(HOOK_TEMPLATE)" ]; then \
+		echo "Hook template $(HOOK_TEMPLATE) not found; cannot compute checksum." >&2; \
+		exit 1; \
+	fi; \
+	checksum="$$(sha256sum "$(HOOK_TEMPLATE)" | awk '{print $$1}')"; \
+	printf "%s\n" "$$checksum" > "$(HOOK_TEMPLATE_CHECKSUM)"; \
+	echo "Updated $(HOOK_TEMPLATE_CHECKSUM) with checksum $$checksum."
 
 install-git-hooks:
 	@git_common_dir="$$(git rev-parse --git-common-dir 2>/dev/null || true)"; \

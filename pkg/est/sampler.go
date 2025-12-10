@@ -264,12 +264,7 @@ func buildObservationWithCPUCount(
 	if totalDelta > 0 && idleDelta <= totalDelta {
 		busyDelta = totalDelta - idleDelta
 
-		utilisation = float64(busyDelta) / float64(totalDelta)
-		if utilisation < 0 {
-			utilisation = 0
-		} else if utilisation > 1 {
-			utilisation = 1
-		}
+		utilisation = clampUtilisation(float64(busyDelta) / float64(totalDelta))
 	}
 
 	if cpuCount > 0 {
@@ -284,6 +279,18 @@ func buildObservationWithCPUCount(
 		TotalJiffies: totalDelta,
 		Err:          nil,
 	}
+}
+
+func clampUtilisation(utilisation float64) float64 {
+	if utilisation < 0 {
+		return 0
+	}
+
+	if utilisation > 1 {
+		return 1
+	}
+
+	return utilisation
 }
 
 func diffCounter(previous, current uint64) uint64 {
