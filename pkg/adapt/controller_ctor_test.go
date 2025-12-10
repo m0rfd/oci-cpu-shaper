@@ -69,7 +69,9 @@ func TestNewAdaptiveControllerNormalizesConfigAndRecordsInitialState(t *testing.
 func TestNewAdaptiveControllerRejectsNilMetricsClient(t *testing.T) {
 	t.Parallel()
 
-	controller, err := NewAdaptiveController(DefaultConfig(), nil, nil, newFakeShaper(), nil)
+	recorder := newStubMetricsRecorder()
+
+	controller, err := NewAdaptiveController(DefaultConfig(), nil, nil, newFakeShaper(), recorder)
 	if err == nil {
 		t.Fatalf("expected error, got controller: %+v", controller)
 	}
@@ -77,16 +79,21 @@ func TestNewAdaptiveControllerRejectsNilMetricsClient(t *testing.T) {
 	if !errors.Is(err, errMetricsClientRequired) {
 		t.Fatalf("expected errMetricsClientRequired, got %v", err)
 	}
+
+	if recorderCalls(recorder) != 0 {
+		t.Fatalf("recorder should not be called when metrics client is nil")
+	}
 }
 
 func TestNewAdaptiveControllerRejectsNilDutyCycler(t *testing.T) {
 	t.Parallel()
 
+	recorder := newStubMetricsRecorder()
 	metrics := newFakeMetrics(
 		[]metricResult{{value: 0.2, timestamp: time.Unix(1_700_000_240, 0), err: nil}},
 	)
 
-	controller, err := NewAdaptiveController(DefaultConfig(), metrics, nil, nil, nil)
+	controller, err := NewAdaptiveController(DefaultConfig(), metrics, nil, nil, recorder)
 	if err == nil {
 		t.Fatalf("expected error, got controller: %+v", controller)
 	}
@@ -94,6 +101,18 @@ func TestNewAdaptiveControllerRejectsNilDutyCycler(t *testing.T) {
 	if !errors.Is(err, errDutyCyclerRequired) {
 		t.Fatalf("expected errDutyCyclerRequired, got %v", err)
 	}
+
+	if recorderCalls(recorder) != 0 {
+		t.Fatalf("recorder should not be called when duty cycler is nil")
+	}
+}
+
+func recorderCalls(recorder *stubMetricsRecorder) int {
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+
+	return recorder.modeCalls + recorder.stateCalls + recorder.targetCalls + recorder.ociCalls +
+		recorder.hostCalls + recorder.intervalSet + recorder.errorCalls + recorder.relaxedCalls
 }
 
 func TestNewAdaptiveControllerHandlesNilRecorder(t *testing.T) {
