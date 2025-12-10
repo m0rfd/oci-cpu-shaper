@@ -289,7 +289,7 @@ jobs:
           cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-pr-build
           cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-pr-build,mode=max
           provenance: false
-          sbom: true
+          sbom: false
           build-args: |
             VERSION=${{ steps.build_meta.outputs.version }}
             GIT_COMMIT=${{ github.sha }}
@@ -410,7 +410,7 @@ jobs:
           cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-pr-build
           cache-to: type=gha,scope=${{ env.IMAGE_NAME }}-pr-build,mode=max
           provenance: false
-          sbom: true
+          sbom: false
           build-args: |
             VERSION=${{ steps.build_meta.outputs.version }}
             GIT_COMMIT=${{ github.sha }}

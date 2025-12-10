@@ -261,7 +261,6 @@ jobs:
               --build-arg VERSION=dev \
               --build-arg GIT_COMMIT="${{ github.sha }}" \
               --build-arg BUILD_DATE="${{ steps.build-meta.outputs.build-date }}" \
-              --sbom=true \
               --provenance=false \
               . 2>&1 | tee -a "$BUILD_LOG"; then
               echo "[build] succeeded on attempt ${attempt}" | tee -a "$BUILD_LOG"
