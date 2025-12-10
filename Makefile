@@ -102,6 +102,8 @@ CODEQL_ACTIONS_IGNORE_RULES ?= actions/unpinned-tag
 CODEQL_ACTIONS_IGNORE_PATHS ?=
 CODEQL_GO_IGNORE_RULES ?=
 CODEQL_GO_IGNORE_PATHS ?= hack/
+CODEQL_FAIL_ON_IGNORES ?= 1
+CODEQL_FAIL_ON_MISSING_QUERIES ?= 1
 
 GOLANGCI_LINT_BIN ?= $(GO_BIN_PATH)/golangci-lint
 GOLANGCI_LINT ?= $(GOLANGCI_LINT_BIN)
@@ -216,7 +218,7 @@ help:
 			codeql-setup) desc="Install CodeQL and prefetch query packs";; \
 			codeql-actions) desc="Create and analyze the GitHub Actions CodeQL database";; \
 			codeql-go) desc="Create and analyze the Go CodeQL database";; \
-			codeql-all) desc="Run Go and GitHub Actions CodeQL analyses";; \
+			codeql-all) desc="Run Go and GitHub Actions CodeQL analyses (set CODEQL_FAIL_ON_IGNORES=0 or CODEQL_FAIL_ON_MISSING_QUERIES=0 to relax SARIF validation)";; \
 			codeql-clean) desc="Remove CodeQL databases and SARIF artifacts";; \
 			clean) desc="Remove build caches and coverage artifacts";; \
 			help) desc="Show this help";; \
@@ -468,7 +470,7 @@ codeql-actions: ensure-codeql
 	"$(CODEQL_BIN)" database create "$$DB_DIR" --language=actions --source-root "$(ROOT_DIR)" --search-path "$$SEARCH_PATH"; \
 	echo "Analyzing GitHub Actions CodeQL database..."; \
 	"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --threads=0 --output "$$SARIF_FILE" --search-path "$$SEARCH_PATH" $(strip $(CODEQL_ACTIONS_QUERY_PACK)); \
-	SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="GitHub Actions" CODEQL_REPO_ROOT="$(ROOT_DIR)" CODEQL_IGNORE_RULES="$(strip $(CODEQL_ACTIONS_IGNORE_RULES))" CODEQL_IGNORE_PATHS="$(strip $(CODEQL_ACTIONS_IGNORE_PATHS))" $(PYTHON) "$(CODEQL_SARIF_CHECK)"
+        SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="GitHub Actions" CODEQL_REPO_ROOT="$(ROOT_DIR)" CODEQL_IGNORE_RULES="$(strip $(CODEQL_ACTIONS_IGNORE_RULES))" CODEQL_IGNORE_PATHS="$(strip $(CODEQL_ACTIONS_IGNORE_PATHS))" CODEQL_FAIL_ON_IGNORES="$(CODEQL_FAIL_ON_IGNORES)" CODEQL_FAIL_ON_MISSING_QUERIES="$(CODEQL_FAIL_ON_MISSING_QUERIES)" $(PYTHON) "$(CODEQL_SARIF_CHECK)"
 
 codeql-go: ensure-codeql
 	@git -C "$(ROOT_DIR)" rev-parse --is-inside-work-tree >/dev/null
@@ -481,7 +483,7 @@ codeql-go: ensure-codeql
 	CODEQL_EXTRACTOR_GO_BUILD_TRACING=off "$(CODEQL_BIN)" database create "$$DB_DIR" --language=go --source-root "$(ROOT_DIR)" --command "env GOCACHE=$(GOCACHE_DIR) GOMODCACHE=$(GOMODCACHE_DIR) GOFLAGS=-mod=readonly $(GO) build ./..." --search-path "$$SEARCH_PATH"; \
 	echo "Analyzing Go CodeQL database..."; \
 	"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --threads=0 --output "$$SARIF_FILE" --search-path "$$SEARCH_PATH" $(strip $(CODEQL_GO_QUERY_PACK)); \
-	SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="Go" CODEQL_REPO_ROOT="$(ROOT_DIR)" CODEQL_GOMODCACHE="$(GOMODCACHE_DIR)" CODEQL_IGNORE_RULES="$(strip $(CODEQL_GO_IGNORE_RULES))" CODEQL_IGNORE_PATHS="$(strip $(CODEQL_GO_IGNORE_PATHS))" $(PYTHON) "$(CODEQL_SARIF_CHECK)"
+        SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="Go" CODEQL_REPO_ROOT="$(ROOT_DIR)" CODEQL_GOMODCACHE="$(GOMODCACHE_DIR)" CODEQL_IGNORE_RULES="$(strip $(CODEQL_GO_IGNORE_RULES))" CODEQL_IGNORE_PATHS="$(strip $(CODEQL_GO_IGNORE_PATHS))" CODEQL_FAIL_ON_IGNORES="$(CODEQL_FAIL_ON_IGNORES)" CODEQL_FAIL_ON_MISSING_QUERIES="$(CODEQL_FAIL_ON_MISSING_QUERIES)" $(PYTHON) "$(CODEQL_SARIF_CHECK)"
 codeql-all: codeql-actions codeql-go
 
 codeql-clean:

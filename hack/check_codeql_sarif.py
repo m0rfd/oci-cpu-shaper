@@ -14,6 +14,13 @@ def parse_list(raw: Optional[str]) -> Set[str]:
     return {item.strip() for item in re.split(r"[\n,]", raw) if item.strip()}
 
 
+def parse_bool(raw: Optional[str]) -> bool:
+    if raw is None:
+        return False
+    normalized = raw.strip().lower()
+    return normalized in {"1", "true", "yes", "on"}
+
+
 def is_relative_to(path: pathlib.Path, base: pathlib.Path) -> bool:
     try:
         path.relative_to(base)
@@ -101,6 +108,10 @@ def gather_locations(
 def main() -> int:
     sarif_file = os.environ.get("SARIF_FILE")
     scope = os.environ.get("CODEQL_SCOPE", "analysis")
+    fail_on_ignores = parse_bool(os.environ.get("CODEQL_FAIL_ON_IGNORES"))
+    fail_on_missing_queries = parse_bool(
+        os.environ.get("CODEQL_FAIL_ON_MISSING_QUERIES")
+    )
 
     if not sarif_file:
         print("SARIF_FILE environment variable is required.")
@@ -121,8 +132,16 @@ def main() -> int:
         sarif = json.load(sarif_fp)
 
     issues: List[Dict[str, Any]] = []
+    ignored: List[Dict[str, Any]] = []
+    runs_missing_queries: List[str] = []
 
     for run in sarif.get("runs", []) or []:
+        driver = run.get("tool", {}).get("driver", {})
+        driver_name = driver.get("name") or "Unknown analyzer"
+        driver_rules = driver.get("rules") or []
+        if fail_on_missing_queries and not driver_rules:
+            runs_missing_queries.append(driver_name)
+
         rule_meta = load_rule_metadata(run)
         for result in run.get("results", []) or []:
             if result.get("suppressions"):
@@ -130,6 +149,13 @@ def main() -> int:
 
             rule_id = result.get("ruleId") or result.get("rule", {}).get("id") or "unknown-rule"
             if rule_id in ignore_rules:
+                ignored.append(
+                    {
+                        "rule": rule_id,
+                        "message": result.get("message", {}).get("text")
+                        or "(no message provided)",
+                    }
+                )
                 continue
 
             severity = result.get("level") or rule_meta.get(rule_id, {}).get("severity") or "warning"
@@ -156,16 +182,38 @@ def main() -> int:
                     }
                 )
 
+    exit_code = 0
     if issues:
         print(f"CodeQL found {len(issues)} issue(s) in {scope}:")
         for issue in issues:
             print(
                 f"- [{issue['severity']}] {issue['rule']}: {issue['message']} ({issue['location']})"
             )
-        return 1
+        exit_code = 1
 
-    print(f"No CodeQL issues found in {scope}.")
-    return 0
+    if fail_on_ignores and ignored:
+        print(
+            f"CodeQL ignore list suppressed {len(ignored)} result(s) in {scope};"
+            " remove CODEQL_IGNORE_RULES entries or fix the flagged paths."
+        )
+        for ignored_result in ignored:
+            print(
+                f"- [ignored] {ignored_result['rule']}: {ignored_result['message']}"
+            )
+        exit_code = 1
+
+    if runs_missing_queries:
+        print(
+            "CodeQL analysis finished without loading any rules for: "
+            + ", ".join(sorted(set(runs_missing_queries)))
+        )
+        if fail_on_missing_queries:
+            exit_code = 1
+
+    if exit_code == 0:
+        print(f"No CodeQL issues found in {scope}.")
+
+    return exit_code
 
 
 if __name__ == "__main__":
