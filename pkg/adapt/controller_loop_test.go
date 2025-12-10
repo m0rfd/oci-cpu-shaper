@@ -172,6 +172,49 @@ func TestConsumeEstimatorStopsOnClose(t *testing.T) {
 	}
 }
 
+func TestConsumeEstimatorStopsOnCloseWithoutHandlingAfterwards(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_000_245, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	estimator := newControlledEstimatorChannel(1)
+	done := make(chan struct{})
+
+	go func() {
+		controller.consumeEstimator(context.Background(), estimator.Channel())
+		close(done)
+	}()
+
+	if !estimator.Send(defaultObservation(0.5)) {
+		t.Fatal("expected estimator observation to be accepted before close")
+	}
+
+	waitForHostSignals(t, shaper, 1)
+
+	estimator.Close()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("consumeEstimator did not exit after estimator channel close")
+	}
+
+	if estimator.Send(defaultObservation(0.75)) {
+		t.Fatal("expected estimator to reject sends after close")
+	}
+
+	ensureHostSignalsStable(t, shaper, 1)
+}
+
 func TestConsumeEstimatorStopsOnCancel(t *testing.T) {
 	t.Parallel()
 
@@ -222,6 +265,52 @@ func TestConsumeEstimatorStopsOnCancel(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("consumeEstimator did not exit after context cancellation")
 	}
+}
+
+func TestConsumeEstimatorStopsOnCancelWithoutHandlingAfterwards(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_000_242, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	estimator := newControlledEstimatorChannel(2)
+	done := make(chan struct{})
+
+	go func() {
+		controller.consumeEstimator(ctx, estimator.Channel())
+		close(done)
+	}()
+
+	if !estimator.Send(defaultObservation(0.5)) {
+		t.Fatal("expected estimator observation to be accepted before cancellation")
+	}
+
+	waitForHostSignals(t, shaper, 1)
+
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("consumeEstimator did not exit after context cancellation")
+	}
+
+	if !estimator.Send(defaultObservation(0.6)) {
+		t.Fatal("expected estimator channel to accept buffered observation after cancellation")
+	}
+
+	ensureHostSignalsStable(t, shaper, 1)
 }
 
 func TestAdaptiveControllerRunHandlesNilEstimatorChannel(t *testing.T) {
@@ -714,6 +803,76 @@ func (c *closedChannelEstimator) Run(context.Context) <-chan est.Observation {
 	c.started.Store(true)
 
 	return c.ch
+}
+
+type controlledEstimatorChannel struct {
+	ch     chan est.Observation
+	closed atomic.Bool
+}
+
+func newControlledEstimatorChannel(size int) *controlledEstimatorChannel {
+	return &controlledEstimatorChannel{ch: make(chan est.Observation, size), closed: atomic.Bool{}}
+}
+
+func (c *controlledEstimatorChannel) Channel() <-chan est.Observation {
+	return c.ch
+}
+
+func (c *controlledEstimatorChannel) Send(observation est.Observation) bool {
+	if c.closed.Load() {
+		return false
+	}
+
+	select {
+	case c.ch <- observation:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *controlledEstimatorChannel) Close() {
+	if c.closed.CompareAndSwap(false, true) {
+		close(c.ch)
+	}
+}
+
+func waitForHostSignals(t *testing.T, shaper *fakeShaper, expected int) {
+	t.Helper()
+
+	deadline := time.After(time.Second)
+
+	for {
+		if len(shaper.HostSignals()) >= expected {
+			return
+		}
+
+		select {
+		case <-deadline:
+			t.Fatalf("expected at least %d host signals", expected)
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+}
+
+func ensureHostSignalsStable(t *testing.T, shaper *fakeShaper, expected int) {
+	t.Helper()
+
+	deadline := time.After(50 * time.Millisecond)
+
+	for {
+		if len(shaper.HostSignals()) != expected {
+			t.Fatalf("expected %d host signals", expected)
+		}
+
+		select {
+		case <-deadline:
+			return
+		default:
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
 }
 
 func defaultObservation(utilisation float64) est.Observation {
