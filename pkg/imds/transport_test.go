@@ -16,9 +16,10 @@ import (
 )
 
 var (
-	errDialFailure = errors.New("dial failure")
-	errCloseBoom   = errors.New("close boom")
-	errCloseFailed = errors.New("close failure")
+	errDialFailure         = errors.New("dial failure")
+	errCloseBoom           = errors.New("close boom")
+	errCloseFailed         = errors.New("close failure")
+	errUnexpectedRoundTrip = errors.New("unexpected round trip")
 )
 
 func TestHTTPClientRetriesOnServerError(t *testing.T) {
@@ -185,6 +186,40 @@ func TestHTTPClientContextCanceledDuringRequest(t *testing.T) {
 	requireEqual(t, "attempts", attempts.Load(), int32(1))
 }
 
+func TestHTTPClientContextCanceledBeforeCallWrapsError(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var attempts atomic.Int32
+
+	httpClient := newHTTPClient(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requireIMDSAuthHeader(t, req)
+
+		attempts.Add(1)
+
+		return nil, errUnexpectedRoundTrip
+	}))
+
+	client := imds.NewClient(httpClient, imds.WithBaseURL("http://metadata.local/opc/v2"))
+
+	_, err := client.Region(ctx)
+	if err == nil {
+		t.Fatal("Region() expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "imds: request execution failed") {
+		t.Fatalf("Region() error = %v, want wrapped execution error", err)
+	}
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Region() error = %v, want context canceled", err)
+	}
+
+	requireEqual(t, "attempts", attempts.Load(), int32(1))
+}
+
 func TestHTTPClientReadFailureIncludesCloseError(t *testing.T) {
 	t.Parallel()
 
@@ -239,6 +274,38 @@ func TestHTTPClientCloseFailure(t *testing.T) {
 	_, err := client.Region(context.Background())
 	if err == nil {
 		t.Fatal("Region() expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "close region response body") {
+		t.Fatalf("Region() error = %v, want close failure", err)
+	}
+}
+
+func TestHTTPClientCloseFailureWrapsCloseError(t *testing.T) {
+	t.Parallel()
+
+	httpClient := newHTTPClient(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requireIMDSAuthHeader(t, req)
+
+		return newHTTPResponse(
+			http.StatusOK,
+			&faultyReadCloser{
+				readErr:  io.EOF,
+				closeErr: errCloseBoom,
+			},
+			req,
+		), nil
+	}))
+
+	client := imds.NewClient(httpClient, imds.WithBaseURL("http://metadata.local/opc/v2"))
+
+	_, err := client.Region(context.Background())
+	if err == nil {
+		t.Fatal("Region() expected error, got nil")
+	}
+
+	if !errors.Is(err, errCloseBoom) {
+		t.Fatalf("Region() error = %v, want close error", err)
 	}
 
 	if !strings.Contains(err.Error(), "close region response body") {
