@@ -156,7 +156,7 @@ func TestApplyPoolSizingFromShapeIMDSEdgeOCPUs(t *testing.T) {
 			initialWorkers:  3,
 			expectedWorkers: minAutoSizedWorkers,
 			expectedApplied: true,
-			expectedCapped:  false,
+			expectedCapped:  true,
 		},
 		{
 			name:            "capsAboveMaximum",

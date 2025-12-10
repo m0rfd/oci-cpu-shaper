@@ -74,7 +74,7 @@ func deriveWorkerCountFromOCPUs(ocpus float64, fallback int) (int, bool, bool) {
 	workers := int(math.Ceil(ocpus))
 	capped := false
 
-	if workers < minAutoSizedWorkers {
+	if ocpus < float64(minAutoSizedWorkers) {
 		workers = minAutoSizedWorkers
 		capped = true
 	}
