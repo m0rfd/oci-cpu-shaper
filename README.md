@@ -76,13 +76,13 @@ welcome! Please:
 
 1. Open an issue to discuss significant features or changes.
 2. Follow Go best practices and the formatting rules defined in `.editorconfig`.
-3. Use the provided tooling shortcuts before submitting changes and keep the ≥96% statement coverage guarantee in place:
+3. Use the provided tooling shortcuts before submitting changes and keep the ≥98% statement coverage guarantee in place:
    - `make setup` (fresh Ubuntu 24.x container) to install Go, base build tools, module dependencies, linting helpers, and the `pre-commit` hook that runs `make lint`. Ensure your `PATH` includes `/usr/local/go/bin` and `$HOME/go/bin` (or your `GOBIN`) so the installed tooling is discoverable.
    - `make maintenance` (resumed container) to refresh Go modules and tooling without reinstalling the toolchain.
    - `make lint-fix` to run `golangci-lint` with autofix enabled.
    - `make lint` to run checks only.
-   - `make test` to execute the suite with the Go race detector enabled.
-   - `make coverage MIN_COVERAGE=96` to confirm the repository-wide coverage threshold documented in §11 of the implementation plan.
+   - `make test` to execute the suite with the Go race detector enabled. Set `RUN_E2E_TESTS=1 make test` when you need the tagged CLI end-to-end harness that exercises the mock IMDS/Monitoring servers in `tests/e2e`. The environment flag stays unset in untrusted contexts (for example, pull requests from forks) so the suite only runs when explicitly requested.
+   - `make coverage MIN_COVERAGE=98` to confirm the repository-wide coverage threshold documented in §11 of the implementation plan. Use `RUN_E2E_TESTS=1 KEEP_E2E_COVERAGE=1 make coverage` when you want the merged profile to include the tagged E2E suite and emit a reusable `coverage-e2e.out` artifact.
    - `make check` to run linting, tests, coverage enforcement, CodeQL, and agent verification in one pass. Set `CHECK_INCLUDE_CODEQL=0 make check` if you want to mirror CI’s faster path where CodeQL runs in its dedicated workflow.
    - `make codeql-setup` to install the CodeQL CLI into a versioned toolcache directory, retain existing installs, and prefetch the default query packs into `.cache/codeql/packs` for offline analysis. `make codeql`, `make codeql-actions`, `make codeql-go`, or `make codeql-all` mirror the PR CodeQL checks directly, writing databases to `.cache/codeql/databases`, emitting SARIF artifacts to `artifacts/codeql/`, and honoring `CODEQL_DATABASE_ROOT`, `CODEQL_CACHE_DIR`, and `CODEQL_PACK_CACHE_DIR` overrides. Go analysis uses the baked-in build command (no extra manual steps), runs `codeql database analyze` with `--threads=0`, and you can override the query suites with `CODEQL_ACTIONS_QUERY_PACK`/`CODEQL_GO_QUERY_PACK` when experimenting locally. Use `make codeql-clean` to prune generated databases and SARIF outputs without disturbing the cached CLI or packs.
    - `make integration` to verify Docker connectivity, ensure the cgroup v2 CPU controller is present, build the distroless rootful and rootless images, and run the CPU weight responsiveness tests with logs mirrored to `artifacts/integration.log`.

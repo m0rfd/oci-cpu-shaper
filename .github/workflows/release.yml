@@ -195,7 +195,7 @@ jobs:
       - name: Run coverage
         if: steps.ci-artifacts.outputs.coverage-available != '1'
         env:
-          MIN_COVERAGE: "96"
+          MIN_COVERAGE: "98"
           COVERAGE_PROFILE: coverage.out
           COVERAGE_SUMMARY: coverage.txt
           REUSE_INTEGRATION_COVERAGE: ${{ steps.ci-artifacts.outputs.integration-available || '0' }}
