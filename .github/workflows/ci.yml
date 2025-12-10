@@ -182,7 +182,7 @@ jobs:
             cat coverage.txt;
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload coverage artifacts
+      - name: Upload merged coverage artifacts
         if: success() && hashFiles('coverage.out') != ''
         uses: actions/upload-artifact@v5
         with:
@@ -493,8 +493,8 @@ jobs:
         run: |
           { echo '### Coverage results'; echo; cat coverage.txt; } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload coverage artifacts
-        if: success()
+      - name: Upload merged coverage artifacts
+        if: success() && hashFiles('coverage.out') != ''
         uses: actions/upload-artifact@v5
         with:
           name: e2e-coverage
