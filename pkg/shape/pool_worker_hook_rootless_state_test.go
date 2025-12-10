@@ -57,3 +57,55 @@ func TestConfigureWorkerStartHookRootlessPreservesPoolState(t *testing.T) {
 		t.Fatalf("worker start error handler should not be invoked by rootless configure hook")
 	}
 }
+
+func TestConfigureWorkerStartHookRootlessWithNilError(t *testing.T) {
+	t.Parallel()
+
+	pool, err := NewPool(1, DefaultQuantum)
+	if err != nil {
+		t.Fatalf("unexpected error creating pool: %v", err)
+	}
+
+	sentinelHook := func() error {
+		return assertableError("sentinel hook")
+	}
+
+	var handlerCalled bool
+
+	sentinelHandler := func(err error) {
+		handlerCalled = true
+
+		if err != nil {
+			t.Fatalf("unexpected error propagated: %v", err)
+		}
+	}
+
+	sentinelRootfulErr := assertableError("sentinel rootful init error")
+
+	pool.workerStartHook = sentinelHook
+	pool.workerStartErrorHandler = sentinelHandler
+	pool.rootfulInitErr = sentinelRootfulErr
+
+	configureWorkerStartHook(pool, nil)
+
+	if reflect.ValueOf(pool.workerStartHook).Pointer() != reflect.ValueOf(sentinelHook).Pointer() {
+		t.Fatalf("worker start hook was modified when invoked with nil error")
+	}
+
+	if reflect.ValueOf(pool.workerStartErrorHandler).
+		Pointer() !=
+		reflect.ValueOf(sentinelHandler).
+			Pointer() {
+		t.Fatalf("worker start error handler was modified when invoked with nil error")
+	}
+
+	if !errors.Is(pool.rootfulInitErr, sentinelRootfulErr) {
+		t.Fatalf("rootful init error was modified when invoked with nil error")
+	}
+
+	if handlerCalled {
+		t.Fatalf(
+			"worker start error handler should not be invoked when hook is configured with nil error",
+		)
+	}
+}

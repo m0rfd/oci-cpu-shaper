@@ -25,15 +25,18 @@ Run the following helpers from the repository root before every pull request:
 - `make test` to run `go test -race ./...` so race conditions surface early.
 - `make coverage MIN_COVERAGE=97` to regenerate `coverage.out`/`coverage.txt` and
   prove repository-wide statement coverage stays at or above the required 97 %.
+- `make codeql-setup` to install the CodeQL CLI into a versioned toolcache and
+  prefetch the default query packs into `.cache/codeql/packs` for offline runs.
 - `make codeql`, `make codeql-actions`, `make codeql-go`, or `make codeql-all`
   to mirror the PR CodeQL checks. Run `CHECK_INCLUDE_CODEQL=0 make check` when
-  you want to match CI’s faster path without CodeQL; the default bundles
-  CodeQL into the broader validation locally. These targets install the CLI via `make
-  tools`/`make ensure-codeql`, need GitHub Packages read access to download the
-  default `security-and-quality` packs, emit SARIF files to `artifacts/codeql/`,
-  and rely on the baked-in Go build command so no manual build steps are
-  required. Override the query packs with `CODEQL_ACTIONS_QUERY_PACK` or
-  `CODEQL_GO_QUERY_PACK` when testing variants.
+  you want to match CI’s faster path without CodeQL; the default bundles CodeQL
+  into the broader validation locally. These targets store databases under
+  `.cache/codeql/databases`, honor `CODEQL_DATABASE_ROOT`/`CODEQL_PACK_CACHE_DIR`
+  overrides, emit SARIF files to `artifacts/codeql/`, and rely on the baked-in
+  Go build command so no manual build steps are required. Override the query
+  packs with `CODEQL_ACTIONS_QUERY_PACK` or `CODEQL_GO_QUERY_PACK` when testing
+  variants, and use `make codeql-clean` to drop generated databases and SARIF
+  outputs without touching the cached CLI or packs.
 
 Use `make check` when you want linting and race-enabled tests in one step. Run
 `make integration`, `make e2e`, or `make bench` whenever you touch the packages
