@@ -320,7 +320,7 @@ func TestRunControllerWithStepSurfacesNilEstimatorChannelError(t *testing.T) {
 
 	runErr := runControllerWithStep(t.Context(), controller, func(context.Context) time.Duration {
 		return controller.cfg.Interval
-	}, nil)
+	}, nil, nil)
 	if runErr == nil {
 		t.Fatal("expected runControllerWithStep to return error for nil estimator channel")
 	}
@@ -404,7 +404,7 @@ func TestRunControllerWithStepResetsTickerForClosedEstimator(t *testing.T) {
 	done := make(chan error, 1)
 
 	go func() {
-		done <- runControllerWithStep(ctx, controller, stepper.Step, intervalUpdates)
+		done <- runControllerWithStep(ctx, controller, stepper.Step, intervalUpdates, nil)
 	}()
 
 	waitFor(func() bool { return len(intervalUpdates) == len(intervals) }, time.Second)
@@ -459,7 +459,7 @@ func TestRunControllerWithStepUpdatesIntervalsFromStep(t *testing.T) {
 	done := make(chan error, 1)
 
 	go func() {
-		done <- runControllerWithStep(ctx, controller, stepper.Step, intervalUpdates)
+		done <- runControllerWithStep(ctx, controller, stepper.Step, intervalUpdates, nil)
 	}()
 
 	waitFor(func() bool { return len(intervalUpdates) == len(intervals) }, time.Second)
@@ -477,6 +477,55 @@ func TestRunControllerWithStepUpdatesIntervalsFromStep(t *testing.T) {
 			"expected controller interval to track last step interval, got %v",
 			controller.interval,
 		)
+	}
+}
+
+func TestRunControllerWithStepNormalizesZeroAndResetsOnChange(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_003_040, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+	cfg.Interval = 15 * time.Millisecond
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	intervals := []time.Duration{0, 2 * controller.cfg.Interval}
+
+	updates, resets, runErr := runControllerWithManualTicker(t, controller, intervals)
+
+	if !errors.Is(runErr, context.Canceled) {
+		t.Fatalf("runControllerWithStep error: %v", runErr)
+	}
+
+	expectedIntervals := []time.Duration{controller.cfg.Interval, 2 * controller.cfg.Interval}
+
+	if len(updates) != len(expectedIntervals) {
+		t.Fatalf("expected %d interval updates, got %d", len(expectedIntervals), len(updates))
+	}
+
+	for index, expected := range expectedIntervals {
+		if updates[index] != expected {
+			t.Fatalf(
+				"expected interval %v at position %d, got %v",
+				expected,
+				index,
+				updates[index],
+			)
+		}
+	}
+
+	if len(resets) != 1 {
+		t.Fatalf("expected one ticker reset, got %d", len(resets))
+	}
+
+	if resets[0] != expectedIntervals[1] {
+		t.Fatalf("expected ticker reset to %v, got %v", expectedIntervals[1], resets[0])
 	}
 }
 
@@ -499,7 +548,7 @@ func TestRunControllerWithStepWrapsCanceledContext(t *testing.T) {
 
 	runErr := runControllerWithStep(ctx, controller, func(context.Context) time.Duration {
 		return controller.cfg.Interval
-	}, nil)
+	}, nil, nil)
 	if runErr == nil {
 		t.Fatal("expected runControllerWithStep to wrap canceled context")
 	}
@@ -583,7 +632,7 @@ func TestAdaptiveControllerRunResetsTickerAndFallsBackOnInvalidIntervals(t *test
 	done := make(chan error, 1)
 
 	go func() {
-		done <- runControllerWithStep(ctx, controller, stepper.Step, intervalUpdates)
+		done <- runControllerWithStep(ctx, controller, stepper.Step, intervalUpdates, nil)
 	}()
 
 	waitFor(func() bool { return len(intervalUpdates) == len(intervals) }, time.Second)
@@ -1013,11 +1062,71 @@ func (f *fakeStep) Step(_ context.Context) time.Duration {
 	return next
 }
 
+type controllerTicker interface {
+	C() <-chan time.Time
+	Reset(interval time.Duration)
+	Stop()
+}
+
+type runtimeControllerTicker struct {
+	ticker *time.Ticker
+}
+
+func newRuntimeControllerTicker(duration time.Duration) controllerTicker {
+	return &runtimeControllerTicker{ticker: time.NewTicker(duration)}
+}
+
+func (t *runtimeControllerTicker) C() <-chan time.Time {
+	return t.ticker.C
+}
+
+func (t *runtimeControllerTicker) Reset(duration time.Duration) {
+	t.ticker.Reset(duration)
+}
+
+func (t *runtimeControllerTicker) Stop() {
+	t.ticker.Stop()
+}
+
+type manualControllerTicker struct {
+	ch     chan time.Time
+	resets []time.Duration
+	stop   atomic.Bool
+	mu     sync.Mutex
+}
+
+func newManualControllerTicker(ch chan time.Time) *manualControllerTicker {
+	return &manualControllerTicker{ch: ch, resets: nil, stop: atomic.Bool{}, mu: sync.Mutex{}}
+}
+
+func (t *manualControllerTicker) C() <-chan time.Time {
+	return t.ch
+}
+
+func (t *manualControllerTicker) Reset(interval time.Duration) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.resets = append(t.resets, interval)
+}
+
+func (t *manualControllerTicker) Stop() {
+	t.stop.Store(true)
+}
+
+func (t *manualControllerTicker) resetCalls() []time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	return append([]time.Duration(nil), t.resets...)
+}
+
 func runControllerWithStep(
 	ctx context.Context,
 	controller *AdaptiveController,
 	step func(context.Context) time.Duration,
 	intervalUpdates chan<- time.Duration,
+	newTicker func(time.Duration) controllerTicker,
 ) error {
 	estimatorCh, err := startEstimator(ctx, controller)
 	if err != nil {
@@ -1028,17 +1137,21 @@ func runControllerWithStep(
 		go controller.consumeEstimator(ctx, estimatorCh)
 	}
 
+	if newTicker == nil {
+		newTicker = newRuntimeControllerTicker
+	}
+
 	nextInterval := normalizeInterval(controller.cfg, step(ctx))
 	applyInterval(controller, intervalUpdates, nextInterval)
 
-	ticker := time.NewTicker(nextInterval)
+	ticker := newTicker(nextInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return wrapContextErr(ctx.Err())
-		case <-ticker.C:
+		case <-ticker.C():
 			nextInterval := normalizeInterval(controller.cfg, step(ctx))
 
 			if nextInterval != controller.interval {
@@ -1048,6 +1161,43 @@ func runControllerWithStep(
 			applyInterval(controller, intervalUpdates, nextInterval)
 		}
 	}
+}
+
+func runControllerWithManualTicker(
+	t *testing.T,
+	controller *AdaptiveController,
+	intervals []time.Duration,
+) ([]time.Duration, []time.Duration, error) {
+	t.Helper()
+
+	tickCh := make(chan time.Time, len(intervals))
+	manualTicker := newManualControllerTicker(tickCh)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	intervalUpdates := make(chan time.Duration, len(intervals))
+	stepper := newFakeStep(intervals, cancel)
+
+	done := make(chan error, 1)
+
+	go func() {
+		done <- runControllerWithStep(
+			ctx,
+			controller,
+			stepper.Step,
+			intervalUpdates,
+			func(time.Duration) controllerTicker { return manualTicker },
+		)
+	}()
+
+	waitFor(func() bool { return len(intervalUpdates) > 0 }, time.Second)
+
+	for len(intervalUpdates) < len(intervals) {
+		tickCh <- time.Now()
+
+		waitFor(func() bool { return len(intervalUpdates) >= len(intervals) }, 100*time.Millisecond)
+	}
+
+	return drainIntervals(intervalUpdates), manualTicker.resetCalls(), <-done
 }
 
 func drainIntervals(ch <-chan time.Duration) []time.Duration {
