@@ -26,6 +26,7 @@ env:
   SHELLCHECK_VERSION: "0.10.0"
   PYFLAKES_VERSION: "3.2.0"
   ACTIONLINT_VERSION: "v1.7.9"
+  CACHE_VERSION: v1
 
 defaults:
   run:
@@ -126,18 +127,18 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache/golangci
-          key: ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/.golangci.yml', '**/go.sum') }}
+          key: ${{ runner.os }}-golangci-${{ env.CACHE_VERSION }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/.golangci.yml', '**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-
+            ${{ runner.os }}-golangci-${{ env.CACHE_VERSION }}-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Cache golangci-lint binary
         if: steps.ci-artifacts.outputs.coverage-available != '1'
         uses: actions/cache@v4
         with:
           path: ${{ env.GOBIN }}/golangci-lint
-          key: ${{ runner.os }}-${{ runner.arch }}-golangci-${{ env.GOLANGCI_LINT_VERSION }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/.golangci.yml', '**/go.sum') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-golangci-${{ env.GOLANGCI_LINT_VERSION }}-${{ env.CACHE_VERSION }}-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/.golangci.yml', '**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-golangci-${{ env.GOLANGCI_LINT_VERSION }}-go-${{ steps.setup-go.outputs.go-version }}-
+            ${{ runner.os }}-${{ runner.arch }}-golangci-${{ env.GOLANGCI_LINT_VERSION }}-${{ env.CACHE_VERSION }}-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Set up lint tools
         if: steps.ci-artifacts.outputs.coverage-available != '1'
@@ -148,9 +149,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.GOBIN }}/actionlint
-          key: ${{ runner.os }}-${{ runner.arch }}-actionlint-${{ env.ACTIONLINT_VERSION }}-${{ hashFiles('Makefile') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-actionlint-${{ env.ACTIONLINT_VERSION }}-${{ env.CACHE_VERSION }}-${{ hashFiles('Makefile') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-actionlint-${{ env.ACTIONLINT_VERSION }}-
+            ${{ runner.os }}-${{ runner.arch }}-actionlint-${{ env.ACTIONLINT_VERSION }}-${{ env.CACHE_VERSION }}-
 
       - name: Run lint
         if: steps.ci-artifacts.outputs.coverage-available != '1'

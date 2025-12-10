@@ -11,6 +11,9 @@
 #
 name: "CodeQL Advanced"
 
+env:
+  CACHE_VERSION: v1
+
 on:
   push:
     branches: [main, protected]
@@ -65,6 +68,9 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v6
+
+    - name: Set CodeQL cache prefix
+      run: echo "CODEQL_ACTION_DEPENDENCY_CACHE_PREFIX=codeql-dependencies-${CACHE_VERSION}-" >>"$GITHUB_ENV"
 
     # Add any setup steps before running the `github/codeql-action/init` action.
     # This includes steps like installing compilers or runtimes (`actions/setup-node`
