@@ -8,7 +8,7 @@ on:
 # The API requires write permission on the repository to submit dependencies
 permissions:
   contents: write # needed for dependency submission API payload
-  actions: read
+  actions: write
 
 # Environment variables to configure Go and Go modules. Customize as necessary
 env:
