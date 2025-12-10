@@ -133,7 +133,7 @@ jobs:
             cp "${make_check_log}" artifacts/make-check.log
           fi
 
-          if [ "$ci_succeeded" -eq 1 ]; then
+          if [ "$ci_succeeded" -eq 1 ] && [ "$coverage_available" -eq 1 ] && [ "$make_check_available" -eq 1 ]; then
             should_run_checks=0
           fi
 
