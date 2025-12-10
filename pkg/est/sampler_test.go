@@ -964,30 +964,38 @@ func TestSamplerRunRejectsDoubleStart(t *testing.T) {
 	sampler.now = func() time.Time { return time.Unix(0, 0) }
 
 	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
 	first := sampler.Run(ctx)
-
-	cancel()
-
-	for {
-		_, ok := <-first
-		if !ok {
-			break
-		}
-	}
 
 	second := sampler.Run(context.Background())
 
-	observation, ok := <-second
-	if !ok {
-		t.Fatalf("expected error observation from second run")
+	select {
+	case observation, ok := <-second:
+		if !ok {
+			t.Fatalf("expected error observation from second run")
+		}
+
+		if !errors.Is(observation.Err, ErrSamplerAlreadyStarted) {
+			t.Fatalf("expected ErrSamplerAlreadyStarted, got %v", observation.Err)
+		}
+	default:
+		t.Fatalf("expected second run to publish error immediately")
 	}
 
-	if !errors.Is(observation.Err, ErrSamplerAlreadyStarted) {
-		t.Fatalf("expected ErrSamplerAlreadyStarted, got %v", observation.Err)
+	select {
+	case _, ok := <-second:
+		if ok {
+			t.Fatalf("expected second channel to be closed")
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("expected second channel to close immediately")
 	}
 
-	if _, ok := <-second; ok {
-		t.Fatalf("expected second channel to be closed")
+	cancel()
+
+	for observation := range first {
+		_ = observation
 	}
 }
 
