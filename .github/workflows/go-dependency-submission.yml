@@ -7,7 +7,7 @@ on:
 
 # The API requires write permission on the repository to submit dependencies
 permissions:
-  contents: write
+  contents: write # needed for dependency submission API payload
   actions: write
 
 # Environment variables to configure Go and Go modules. Customize as necessary
@@ -39,6 +39,7 @@ jobs:
             go.sum
 
       - name: Cache Go build and module downloads
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
         uses: actions/cache@v4
         with:
           path: |
