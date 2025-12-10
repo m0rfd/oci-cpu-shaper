@@ -43,6 +43,11 @@ type sequenceSource struct {
 	index     int
 }
 
+type secondTickErrorSource struct {
+	err   error
+	calls int
+}
+
 type snapshotResponse struct {
 	snapshot Snapshot
 	err      error
@@ -81,6 +86,24 @@ func newManualSampler(responses []snapshotResponse, ticks <-chan time.Time) *Sam
 	return sampler
 }
 
+func newSecondTickErrorSampler(ticks <-chan time.Time) *Sampler {
+	sampler := NewSampler(&secondTickErrorSource{err: errTestBoom, calls: 0}, time.Hour)
+
+	start := time.Unix(0, 0)
+
+	sampler.now = func() time.Time {
+		start = start.Add(time.Millisecond)
+
+		return start
+	}
+
+	sampler.newTicker = func(time.Duration) ticker {
+		return manualTicker{ch: ticks}
+	}
+
+	return sampler
+}
+
 func (f *fakeSource) Snapshot(_ context.Context) (Snapshot, error) {
 	if f.err != nil {
 		return Snapshot{}, f.err
@@ -106,6 +129,21 @@ func (f *firstErrorThenSuccessSource) Snapshot(_ context.Context) (Snapshot, err
 	}
 
 	return Snapshot{Idle: 1, Total: 10, Runnable: 0}, nil
+}
+
+func (s *secondTickErrorSource) Snapshot(_ context.Context) (Snapshot, error) {
+	s.calls++
+
+	switch s.calls {
+	case 1:
+		return Snapshot{Idle: 0, Total: 10, Runnable: 0}, nil
+	case 2:
+		return Snapshot{Idle: 1, Total: 20, Runnable: 0}, nil
+	case 3:
+		return Snapshot{}, s.err
+	default:
+		return Snapshot{Idle: 2, Total: 30, Runnable: 4}, nil
+	}
 }
 
 type SnapshotFunc func(context.Context) (Snapshot, error)
@@ -182,6 +220,59 @@ func TestSamplerPublishesErrorsAndContinuesSampling(t *testing.T) {
 
 	if second.Runnable <= 0 {
 		t.Fatalf("expected runnable count to be recorded, got %.2f", second.Runnable)
+	}
+}
+
+func TestSamplerPublishesWrappedErrorAndResumesSampling(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	tickCh := make(chan time.Time, 3)
+
+	sampler := newSecondTickErrorSampler(tickCh)
+
+	observations := sampler.Run(ctx)
+
+	tick := func() { tickCh <- time.Time{} }
+
+	tick()
+
+	first := receiveObservation(t, observations, "first observation")
+
+	tick()
+
+	errorObservation := receiveObservation(t, observations, "error observation")
+
+	tick()
+
+	recovered := receiveObservation(t, observations, "recovered observation")
+
+	if first.Err != nil {
+		t.Fatalf("unexpected error in first observation: %v", first.Err)
+	}
+
+	if !errors.Is(errorObservation.Err, errTestBoom) {
+		t.Fatalf(
+			"expected wrapped error to reference %v, got %v",
+			errTestBoom,
+			errorObservation.Err,
+		)
+	}
+
+	if !strings.Contains(errorObservation.Err.Error(), "sample snapshot") {
+		t.Fatalf("expected publishError to wrap with context, got %v", errorObservation.Err)
+	}
+
+	if recovered.Err != nil {
+		t.Fatalf("unexpected error after recovery: %v", recovered.Err)
+	}
+
+	const tolerance = 1e-9
+
+	if diff := math.Abs(recovered.Utilisation - 0.9); diff > tolerance {
+		t.Fatalf("unexpected utilisation after recovery: %.2f", recovered.Utilisation)
 	}
 }
 
