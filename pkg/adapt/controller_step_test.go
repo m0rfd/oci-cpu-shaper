@@ -478,3 +478,100 @@ func TestAdaptiveControllerRecordsOCITimestamp(t *testing.T) {
 		t.Fatalf("expected recorder to capture timestamp %v, got %v", timestamp, recorder.ociTime)
 	}
 }
+
+func TestControllerStepHandlesSuppressionAndZeroTarget(t *testing.T) {
+	t.Parallel()
+
+	cfg := suppressionStepConfig()
+
+	recorder := newStubMetricsRecorder()
+	metrics := newFakeMetrics([]metricResult{
+		{value: cfg.GoalLow - 0.02, timestamp: time.Unix(1_700_002_100, 0), err: nil},
+		{value: cfg.GoalHigh + 0.08, timestamp: time.Unix(1_700_002_160, 0), err: nil},
+	})
+	shaper := newFakeShaper()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, recorder)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	stepper, ok := any(controller).(controllerStepper)
+	if !ok {
+		t.Fatalf("controller does not expose stepper interface")
+	}
+
+	setControllerTargets(controller, true, 0, 0)
+
+	interval := stepper.step(context.Background())
+
+	requireEqual(t, "suppressed interval", interval, cfg.Interval)
+	requireEqual(t, "state while suppressed", controller.State(), StateSuppressed)
+
+	desiredDuringSuppression, targetDuringSuppression := readControllerTargets(controller)
+
+	requireFloatApprox(t, "desired target clamped at max", desiredDuringSuppression, cfg.TargetMax)
+	requireFloatApprox(t, "target unchanged while suppressed", targetDuringSuppression, 0)
+	requireRecorderInterval(t, recorder, cfg.Interval, "suppressed interval recording")
+
+	setControllerTargets(controller, false, 0, desiredDuringSuppression)
+
+	interval = stepper.step(context.Background())
+
+	requireEqual(t, "interval after resuming", interval, cfg.Interval)
+	requireEqual(t, "state after resuming", controller.State(), StateNormal)
+
+	expectedTarget := clamp(cfg.TargetStart-cfg.StepDown, cfg.TargetMin, cfg.TargetMax)
+
+	desiredAfterResume, targetAfterResume := readControllerTargets(controller)
+
+	requireFloatApprox(t, "desired after resuming", desiredAfterResume, expectedTarget)
+	requireFloatApprox(t, "target after resuming", targetAfterResume, expectedTarget)
+	requireFloatApprox(t, "shaper target after resuming", shaper.Target(), expectedTarget)
+	requireRecorderInterval(t, recorder, cfg.Interval, "resumed interval recording")
+}
+
+func suppressionStepConfig() Config {
+	cfg := DefaultConfig()
+	cfg.TargetStart = 0.20
+	cfg.TargetMin = 0.12
+	cfg.TargetMax = 0.30
+	cfg.StepUp = 0.20
+	cfg.StepDown = 0.15
+	cfg.Interval = time.Minute
+
+	return cfg
+}
+
+func setControllerTargets(
+	controller *AdaptiveController,
+	suppressed bool,
+	target, desired float64,
+) {
+	controller.mu.Lock()
+	defer controller.mu.Unlock()
+
+	controller.suppressed = suppressed
+	controller.target = target
+	controller.desired = desired
+}
+
+func readControllerTargets(controller *AdaptiveController) (float64, float64) {
+	controller.mu.Lock()
+	defer controller.mu.Unlock()
+
+	return controller.desired, controller.target
+}
+
+func requireRecorderInterval(
+	t *testing.T,
+	recorder *stubMetricsRecorder,
+	want time.Duration,
+	name string,
+) {
+	t.Helper()
+
+	if recorder.interval != want {
+		t.Fatalf("expected %s %v, got %v", name, want, recorder.interval)
+	}
+}
