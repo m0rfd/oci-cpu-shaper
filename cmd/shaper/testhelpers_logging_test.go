@@ -132,6 +132,7 @@ func requireLogFieldFloat(t *testing.T, entry observer.LoggedEntry, key string, 
 	}
 }
 
+//nolint:unparam // level allows future checks at varying severities.
 func requireSingleEntry(
 	t *testing.T,
 	observed *observer.ObservedLogs,
