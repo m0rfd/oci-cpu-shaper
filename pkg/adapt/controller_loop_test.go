@@ -302,6 +302,43 @@ func TestAdaptiveControllerRunWrapsNilEstimatorChannel(t *testing.T) {
 	}
 }
 
+func TestAdaptiveControllerRunShortCircuitsWhenEstimatorChannelNil(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_001_450, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	estimator := newNilObservationsEstimator()
+
+	controller, err := NewAdaptiveController(cfg, metrics, estimator, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	runErr := controller.Run(t.Context())
+	if runErr == nil {
+		t.Fatal("expected controller run to fail when estimator returns nil channel")
+	}
+
+	if !errors.Is(runErr, errEstimatorNilChannel) {
+		t.Fatalf("unexpected run error: %v", runErr)
+	}
+
+	if metrics.CallCount() != 0 {
+		t.Fatalf(
+			"expected controller to stop before ticking, got %d metric calls",
+			metrics.CallCount(),
+		)
+	}
+
+	if !estimator.started.Load() {
+		t.Fatal("expected estimator to be invoked")
+	}
+}
+
 func TestRunControllerWithStepSurfacesNilEstimatorChannelError(t *testing.T) {
 	t.Parallel()
 
