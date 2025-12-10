@@ -13,6 +13,7 @@ GO_REQUIRED_VERSION ?= 1.25.5
 MIN_COVERAGE ?= 98.0
 COVERAGE_PROFILE ?= coverage.out
 COVERAGE_SUMMARY ?= coverage.txt
+COVERAGE_MERGE_TOOL ?= $(GO) run github.com/wadey/gocovmerge@latest
 INTEGRATION_COVERAGE_PROFILE ?=
 REUSE_INTEGRATION_COVERAGE ?= 0
 E2E_COVERAGE_PROFILE ?=
@@ -362,70 +363,84 @@ coverage: go-mod-download
 		if [ -n "$$excluded" ]; then \
 			echo "Excluding packages from coverage: $$excluded"; \
 		fi; \
-		coverage_pkgs="$(strip $(COVERAGE_PKGS))"; \
-		coverage_csv=$$(printf '%s' "$$coverage_pkgs" | tr $$' \n' ',' | sed 's/,,*/,/g; s/^,//; s/,$$//'); \
-		mkdir -p "$(dir $(COVERAGE_PROFILE))" "$(dir $(COVERAGE_SUMMARY))" "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
-		rm -f $(COVERAGE_PROFILE) $(COVERAGE_SUMMARY); \
-		unit_profile="coverage-unit.out"; \
-		GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$unit_profile" $(COVERAGE_PKGS); \
-		cat "$$unit_profile" > $(COVERAGE_PROFILE); \
-		rm -f "$$unit_profile"; \
-		if [ -n "$(strip $(INTEGRATION_PKGS))" ]; then \
-			integration_profile="$(strip $(INTEGRATION_COVERAGE_PROFILE))"; \
-			if [ -z "$$integration_profile" ]; then \
-				integration_profile="coverage-integration.out"; \
-			fi; \
-			reuse_integration="$(strip $(REUSE_INTEGRATION_COVERAGE))"; \
-			if [ "$$reuse_integration" = "1" ]; then \
-				if [ ! -f "$$integration_profile" ]; then \
-					echo "Integration coverage profile '$$integration_profile' not found."; \
-					exit 1; \
-				fi; \
-			else \
-				GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=integration $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$integration_profile" $(INTEGRATION_PKGS); \
-			fi; \
-			tail -n +2 "$$integration_profile" >> $(COVERAGE_PROFILE); \
-			if [ "$$reuse_integration" != "1" ]; then \
-				rm -f "$$integration_profile"; \
-			fi; \
+	coverage_pkgs="$(strip $(COVERAGE_PKGS))"; \
+	coverage_csv=$$(printf '%s' "$$coverage_pkgs" | tr $$' \n' ',' | sed 's/,,*/,/g; s/^,//; s/,$$//'); \
+	mkdir -p "$(dir $(COVERAGE_PROFILE))" "$(dir $(COVERAGE_SUMMARY))" "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
+	rm -f $(COVERAGE_PROFILE) $(COVERAGE_SUMMARY); \
+	declare -a coverage_profiles=(); \
+	declare -a cleanup_profiles=(); \
+	unit_profile="coverage-unit.out"; \
+	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$unit_profile" $(COVERAGE_PKGS); \
+	coverage_profiles+=("$$unit_profile"); \
+	cleanup_profiles+=("$$unit_profile"); \
+	if [ -n "$(strip $(INTEGRATION_PKGS))" ]; then \
+		integration_profile="$(strip $(INTEGRATION_COVERAGE_PROFILE))"; \
+		if [ -z "$$integration_profile" ]; then \
+			integration_profile="coverage-integration.out"; \
 		fi; \
-                e2e_pkgs="$(strip $(E2E_PKGS))"; \
-                if [ -n "$$e2e_pkgs" ]; then \
-                        e2e_profile="$(strip $(E2E_COVERAGE_PROFILE))"; \
-                        if [ -z "$$e2e_profile" ]; then \
-                                e2e_profile="coverage-e2e.out"; \
-                        fi; \
-                        reuse_e2e="$(strip $(REUSE_E2E_COVERAGE))"; \
-                        keep_e2e="$(strip $(KEEP_E2E_COVERAGE))"; \
-                        run_e2e="$(strip $(RUN_E2E_TESTS))"; \
-                        e2e_profile_ready=0; \
-                        if [ "$$reuse_e2e" = "1" ]; then \
-                                if [ ! -f "$$e2e_profile" ]; then \
-                                        echo "E2E coverage profile '$$e2e_profile' not found."; \
-                                        exit 1; \
-                                fi; \
-                                e2e_profile_ready=1; \
-                        elif [ "$$run_e2e" = "1" ]; then \
-                                if GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $$e2e_pkgs; then \
-                                        e2e_profile_ready=1; \
-else \
-                                        echo "Skipping e2e coverage due to test failures"; \
-                                fi; \
-else \
-                                echo "Skipping e2e coverage; set RUN_E2E_TESTS=1 to enable."; \
-                        fi; \
-                        if [ "$$e2e_profile_ready" -eq 1 ]; then \
-                                tail -n +2 "$$e2e_profile" >> $(COVERAGE_PROFILE); \
-                                if [ "$$keep_e2e" != "1" ] && [ "$$reuse_e2e" != "1" ]; then \
-                                        rm -f "$$e2e_profile"; \
-                                fi; \
-                        fi; \
-                fi; \
-		tmp_profile="coverage-no-tests.out"; \
-		{ IFS= read -r mode_line || true; echo "$$mode_line"; tail -n +2 "$(COVERAGE_PROFILE)" | grep -vE '_test\\.go:'; } < "$(COVERAGE_PROFILE)" > "$$tmp_profile"; \
-		mv "$$tmp_profile" "$(COVERAGE_PROFILE)"; \
-		$(GO) tool cover -func=$(COVERAGE_PROFILE) | tee $(COVERAGE_SUMMARY); \
-		"$(ROOT_DIR)/hack/coverage_summary_check.sh" "$(COVERAGE_SUMMARY)" "$(MIN_COVERAGE)"; \
+	reuse_integration="$(strip $(REUSE_INTEGRATION_COVERAGE))"; \
+	if [ "$$reuse_integration" = "1" ]; then \
+		if [ ! -f "$$integration_profile" ]; then \
+			echo "Integration coverage profile '$$integration_profile' not found."; \
+			exit 1; \
+		fi; \
+	else \
+	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=integration $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$integration_profile" $(INTEGRATION_PKGS); \
+	cleanup_profiles+=("$$integration_profile"); \
+	fi; \
+	coverage_profiles+=("$$integration_profile"); \
+	fi; \
+	e2e_pkgs="$(strip $(E2E_PKGS))"; \
+	if [ -n "$$e2e_pkgs" ]; then \
+		e2e_profile="$(strip $(E2E_COVERAGE_PROFILE))"; \
+		if [ -z "$$e2e_profile" ]; then \
+			e2e_profile="coverage-e2e.out"; \
+		fi; \
+	reuse_e2e="$(strip $(REUSE_E2E_COVERAGE))"; \
+	keep_e2e="$(strip $(KEEP_E2E_COVERAGE))"; \
+	run_e2e="$(strip $(RUN_E2E_TESTS))"; \
+	e2e_profile_ready=0; \
+	if [ "$$reuse_e2e" = "1" ]; then \
+		if [ ! -f "$$e2e_profile" ]; then \
+			echo "E2E coverage profile '$$e2e_profile' not found."; \
+			exit 1; \
+		fi; \
+	e2e_profile_ready=1; \
+	elif [ "$$run_e2e" = "1" ]; then \
+	if GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic -tags=e2e $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$e2e_profile" $$e2e_pkgs; then \
+	e2e_profile_ready=1; \
+	else \
+	echo "Skipping e2e coverage due to test failures"; \
+	fi; \
+	else \
+	echo "Skipping e2e coverage; set RUN_E2E_TESTS=1 to enable."; \
+	fi; \
+	if [ "$$e2e_profile_ready" -eq 1 ]; then \
+		coverage_profiles+=("$$e2e_profile"); \
+		if [ "$$keep_e2e" != "1" ] && [ "$$reuse_e2e" != "1" ]; then \
+			cleanup_profiles+=("$$e2e_profile"); \
+		fi; \
+	fi; \
+	fi; \
+	merged_profile_tmp="$(COVERAGE_PROFILE).tmp"; \
+	if [ "$${#coverage_profiles[@]}" -eq 0 ]; then \
+		echo "No coverage profiles were generated."; \
+		exit 1; \
+	fi; \
+	if [ "$${#coverage_profiles[@]}" -eq 1 ]; then \
+		cp "$${coverage_profiles[0]}" "$$merged_profile_tmp"; \
+	else \
+		GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(COVERAGE_MERGE_TOOL) "$${coverage_profiles[@]}" > "$$merged_profile_tmp"; \
+	fi; \
+	tmp_profile="coverage-no-tests.out"; \
+	{ IFS= read -r mode_line || true; echo "$$mode_line"; tail -n +2 "$$merged_profile_tmp" | grep -vE '_test\\.go:'; } > "$$tmp_profile" < "$$merged_profile_tmp"; \
+	mv "$$tmp_profile" "$(COVERAGE_PROFILE)"; \
+	rm -f "$$merged_profile_tmp"; \
+	$(GO) tool cover -func=$(COVERAGE_PROFILE) | tee $(COVERAGE_SUMMARY); \
+	"$(ROOT_DIR)/hack/coverage_summary_check.sh" "$(COVERAGE_SUMMARY)" "$(MIN_COVERAGE)"; \
+	if [ "$${#cleanup_profiles[@]}" -gt 0 ]; then \
+		rm -f "$${cleanup_profiles[@]}"; \
+	fi; \
 	fi
 agents: verify-go-version
 	@mkdir -p "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
