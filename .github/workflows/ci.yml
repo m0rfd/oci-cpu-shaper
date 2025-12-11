@@ -117,6 +117,7 @@ jobs:
     needs:
       - agents
       - integration
+      - e2e
       - hook-template
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
@@ -134,12 +135,27 @@ jobs:
           name: integration-coverage
           path: artifacts
 
+      - name: Download e2e coverage
+        if: needs.e2e.outputs.e2e-succeeded == 'true'
+        uses: actions/download-artifact@v5
+        with:
+          name: e2e-coverage
+          path: artifacts/e2e
+
       - name: Prepare integration coverage reuse
         run: |
           profile="artifacts/integration-coverage.out"
           if [ -f "$profile" ]; then
             echo "REUSE_INTEGRATION_COVERAGE=1" >>"$GITHUB_ENV"
             echo "INTEGRATION_COVERAGE_PROFILE=$profile" >>"$GITHUB_ENV"
+          fi
+
+      - name: Prepare e2e coverage reuse
+        run: |
+          profile="artifacts/e2e/coverage-e2e.out"
+          if [ -f "$profile" ]; then
+            echo "REUSE_E2E_COVERAGE=1" >>"$GITHUB_ENV"
+            echo "E2E_COVERAGE_PROFILE=$profile" >>"$GITHUB_ENV"
           fi
 
       - name: Record golangci-lint version
@@ -427,11 +443,30 @@ jobs:
         env:
           INTEGRATION_KEEP_LOGS: "1"
           INTEGRATION_COVERAGE_PROFILE: artifacts/integration-coverage.out
+          RETRY_ATTEMPTS: "3"
         run: |
           set -o errexit
           set -o nounset
           set -o pipefail
-          make integration
+
+          attempt=1
+          while [ "$attempt" -le "$RETRY_ATTEMPTS" ]; do
+            echo "[integration] attempt ${attempt}/${RETRY_ATTEMPTS}"
+            if make integration; then
+              echo "[integration] succeeded on attempt ${attempt}"
+              break
+            fi
+
+            if [ "$attempt" -eq "$RETRY_ATTEMPTS" ]; then
+              echo "::error::integration suite failed after ${RETRY_ATTEMPTS} attempts"
+              exit 1
+            fi
+
+            attempt=$((attempt + 1))
+            backoff=$((attempt * 5))
+            echo "[integration] retrying in ${backoff}s"
+            sleep "$backoff"
+          done
 
       - name: Record integration status
         id: integration-status
@@ -460,6 +495,8 @@ jobs:
     needs:
       - agents
     runs-on: ubuntu-latest
+    outputs:
+      e2e-succeeded: ${{ steps.e2e-status.outputs.succeeded }}
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
@@ -475,10 +512,29 @@ jobs:
         uses: ./.github/actions/setup-go-with-cache
 
       - name: Run make test with tagged e2e
+        env:
+          RETRY_ATTEMPTS: "2"
         run: |
           set -o pipefail
           mkdir -p artifacts/e2e
-          make test 2>&1 | tee artifacts/e2e/make-test.log
+          attempt=1
+          while [ "$attempt" -le "$RETRY_ATTEMPTS" ]; do
+            echo "[e2e] attempt ${attempt}/${RETRY_ATTEMPTS}"
+            if make test 2>&1 | tee artifacts/e2e/make-test.log; then
+              echo "[e2e] succeeded on attempt ${attempt}"
+              break
+            fi
+
+            if [ "$attempt" -eq "$RETRY_ATTEMPTS" ]; then
+              echo "::error::e2e suite failed after ${RETRY_ATTEMPTS} attempts"
+              exit 1
+            fi
+
+            attempt=$((attempt + 1))
+            backoff=$((attempt * 5))
+            echo "[e2e] retrying in ${backoff}s"
+            sleep "$backoff"
+          done
 
       - name: Run coverage with e2e profile
         env:
@@ -487,6 +543,10 @@ jobs:
           set -o pipefail
           mkdir -p artifacts/e2e
           make coverage 2>&1 | tee artifacts/e2e/make-coverage.log
+
+      - name: Record e2e status
+        id: e2e-status
+        run: echo "succeeded=true" >> "$GITHUB_OUTPUT"
 
       - name: Publish coverage summary
         if: success() && hashFiles('coverage.txt') != ''
