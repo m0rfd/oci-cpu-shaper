@@ -15,9 +15,41 @@ import (
 func TestNewMonitoringClientValidatesEndpoint(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewMonitoringClient("   ")
-	if !errors.Is(err, errMonitoringEndpointRequired) {
-		t.Fatalf("expected errMonitoringEndpointRequired, got %v", err)
+	for name, endpoint := range map[string]string{
+		"empty string":    "",
+		"whitespace only": "  \n\t ",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := NewMonitoringClient(endpoint)
+			if !errors.Is(err, errMonitoringEndpointRequired) {
+				t.Fatalf("expected errMonitoringEndpointRequired, got %v", err)
+			}
+		})
+	}
+}
+
+func TestNewMonitoringClientTrimsEndpointAndSetsTimeout(t *testing.T) {
+	t.Parallel()
+
+	input := "  http://example.com/metrics  "
+
+	client, err := NewMonitoringClient(input)
+	if err != nil {
+		t.Fatalf("unexpected error creating client: %v", err)
+	}
+
+	if client.endpoint != strings.TrimSpace(input) {
+		t.Fatalf("endpoint not trimmed: got %q", client.endpoint)
+	}
+
+	if client.http == nil {
+		t.Fatalf("http client not initialised")
+	}
+
+	if client.http.Timeout != defaultHTTPTimeout {
+		t.Fatalf("unexpected timeout: got %s want %s", client.http.Timeout, defaultHTTPTimeout)
 	}
 }
 
