@@ -150,6 +150,60 @@ func TestNormalizeConfigClampsNegativeSuppressThreshold(t *testing.T) {
 	}
 }
 
+func TestNormalizeConfigAdjustsSuppressThresholdsAndRunnables(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.SuppressThreshold = 0.5
+	cfg.SuppressResume = 0.75
+	cfg.SuppressRunnableThreshold = 1.1
+	cfg.SuppressRunnableResume = 1.5
+
+	normalized, mode, err := normalizeConfig(cfg)
+	if err != nil {
+		t.Fatalf("normalizeConfig returned error: %v", err)
+	}
+
+	if mode != enforceModeLabel {
+		t.Fatalf("expected enforce mode, got %q", mode)
+	}
+
+	expected := DefaultConfig()
+	expected.SuppressThreshold = cfg.SuppressThreshold
+	expected.SuppressResume = cfg.SuppressThreshold * suppressResumeScale
+	expected.SuppressRunnableThreshold = cfg.SuppressRunnableThreshold
+	expected.SuppressRunnableResume = cfg.SuppressRunnableThreshold * suppressResumeScale
+
+	if normalized != expected {
+		t.Fatalf("normalized config mismatch: expected %+v, got %+v", expected, normalized)
+	}
+}
+
+func TestNormalizeConfigResetsNegativeRunnableValues(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.SuppressRunnableThreshold = -0.2
+	cfg.SuppressRunnableResume = -0.1
+
+	normalized, mode, err := normalizeConfig(cfg)
+	if err != nil {
+		t.Fatalf("normalizeConfig returned error: %v", err)
+	}
+
+	if mode != enforceModeLabel {
+		t.Fatalf("expected enforce mode, got %q", mode)
+	}
+
+	expected := DefaultConfig()
+	expected.SuppressRunnableThreshold = 0
+	expected.SuppressRunnableResume = 0
+
+	if normalized != expected {
+		t.Fatalf("normalized config mismatch: expected %+v, got %+v", expected, normalized)
+	}
+}
+
 func TestNormalizeConfigMapsLegacyNormalMode(t *testing.T) {
 	t.Parallel()
 
@@ -195,6 +249,28 @@ func TestNormalizeConfigTrimsLegacyModeLabel(t *testing.T) {
 			enforceModeLabel,
 			normalized.Mode,
 		)
+	}
+}
+
+func TestNormalizeConfigNormalizesLegacyModeLabelConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Mode = " Normal "
+
+	normalized, mode, err := normalizeConfig(cfg)
+	if err != nil {
+		t.Fatalf("normalizeConfig returned error: %v", err)
+	}
+
+	if mode != enforceModeLabel {
+		t.Fatalf("expected legacy mode to normalize to %q, got %q", enforceModeLabel, mode)
+	}
+
+	expected := DefaultConfig()
+
+	if normalized != expected {
+		t.Fatalf("normalized config mismatch: expected %+v, got %+v", expected, normalized)
 	}
 }
 
