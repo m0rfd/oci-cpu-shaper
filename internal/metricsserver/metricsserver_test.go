@@ -15,6 +15,11 @@ import (
 	"oci-cpu-shaper/internal/metricsserver"
 )
 
+const (
+	bindAddrDefault            = "127.0.0.1:0"
+	reasonHTTPBindAddressEmpty = "http bind address empty"
+)
+
 func TestStartServerRequiresContext(t *testing.T) {
 	t.Parallel()
 
@@ -23,7 +28,7 @@ func TestStartServerRequiresContext(t *testing.T) {
 
 	var nilCtx context.Context
 
-	shutdown, err := metricsserver.StartServer(nilCtx, zap.NewNop(), "127.0.0.1:0", handler)
+	shutdown, err := metricsserver.StartServer(nilCtx, zap.NewNop(), bindAddrDefault, handler)
 	if !errors.Is(err, metricsserver.ErrContextRequired) {
 		t.Fatalf("expected ErrContextRequired, got %v", err)
 	}
@@ -39,7 +44,7 @@ func TestStartServerNilHandler(t *testing.T) {
 	core, logs := observer.New(zap.InfoLevel)
 	logger := zap.New(core)
 
-	shutdown, err := metricsserver.StartServer(context.Background(), logger, "127.0.0.1:0", nil)
+	shutdown, err := metricsserver.StartServer(context.Background(), logger, bindAddrDefault, nil)
 	if !errors.Is(err, metricsserver.ErrServerDisabled) {
 		t.Fatalf("expected ErrServerDisabled, got %v", err)
 	}
@@ -85,7 +90,7 @@ func TestStartServerEmptyBindAddress(t *testing.T) {
 		t.Fatalf("expected one disable log entry, got %d", len(entries))
 	}
 
-	if reason := entries[0].ContextMap()["reason"]; reason != "http bind address empty" {
+	if reason := entries[0].ContextMap()["reason"]; reason != reasonHTTPBindAddressEmpty {
 		t.Fatalf("expected reason to be 'http bind address empty', got %v", reason)
 	}
 }
@@ -95,7 +100,7 @@ func TestStartServerHappyPath(t *testing.T) {
 
 	var listenCfg net.ListenConfig
 
-	listener, err := listenCfg.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	listener, err := listenCfg.Listen(context.Background(), "tcp", bindAddrDefault)
 	if err != nil {
 		t.Fatalf("expected to acquire listener: %v", err)
 	}
@@ -313,7 +318,7 @@ func TestStartEndpointBlankBindAddress(t *testing.T) {
 		t.Fatalf("expected disable log entry, got %d", len(entries))
 	}
 
-	if reason := entries[0].ContextMap()["reason"]; reason != "http bind address empty" {
+	if reason := entries[0].ContextMap()["reason"]; reason != reasonHTTPBindAddressEmpty {
 		t.Fatalf("expected reason 'http bind address empty', got %v", reason)
 	}
 }
@@ -332,7 +337,7 @@ func TestStartEndpointNilHandler(t *testing.T) {
 		context.Background(),
 		metricsserver.EndpointDeps{StartServer: fakeStart},
 		zap.NewNop(),
-		"127.0.0.1:0",
+		bindAddrDefault,
 		nil,
 	)
 	if err != nil {
@@ -365,7 +370,7 @@ func TestStartEndpointRequiresContext(t *testing.T) {
 		nil,
 		metricsserver.EndpointDeps{StartServer: fakeStart},
 		zap.NewNop(),
-		"127.0.0.1:0",
+		bindAddrDefault,
 		handler,
 	)
 	if !errors.Is(err, metricsserver.ErrContextRequired) {
@@ -392,7 +397,7 @@ func TestStartEndpointCancelShutsDownServer(t *testing.T) {
 		addr string,
 		handler http.Handler,
 	) (metricsserver.ShutdownFunc, error) {
-		if addr != "127.0.0.1:0" {
+		if addr != bindAddrDefault {
 			t.Fatalf("unexpected bind address: %q", addr)
 		}
 
@@ -423,7 +428,7 @@ func TestStartEndpointCancelShutsDownServer(t *testing.T) {
 		context.Background(),
 		metricsserver.EndpointDeps{StartServer: fakeStart},
 		zap.NewNop(),
-		"127.0.0.1:0",
+		bindAddrDefault,
 		handler,
 	)
 	if err != nil {
