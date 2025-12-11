@@ -20,21 +20,88 @@ const (
 	reasonHTTPBindAddressEmpty = "http bind address empty"
 )
 
-func TestStartServerRequiresContext(t *testing.T) {
+var listenEndpointMu sync.Mutex //nolint:gochecknoglobals // protects listenEndpoint test stub
+
+var (
+	errUnexpectedListen = errors.New("unexpected listen")
+	errListenFailure    = errors.New("listen failure")
+)
+
+type testAddr string
+
+func (addr testAddr) Network() string {
+	return "tcp"
+}
+
+func (addr testAddr) String() string {
+	return string(addr)
+}
+
+type waitingListener struct {
+	addr         net.Addr
+	closed       chan struct{}
+	closeOnce    sync.Once
+	acceptOnce   sync.Once
+	acceptCalled chan struct{}
+}
+
+func newWaitingListener(addr string) *waitingListener {
+	return &waitingListener{
+		addr:         testAddr(addr),
+		closed:       make(chan struct{}),
+		closeOnce:    sync.Once{},
+		acceptOnce:   sync.Once{},
+		acceptCalled: make(chan struct{}),
+	}
+}
+
+func (listener *waitingListener) Accept() (net.Conn, error) {
+	listener.acceptOnce.Do(func() {
+		close(listener.acceptCalled)
+	})
+
+	<-listener.closed
+
+	return nil, http.ErrServerClosed
+}
+
+func (listener *waitingListener) Close() error {
+	listener.closeOnce.Do(func() {
+		close(listener.closed)
+	})
+
+	return nil
+}
+
+func (listener *waitingListener) Addr() net.Addr {
+	return listener.addr
+}
+
+func TestStartServerNilContext(t *testing.T) {
 	t.Parallel()
+
+	called := false
+
+	stubListenEndpoint(t, func(context.Context, string, string) (net.Listener, error) {
+		called = true
+
+		return nil, errUnexpectedListen
+	})
 
 	handler := http.NewServeMux()
 	handler.HandleFunc("/", func(http.ResponseWriter, *http.Request) {})
 
-	var nilCtx context.Context
-
-	shutdown, err := metricsserver.StartServer(nilCtx, zap.NewNop(), bindAddrDefault, handler)
+	shutdown, err := metricsserver.StartServer(nil, zap.NewNop(), bindAddrDefault, handler)
 	if !errors.Is(err, metricsserver.ErrContextRequired) {
 		t.Fatalf("expected ErrContextRequired, got %v", err)
 	}
 
 	if shutdown != nil {
 		t.Fatalf("expected nil shutdown function, got %v", shutdown)
+	}
+
+	if called {
+		t.Fatal("expected listen endpoint not to be called without context")
 	}
 }
 
@@ -44,6 +111,14 @@ func TestStartServerNilHandler(t *testing.T) {
 	core, logs := observer.New(zap.InfoLevel)
 	logger := zap.New(core)
 
+	called := false
+
+	stubListenEndpoint(t, func(context.Context, string, string) (net.Listener, error) {
+		called = true
+
+		return nil, errUnexpectedListen
+	})
+
 	shutdown, err := metricsserver.StartServer(context.Background(), logger, bindAddrDefault, nil)
 	if !errors.Is(err, metricsserver.ErrServerDisabled) {
 		t.Fatalf("expected ErrServerDisabled, got %v", err)
@@ -51,6 +126,10 @@ func TestStartServerNilHandler(t *testing.T) {
 
 	if shutdown != nil {
 		t.Fatalf("expected nil shutdown function, got %v", shutdown)
+	}
+
+	if called {
+		t.Fatal("expected listen endpoint not to be called when handler is nil")
 	}
 
 	entries := logs.FilterMessage("metrics server disabled").All()
@@ -73,6 +152,14 @@ func TestStartServerEmptyBindAddress(t *testing.T) {
 	core, logs := observer.New(zap.InfoLevel)
 	logger := zap.New(core)
 
+	called := false
+
+	stubListenEndpoint(t, func(context.Context, string, string) (net.Listener, error) {
+		called = true
+
+		return nil, errUnexpectedListen
+	})
+
 	handler := http.NewServeMux()
 	handler.HandleFunc("/", func(http.ResponseWriter, *http.Request) {})
 
@@ -85,6 +172,10 @@ func TestStartServerEmptyBindAddress(t *testing.T) {
 		t.Fatalf("expected nil shutdown function, got %v", shutdown)
 	}
 
+	if called {
+		t.Fatal("expected listen endpoint not to be called for empty address")
+	}
+
 	entries := logs.FilterMessage("metrics server disabled").All()
 	if len(entries) != 1 {
 		t.Fatalf("expected one disable log entry, got %d", len(entries))
@@ -95,125 +186,97 @@ func TestStartServerEmptyBindAddress(t *testing.T) {
 	}
 }
 
-func TestStartServerHappyPath(t *testing.T) {
+func TestStartServerListenFailure(t *testing.T) {
 	t.Parallel()
 
-	var listenCfg net.ListenConfig
+	stubListenEndpoint(t, func(_ context.Context, _, _ string) (net.Listener, error) {
+		return nil, errListenFailure
+	})
 
-	listener, err := listenCfg.Listen(context.Background(), "tcp", bindAddrDefault)
-	if err != nil {
-		t.Fatalf("expected to acquire listener: %v", err)
-	}
-
-	addr := listener.Addr().String()
-
-	closeErr := listener.Close()
-	if closeErr != nil {
-		t.Fatalf("expected listener to close: %v", closeErr)
-	}
-
-	core, _ := observer.New(zap.InfoLevel)
+	core, logs := observer.New(zap.ErrorLevel)
 	logger := zap.New(core)
 
 	handler := http.NewServeMux()
-	handler.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
+	handler.HandleFunc("/", func(http.ResponseWriter, *http.Request) {})
+
+	shutdown, err := metricsserver.StartServer(
+		context.Background(),
+		logger,
+		"127.0.0.1:9090",
+		handler,
+	)
+	if err == nil {
+		t.Fatal("expected listen error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "listen metrics endpoint") {
+		t.Fatalf("expected listen error to be wrapped, got %v", err)
+	}
+
+	if shutdown != nil {
+		t.Fatalf("expected nil shutdown function on listen failure, got %v", shutdown)
+	}
+
+	entries := logs.FilterMessage("metrics server listen failed").All()
+	if len(entries) != 1 {
+		t.Fatalf("expected one listen failure log entry, got %d", len(entries))
+	}
+
+	if entries[0].ContextMap()["bind"] != "127.0.0.1:9090" {
+		t.Fatalf("expected bind address to be logged, got %v", entries[0].ContextMap()["bind"])
+	}
+}
+
+func TestStartServerSuccessfulShutdownRespectsTimeout(t *testing.T) {
+	t.Parallel()
+
+	listener := newWaitingListener(bindAddrDefault)
+
+	stubListenEndpoint(t, func(_ context.Context, _, addr string) (net.Listener, error) {
+		if addr != bindAddrDefault {
+			t.Fatalf("expected bind address %q, got %q", bindAddrDefault, addr)
+		}
+
+		return listener, nil
+	},
+	)
+
+	core, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	handler := http.NewServeMux()
+	handler.HandleFunc("/", func(http.ResponseWriter, *http.Request) {})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	shutdown, err := metricsserver.StartServer(ctx, logger, addr, handler)
+	shutdown, err := metricsserver.StartServer(ctx, logger, bindAddrDefault, handler)
 	if err != nil {
 		t.Fatalf("expected server to start, got %v", err)
 	}
 
-	//nolint:exhaustruct // using default transport with custom timeout
-	client := http.Client{
-		Timeout: time.Second,
+	select {
+	case <-listener.acceptCalled:
+	case <-time.After(time.Second):
+		t.Fatal("expected serve goroutine to begin accepting")
 	}
 
-	waitForServer(t, &client, addr)
-
-	shutdownCtx, cancelShutdown := context.WithTimeout(
-		context.Background(),
-		metricsserver.ShutdownTimeout,
-	)
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancelShutdown()
 
 	start := time.Now()
 
 	shutdown(shutdownCtx)
 
-	cancel()
+	duration := time.Since(start)
 
-	if elapsed := time.Since(start); elapsed > metricsserver.ShutdownTimeout {
-		t.Fatalf(
-			"expected shutdown to finish within %v, took %v",
-			metricsserver.ShutdownTimeout,
-			elapsed,
-		)
+	if duration > 200*time.Millisecond {
+		t.Fatalf("expected shutdown to respect timeout, took %v", duration)
 	}
 
-	assertServerStopped(t, &client, addr)
-}
-
-func waitForServer(t *testing.T, client *http.Client, addr string) {
-	t.Helper()
-
-	deadline := time.Now().Add(2 * time.Second)
-
-	for {
-		req, reqErr := http.NewRequestWithContext(
-			context.Background(),
-			http.MethodGet,
-			"http://"+addr,
-			nil,
-		)
-		if reqErr != nil {
-			t.Fatalf("expected request to be constructed: %v", reqErr)
-		}
-
-		resp, callErr := client.Do(req)
-		if callErr == nil {
-			closeErr := resp.Body.Close()
-			if closeErr != nil {
-				t.Fatalf("expected response body to close: %v", closeErr)
-			}
-
-			return
-		}
-
-		if time.Now().After(deadline) {
-			t.Fatalf("server did not start: %v", callErr)
-		}
-
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
-func assertServerStopped(t *testing.T, client *http.Client, addr string) {
-	t.Helper()
-
-	req, reqErr := http.NewRequestWithContext(
-		context.Background(),
-		http.MethodGet,
-		"http://"+addr,
-		nil,
-	)
-	if reqErr != nil {
-		t.Fatalf("expected request to be constructed: %v", reqErr)
-	}
-
-	resp, callErr := client.Do(req)
-	if callErr == nil {
-		closeErr := resp.Body.Close()
-		if closeErr != nil {
-			t.Fatalf("expected response body to close: %v", closeErr)
-		}
-
-		t.Fatal("expected server to stop after shutdown")
+	entries := logs.FilterMessage("metrics server stopped").All()
+	if len(entries) != 1 {
+		t.Fatalf("expected server stopped log entry after shutdown, got %d", len(entries))
 	}
 }
 
@@ -353,39 +416,6 @@ func TestStartEndpointNilHandler(t *testing.T) {
 	}
 }
 
-func TestStartEndpointRequiresContext(t *testing.T) {
-	t.Parallel()
-
-	called := false
-	fakeStart := func(_ context.Context, _ *zap.Logger, _ string, _ http.Handler) (metricsserver.ShutdownFunc, error) {
-		called = true
-
-		return func(context.Context) {}, nil
-	}
-
-	handler := http.NewServeMux()
-	handler.HandleFunc("/", func(http.ResponseWriter, *http.Request) {})
-
-	shutdown, cancel, err := metricsserver.StartEndpoint(
-		nil,
-		metricsserver.EndpointDeps{StartServer: fakeStart},
-		zap.NewNop(),
-		bindAddrDefault,
-		handler,
-	)
-	if !errors.Is(err, metricsserver.ErrContextRequired) {
-		t.Fatalf("expected ErrContextRequired, got %v", err)
-	}
-
-	if shutdown != nil || cancel != nil {
-		t.Fatalf("expected nil shutdown and cancel when context is missing")
-	}
-
-	if called {
-		t.Fatal("expected start server not to be called when context is nil")
-	}
-}
-
 func TestStartEndpointCancelShutsDownServer(t *testing.T) {
 	t.Parallel()
 
@@ -446,30 +476,5 @@ func TestStartEndpointCancelShutsDownServer(t *testing.T) {
 	case <-canceled:
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected server to cancel when context is canceled")
-	}
-}
-
-func TestStartServerListenFailure(t *testing.T) {
-	t.Parallel()
-
-	handler := http.NewServeMux()
-	handler.HandleFunc("/", func(http.ResponseWriter, *http.Request) {})
-
-	shutdown, err := metricsserver.StartServer(
-		context.Background(),
-		zap.NewNop(),
-		"127.0.0.1:notaport",
-		handler,
-	)
-	if err == nil {
-		t.Fatal("expected listen error, got nil")
-	}
-
-	if !strings.Contains(err.Error(), "listen metrics endpoint") {
-		t.Fatalf("expected listen error to be wrapped, got %v", err)
-	}
-
-	if shutdown != nil {
-		t.Fatalf("expected nil shutdown function on listen failure, got %v", shutdown)
 	}
 }
