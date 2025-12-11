@@ -167,6 +167,8 @@ jobs:
         with:
           name: lint-logs
           path: artifacts/make-lint.log
+          retention-days: 7
+          compression-level: 6
 
       - name: Run actionlint for release workflow
         if: steps.ci-artifacts.outputs.coverage-available != '1'
@@ -183,10 +185,12 @@ jobs:
         with:
           name: actionlint-logs-release
           path: artifacts/release-actionlint.log
+          retention-days: 7
+          compression-level: 6
 
       - name: Check Makefile formatting
         if: steps.ci-artifacts.outputs.coverage-available != '1'
-        run: make lint-makefile
+        run: make makefile-health
 
       - name: Run tests
         if: steps.ci-artifacts.outputs.coverage-available != '1'
@@ -219,6 +223,28 @@ jobs:
           fi
 
           env "${coverage_env[@]}" make coverage
+
+      - name: Summarize release verification
+        if: always()
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          coverage_summary="Coverage summary unavailable"
+          if [ -f coverage.txt ]; then
+            coverage_summary="$(head -n 1 coverage.txt)"
+          elif [ -f artifacts/ci/coverage.txt ]; then
+            coverage_summary="$(head -n 1 artifacts/ci/coverage.txt)"
+          fi
+
+          {
+            echo "### Release verification";
+            echo;
+            echo "- Status: ${JOB_STATUS}";
+            echo "- Coverage: ${coverage_summary}";
+            echo "- Artifacts: lint-logs, actionlint-logs-release";
+            echo "- Run: ${RUN_URL}";
+          } >> "$GITHUB_STEP_SUMMARY"
 
   build-and-test-pr:
     name: Build & test (pull_request, no publish)
@@ -663,6 +689,8 @@ jobs:
         with:
           name: sbom-rootless-${{ github.ref_name }}
           path: sbom-rootless.spdx.json
+          retention-days: 7
+          compression-level: 6
 
       - name: Generate SBOM (SPDX JSON) for rootful
         uses: aquasecurity/trivy-action@0.33.1
@@ -676,3 +704,5 @@ jobs:
         with:
           name: sbom-rootful-${{ github.ref_name }}
           path: sbom-rootful.spdx.json
+          retention-days: 7
+          compression-level: 6

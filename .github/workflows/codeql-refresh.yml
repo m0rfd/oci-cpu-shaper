@@ -1,0 +1,60 @@
+name: CodeQL pack refresh
+
+defaults:
+  run:
+    shell: bash
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  refresh:
+    name: Refresh CodeQL packs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOBIN: ${{ github.workspace }}/bin
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Restore CodeQL pack cache
+        id: cache-packs
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/codeql/packs
+          key: ${{ runner.os }}-codeql-packs-${{ hashFiles('Makefile') }}-refresh-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-codeql-packs-${{ hashFiles('Makefile') }}-
+            ${{ runner.os }}-codeql-packs-
+
+      - name: Refresh CodeQL query packs
+        run: make codeql-refresh-packs
+
+      - name: Save CodeQL pack cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/codeql/packs
+          key: ${{ runner.os }}-codeql-packs-${{ hashFiles('Makefile') }}-refresh-${{ github.run_id }}
+
+      - name: Summarize pack refresh
+        if: always()
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CACHE_HIT: ${{ steps.cache-packs.outputs.cache-hit || 'false' }}
+        run: |
+          {
+            echo "### CodeQL pack refresh";
+            echo;
+            echo "- Status: ${{ job.status }}";
+            echo "- Cache hit: ${CACHE_HIT}";
+            echo "- Cache key: ${{ steps.cache-packs.outputs.cache-primary-key || '' }}";
+            echo "- Run: ${RUN_URL}";
+          } >> "$GITHUB_STEP_SUMMARY"

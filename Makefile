@@ -102,6 +102,11 @@ CODEQL_ACTIONS_IGNORE_RULES ?= actions/unpinned-tag
 CODEQL_ACTIONS_IGNORE_PATHS ?=
 CODEQL_GO_IGNORE_RULES ?=
 CODEQL_GO_IGNORE_PATHS ?= hack/
+TOOLS_INCLUDE_CODEQL ?= 0
+TOOLS_INCLUDE_HADOLINT ?= 1
+SHELLCHECK ?= shellcheck
+MAKEFILE_SHELLCHECK_TMP ?= $(ROOT_DIR)/.cache/makefile-shellcheck.sh
+MAKEFILE_SHELLCHECK_EXCLUDES ?= SC1072,SC1073,SC1089,SC2034,SC2046,SC2096,SC2157
 
 GOLANGCI_LINT_BIN ?= $(GO_BIN_PATH)/golangci-lint
 GOLANGCI_LINT ?= $(GOLANGCI_LINT_BIN)
@@ -118,13 +123,28 @@ HADOLINT ?= $(HADOLINT_BIN)
 HADOLINT_DOCKERFILE ?= $(ROOT_DIR)/Dockerfile
 HADOLINT_ARGS ?= --no-fail
 
-.PHONY: actionlint agents bench build check clean codeql-actions codeql-all codeql-clean codeql-go codeql-setup coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-hadolint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-dockerfile lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools update-hook-template-checksum verify-git-hooks verify-go-version verify-hook-template
-HELP_TARGETS := lint lint-makefile lint-workflows lint-dockerfile test coverage build check govulncheck integration e2e agents actionlint codeql-setup codeql-actions codeql-go codeql-all codeql-clean help clean verify-git-hooks verify-hook-template update-hook-template-checksum
+.PHONY: actionlint agents bench build check clean codeql-actions codeql-all codeql-clean codeql-go codeql-install codeql-refresh-packs codeql-setup coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-hadolint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-dockerfile lint-fix lint-makefile lint-workflows maintenance makefile-health mbake print-codeql-version print-golangci-lint-version setup test tidy tools update-hook-template-checksum validate-makefile verify-git-hooks verify-go-version verify-hook-template
+HELP_TARGETS := lint lint-makefile validate-makefile makefile-health lint-workflows lint-dockerfile test coverage build check govulncheck integration e2e agents actionlint codeql-setup codeql-actions codeql-go codeql-all codeql-clean help clean verify-git-hooks verify-hook-template update-hook-template-checksum
 
-tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-hadolint ensure-mbake
+tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-mbake
+	@if [ "$(strip $(TOOLS_INCLUDE_HADOLINT))" = "1" ]; then \
+		export TOOLS_INCLUDE_HADOLINT="$(TOOLS_INCLUDE_HADOLINT)"; \
+		$(MAKE) ensure-hadolint; \
+	else \
+		echo "Skipping hadolint installation (TOOLS_INCLUDE_HADOLINT=$(TOOLS_INCLUDE_HADOLINT))"; \
+	fi
+	@if [ "$(strip $(TOOLS_INCLUDE_CODEQL))" = "1" ]; then \
+		export TOOLS_INCLUDE_CODEQL="$(TOOLS_INCLUDE_CODEQL)"; \
+		$(MAKE) codeql-install; \
+	else \
+		echo "Skipping CodeQL installation (TOOLS_INCLUDE_CODEQL=$(TOOLS_INCLUDE_CODEQL))"; \
+	fi
 
 print-golangci-lint-version:
 	@printf "%s\n" "$(GOLANGCI_LINT_VERSION)"
+
+print-codeql-version:
+	@printf "%s\n" "$(CODEQL_VERSION)"
 
 ensure-golangci-lint:
 	@mkdir -p "$(GO_BIN_PATH)"; \
@@ -171,11 +191,27 @@ lint: go-mod-download ensure-golangci-lint
 	@echo "Running golangci-lint..."
 	@GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE_DIR)" $(GOLANGCI_LINT) run
 
-lint-makefile: ensure-mbake
+validate-makefile: ensure-mbake
 	@echo "Running mbake validate..."
 	@$(MBAKE) validate $(MBAKE_FORMAT_PATHS)
+	@echo "Running shellcheck on Makefile inline scripts..."
+	@mkdir -p "$(dir $(MAKEFILE_SHELLCHECK_TMP))"
+	@$(PYTHON) hack/validate_makefile_shellcheck.py "$(MAKEFILE_SHELLCHECK_TMP)" $(MBAKE_FORMAT_PATHS)
+	@if [ ! -s "$(MAKEFILE_SHELLCHECK_TMP)" ]; then \
+		echo "No Makefile recipes found for shellcheck; skipping."; \
+	elif ! command -v $(SHELLCHECK) >/dev/null 2>&1; then \
+		echo "$(SHELLCHECK) not found; install it via setup-lint-tools or your package manager."; \
+		exit 1; \
+	else \
+		$(SHELLCHECK) -e $(MAKEFILE_SHELLCHECK_EXCLUDES) "$(MAKEFILE_SHELLCHECK_TMP)"; \
+	fi
+	@rm -f "$(MAKEFILE_SHELLCHECK_TMP)"
+
+lint-makefile: validate-makefile
 	@echo "Running mbake check..."
 	@$(MBAKE) format --check $(MBAKE_FORMAT_PATHS)
+makefile-health: lint-makefile
+	@echo "Makefile health checks completed."
 
 lint-dockerfile: ensure-hadolint
 	@if [ ! -f "$(HADOLINT_DOCKERFILE)" ]; then \
@@ -197,7 +233,9 @@ help:
 	@for target in $(HELP_TARGETS); do \
 		case $$target in \
 			lint) desc="Run golangci-lint";; \
-			lint-makefile) desc="Run mbake validate and check";; \
+			lint-makefile) desc="Run mbake format check";; \
+			validate-makefile) desc="Validate Makefile syntax and shell snippets";; \
+			makefile-health) desc="Run Makefile validation, shellcheck, and format check";; \
 			lint-dockerfile) desc="Run hadolint against the Dockerfile";; \
 			lint-workflows) desc="Run actionlint against GitHub workflows";; \
 			lint-fix) desc="Run golangci-lint with autofix";; \
@@ -268,11 +306,14 @@ ensure-hadolint:
 	if curl -fsSL "$(HADOLINT_DOWNLOAD_URL).sha256" -o "$$TMP_DIR/hadolint.sha256"; then \
 	sed -i "s|  .*|  $$ARCHIVE|" "$$TMP_DIR/hadolint.sha256"; \
 	sha256sum -c "$$TMP_DIR/hadolint.sha256"; \
-	fi; \
+else \
+echo "Failed to download hadolint checksum from $(HADOLINT_DOWNLOAD_URL).sha256"; \
+exit 1; \
+fi; \
 	install -m 0755 "$$ARCHIVE" "$$BIN"; \
 	echo "Installed hadolint $(HADOLINT_VERSION) to $$BIN"
 
-codeql-setup:
+codeql-install:
 	@mkdir -p "$(GO_BIN_PATH)" "$(CODEQL_TOOLCACHE_DIR)" "$(CODEQL_PACK_CACHE_DIR)" "$(CODEQL_DATABASE_ROOT)"; \
 	BIN="$(CODEQL_BIN)"; \
 	CLI_BIN="$(CODEQL_CLI_DIR)/codeql"; \
@@ -314,9 +355,14 @@ codeql-setup:
 	mv "$$TMP_DIR/codeql" "$(CODEQL_INSTALL_DIR)"; \
 	ln -sf "$(CODEQL_CLI_DIR)/codeql" "$$BIN"; \
 	echo "Installed CodeQL $(CODEQL_VERSION) to $(CODEQL_BIN)"; \
-	fi; \
-	echo "Prefetching CodeQL query packs into $(CODEQL_PACK_CACHE_DIR)..."; \
+	fi
+
+codeql-refresh-packs: codeql-install
+	@mkdir -p "$(CODEQL_PACK_CACHE_DIR)" "$(CODEQL_DATABASE_ROOT)"; \
+	echo "Refreshing CodeQL query packs into $(CODEQL_PACK_CACHE_DIR)..."; \
 	"$(CODEQL_BIN)" pack download --dir "$(CODEQL_PACK_CACHE_DIR)" --search-path "$(CODEQL_PACK_CACHE_DIR)" $(strip $(CODEQL_ACTIONS_QUERY_PACK)) $(strip $(CODEQL_GO_QUERY_PACK))
+
+codeql-setup: codeql-refresh-packs
 
 ensure-codeql: codeql-setup
 

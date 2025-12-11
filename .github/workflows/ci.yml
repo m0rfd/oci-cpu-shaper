@@ -107,6 +107,38 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
+  makefile-health:
+    name: Makefile health
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    needs:
+      - agents
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up lint tools
+        uses: ./.github/actions/setup-lint-tools
+
+      - name: Run Makefile health checks
+        run: make makefile-health
+
+      - name: Summarize Makefile health
+        if: always()
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+            {
+              echo "### Makefile health";
+              echo;
+              echo "- Status: ${{ job.status }}";
+              echo "- Command: make makefile-health";
+              echo "- Run: ${RUN_URL}";
+            } >> "$GITHUB_STEP_SUMMARY"
+
   check:
     name: make check
     timeout-minutes: 10
@@ -118,6 +150,7 @@ jobs:
       - agents
       - integration
       - hook-template
+      - makefile-health
     env:
       GOCACHE: ${{ github.workspace }}/.cache/go
       GOMODCACHE: ${{ github.workspace }}/.cache/gomod
@@ -148,6 +181,16 @@ jobs:
       - name: Set up Go with cache
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
+
+      - name: Cache CodeQL query packs
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+        uses: actions/cache@v4
+        with:
+          path: .cache/codeql/packs
+          key: ${{ runner.os }}-codeql-packs-${{ hashFiles('Makefile') }}-primary
+          restore-keys: |
+            ${{ runner.os }}-codeql-packs-${{ hashFiles('Makefile') }}-
+            ${{ runner.os }}-codeql-packs-
 
       - name: Cache golangci-lint workspace
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
@@ -190,6 +233,8 @@ jobs:
           path: |
             coverage.out
             coverage.txt
+          retention-days: 7
+          compression-level: 6
           if-no-files-found: error
 
       - name: Upload make check logs
@@ -198,6 +243,28 @@ jobs:
         with:
           name: make-check-logs
           path: artifacts/make-check.log
+          retention-days: 7
+          compression-level: 6
+
+      - name: Summarize make check
+        if: always()
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          coverage_summary="Coverage summary unavailable"
+          if [ -f coverage.txt ]; then
+            coverage_summary="$(head -n 1 coverage.txt)"
+          fi
+
+          {
+            echo "### make check";
+            echo;
+            echo "- Status: ${JOB_STATUS}";
+            echo "- Coverage: ${coverage_summary}";
+            echo "- Artifacts: coverage-report, make-check-logs";
+            echo "- Run: ${RUN_URL}";
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Ensure make check left no uncommitted changes
         run: |
@@ -270,6 +337,8 @@ jobs:
         with:
           name: duty-cycle-benchmarks
           path: artifacts/benchmarks/pool-bench.txt
+          retention-days: 7
+          compression-level: 6
           if-no-files-found: error
 
   container-smoke:
@@ -365,6 +434,8 @@ jobs:
         with:
           name: container-sbom
           path: sbom.spdx.json
+          retention-days: 7
+          compression-level: 6
 
   integration:
     name: integration tests (cgroup v2)
@@ -437,11 +508,28 @@ jobs:
         id: integration-status
         run: echo "succeeded=true" >> "$GITHUB_OUTPUT"
 
+      - name: Summarize integration run
+        if: always()
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          {
+            echo "### Integration results";
+            echo;
+            echo "- Status: ${JOB_STATUS}";
+            echo "- Logs artifact: integration-logs";
+            echo "- Coverage artifact: integration-coverage";
+            echo "- Run: ${RUN_URL}";
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload integration logs
         uses: actions/upload-artifact@v5
         with:
           name: integration-logs
           path: artifacts/integration.log
+          retention-days: 7
+          compression-level: 6
           if-no-files-found: error
 
       - name: Upload integration coverage
@@ -449,6 +537,8 @@ jobs:
         with:
           name: integration-coverage
           path: artifacts/integration-coverage.out
+          retention-days: 7
+          compression-level: 6
           if-no-files-found: error
 
   e2e:
@@ -493,6 +583,21 @@ jobs:
         run: |
           { echo '### Coverage results'; echo; cat coverage.txt; } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Summarize e2e results
+        if: always()
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          {
+            echo "### E2E suite";
+            echo;
+            echo "- Status: ${JOB_STATUS}";
+            echo "- Coverage artifacts: e2e-coverage";
+            echo "- Logs artifact: e2e-logs";
+            echo "- Run: ${RUN_URL}";
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload coverage artifacts
         if: success()
         uses: actions/upload-artifact@v5
@@ -502,6 +607,8 @@ jobs:
             coverage.out
             coverage.txt
             coverage-e2e.out
+          retention-days: 7
+          compression-level: 6
           if-no-files-found: error
 
       - name: Upload e2e logs
@@ -510,4 +617,6 @@ jobs:
         with:
           name: e2e-logs
           path: artifacts/e2e
+          retention-days: 7
+          compression-level: 6
           if-no-files-found: error

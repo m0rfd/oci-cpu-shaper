@@ -7,10 +7,13 @@ inputs:
     required: false
     default: go.mod
   cache-dependency-path:
-    description: Files used for Go cache dependency keys.
+    description: |
+      Files used for Go cache dependency keys. Defaults cover multi-module workspaces to improve cache hit rates.
     required: false
     default: |
       go.sum
+      **/go.sum
+      **/go.work.sum
 
 outputs:
   go-version:
@@ -29,6 +32,9 @@ runs:
         if [ -n "${GOMODCACHE:-}" ]; then
           mkdir -p "${GOMODCACHE}"
         fi
+
+        echo "GOCACHE=${GOCACHE:-unset}"
+        echo "GOMODCACHE=${GOMODCACHE:-unset}"
 
     - name: Set up Go
       id: setup-go
