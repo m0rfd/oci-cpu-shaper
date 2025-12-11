@@ -7,7 +7,10 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
+
+var errTemporaryDialFailure = errors.New("temporary dial failure")
 
 func TestHTTPClientTryFetchRetryableStatus(t *testing.T) {
 	t.Parallel()
@@ -131,6 +134,145 @@ func TestHTTPClientTryFetchDoErrorAfterContextCancellation(t *testing.T) {
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("tryFetch error = %v, want wrapped context cancellation", err)
+	}
+}
+
+func TestHTTPClientFetchRetryableDoErrorExhaustsBudget(t *testing.T) {
+	t.Parallel()
+
+	httpClient := newStubHTTPClient(
+		nil,
+		[]error{errTemporaryDialFailure, errTemporaryDialFailure, errTemporaryDialFailure},
+		nil,
+	)
+
+	client := &HTTPClient{
+		http:       httpClient,
+		baseURL:    "http://metadata.local/opc/v2",
+		maxAttempt: 3,
+		backoff:    time.Millisecond,
+	}
+
+	_, err := client.fetch(context.Background(), "region")
+	if err == nil {
+		t.Fatal("fetch expected error, got nil")
+	}
+
+	if !errors.Is(err, errExhaustedRetries) {
+		t.Fatalf("fetch error = %v, want errExhaustedRetries", err)
+	}
+
+	if !errors.Is(err, errRequestFailed) {
+		t.Fatalf("fetch error = %v, want errRequestFailed", err)
+	}
+
+	if !errors.Is(err, errTemporaryDialFailure) {
+		t.Fatalf("fetch error = %v, want wrapped retry error", err)
+	}
+
+	roundTripper, ok := httpClient.Transport.(*stubRoundTripper)
+	if !ok {
+		t.Fatalf("unexpected transport type: %T", httpClient.Transport)
+	}
+
+	if roundTripper.calls != 3 {
+		t.Fatalf("fetch attempts = %d, want 3", roundTripper.calls)
+	}
+}
+
+func TestHTTPClientFetchCanceledWhileWaitingToRetry(t *testing.T) {
+	t.Parallel()
+
+	attemptCh := make(chan struct{}, 1)
+	httpClient := newRetryableHTTPClient(t, attemptCh)
+
+	client := &HTTPClient{
+		http:       httpClient,
+		baseURL:    "http://metadata.local/opc/v2",
+		maxAttempt: 2,
+		backoff:    100 * time.Millisecond,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	errCh := make(chan error, 1)
+
+	go func() {
+		_, err := client.fetch(ctx, "region")
+		errCh <- err
+	}()
+
+	<-attemptCh
+
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	err := awaitFetchError(t, errCh, "fetch after cancelation")
+	if err == nil {
+		t.Fatal("fetch expected error, got nil")
+	}
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("fetch error = %v, want wrapped context cancellation", err)
+	}
+
+	if !strings.Contains(err.Error(), "retry wait for region") {
+		t.Fatalf("fetch error = %v, want retry wait context", err)
+	}
+
+	roundTripper, ok := httpClient.Transport.(*stubRoundTripper)
+	if !ok {
+		t.Fatalf("unexpected transport type: %T", httpClient.Transport)
+	}
+
+	if roundTripper.calls != 1 {
+		t.Fatalf("fetch attempts = %d, want 1", roundTripper.calls)
+	}
+}
+
+func newRetryableHTTPClient(t *testing.T, attemptCh chan<- struct{}) *http.Client {
+	t.Helper()
+
+	responses := []*http.Response{
+		newStubResponse( //nolint:bodyclose // fetch closes stub responses.
+			http.StatusServiceUnavailable,
+			io.NopCloser(strings.NewReader("retry")),
+		),
+		newStubResponse( //nolint:bodyclose // fetch closes stub responses.
+			http.StatusServiceUnavailable,
+			io.NopCloser(strings.NewReader("retry")),
+		),
+	}
+
+	t.Cleanup(func() {
+		for _, response := range responses {
+			_ = response.Body.Close()
+		}
+	})
+
+	return newStubHTTPClient(
+		responses,
+		nil,
+		func(*http.Request) {
+			select {
+			case attemptCh <- struct{}{}:
+			default:
+			}
+		},
+	)
+}
+
+func awaitFetchError(t *testing.T, errCh <-chan error, context string) error {
+	t.Helper()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-time.After(time.Second):
+		t.Fatalf("%s did not return", context)
+
+		return nil
 	}
 }
 
