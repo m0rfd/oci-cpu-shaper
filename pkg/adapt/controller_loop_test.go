@@ -215,6 +215,45 @@ func TestConsumeEstimatorStopsOnCloseWithoutHandlingAfterwards(t *testing.T) {
 	ensureHostSignalsStable(t, shaper, 1)
 }
 
+func TestConsumeEstimatorHandlesBufferedObservationsThenStopsAfterClose(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_000_246, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	observations := make(chan est.Observation, 2)
+	done := make(chan struct{})
+
+	go func() {
+		controller.consumeEstimator(context.Background(), observations)
+		close(done)
+	}()
+
+	observations <- defaultObservation(0.5)
+
+	observations <- defaultObservation(0.65)
+
+	waitForHostSignals(t, shaper, 2)
+
+	close(observations)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("consumeEstimator did not exit after estimator channel close")
+	}
+
+	ensureHostSignalsStable(t, shaper, 2)
+}
+
 func TestConsumeEstimatorStopsOnCancel(t *testing.T) {
 	t.Parallel()
 
