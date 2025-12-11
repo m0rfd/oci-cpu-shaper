@@ -419,6 +419,42 @@ func TestHTTPClientRetryBudgetExhaustedIncludesLastError(t *testing.T) {
 	requireEqual(t, "attempts", attempts.Load(), int32(2))
 }
 
+func TestHTTPClientRetryableTransportErrorsIncludeLastErrorOnExhaust(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+
+	httpClient := newHTTPClient(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requireIMDSAuthHeader(t, req)
+
+		attempts.Add(1)
+
+		return nil, errDialFailure
+	}))
+
+	client := imds.NewClient(
+		httpClient,
+		imds.WithBaseURL("http://metadata.local/opc/v2"),
+		imds.WithMaxAttempts(2),
+		imds.WithBackoff(time.Millisecond),
+	)
+
+	_, err := client.Region(context.Background())
+	if err == nil {
+		t.Fatal("Region() expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "exhausted retry budget") {
+		t.Fatalf("Region() error = %v, want exhausted retry budget", err)
+	}
+
+	if !strings.Contains(err.Error(), errDialFailure.Error()) {
+		t.Fatalf("Region() error = %v, want wrapped last error", err)
+	}
+
+	requireEqual(t, "attempts", attempts.Load(), int32(2))
+}
+
 func TestHTTPClientWaitHonorsContextCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -580,6 +616,68 @@ func TestHTTPClientCancelDuringBackoffWithRetryableStatus(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "retry wait for region") {
 		t.Fatalf("Region() error = %v, want retry wait cancellation", err)
+	}
+
+	requireEqual(t, "attempts", attempts.Load(), int32(1))
+}
+
+func TestHTTPClientRetryWaitCanceledWithRetryableErrors(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+
+	attemptCh := make(chan struct{}, 1)
+
+	httpClient := newHTTPClient(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requireIMDSAuthHeader(t, req)
+
+		attempts.Add(1)
+
+		select {
+		case attemptCh <- struct{}{}:
+		default:
+		}
+
+		return newHTTPResponse(
+			http.StatusServiceUnavailable,
+			io.NopCloser(strings.NewReader("retryable")),
+			req,
+		), nil
+	}))
+
+	client := imds.NewClient(
+		httpClient,
+		imds.WithBaseURL("http://metadata.local/opc/v2"),
+		imds.WithMaxAttempts(3),
+		imds.WithBackoff(250*time.Millisecond),
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errCh := startRegionRequest(ctx, t, client)
+
+	select {
+	case <-attemptCh:
+	case <-time.After(time.Second):
+		t.Fatal("Region() did not issue initial request")
+	}
+
+	cancel()
+
+	err := waitForRegionError(t, errCh, "Region() while waiting to retry")
+	if err == nil {
+		t.Fatal("Region() expected error, got nil")
+	}
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Region() error = %v, want wrapped context cancellation", err)
+	}
+
+	if !strings.Contains(err.Error(), "context done while waiting to retry") {
+		t.Fatalf("Region() error = %v, want wait cancellation", err)
+	}
+
+	if strings.Contains(err.Error(), "exhausted retry budget") {
+		t.Fatalf("Region() error = %v, did not expect exhaustion while waiting", err)
 	}
 
 	requireEqual(t, "attempts", attempts.Load(), int32(1))
