@@ -24,6 +24,28 @@ var (
 
 type ShutdownFunc func(context.Context)
 
+type listenFunc func(ctx context.Context, network, address string) (net.Listener, error)
+
+//
+//nolint:gochecknoglobals // injected in tests
+var listenEndpoint listenFunc = func(ctx context.Context, network, address string) (net.Listener, error) {
+	var listenCfg net.ListenConfig
+
+	return listenCfg.Listen(ctx, network, address)
+}
+
+// SetListenEndpointForTest replaces the listener factory during tests and returns a restore function.
+func SetListenEndpointForTest(
+	stub func(context.Context, string, string) (net.Listener, error),
+) func() {
+	previous := listenEndpoint
+	listenEndpoint = stub
+
+	return func() {
+		listenEndpoint = previous
+	}
+}
+
 type EndpointDeps struct {
 	StartServer func(ctx context.Context, logger *zap.Logger, addr string, handler http.Handler) (ShutdownFunc, error)
 }
@@ -100,9 +122,7 @@ func StartServer( //nolint:cyclop,funlen // listener lifecycle requires several 
 
 	baseCtx := context.WithoutCancel(ctx)
 
-	var listenCfg net.ListenConfig
-
-	listener, err := listenCfg.Listen(ctx, "tcp", trimmed)
+	listener, err := listenEndpoint(ctx, "tcp", trimmed)
 	if err != nil {
 		logger.Error(
 			"metrics server listen failed",
