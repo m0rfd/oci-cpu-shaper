@@ -144,7 +144,12 @@ func stubListenEndpoint(
 ) {
 	t.Helper()
 
+	listenEndpointMu.Lock()
+
 	restore := metricsserver.SetListenEndpointForTest(stub)
 
-	t.Cleanup(restore)
+	t.Cleanup(func() {
+		restore()
+		listenEndpointMu.Unlock()
+	})
 }
