@@ -20,6 +20,8 @@ const (
 	reasonHTTPBindAddressEmpty = "http bind address empty"
 )
 
+var errStartEndpointFailure = errors.New("start failure")
+
 func TestStartServerRequiresContext(t *testing.T) {
 	t.Parallel()
 
@@ -254,13 +256,16 @@ func TestStartEndpointMissingDeps(t *testing.T) {
 func TestStartEndpointNilContext(t *testing.T) {
 	t.Parallel()
 
+	core, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
 	handler := http.NewServeMux()
 	handler.HandleFunc("/", func(http.ResponseWriter, *http.Request) {})
 
 	shutdown, cancel, err := metricsserver.StartEndpoint(
 		nil,
 		metricsserver.EndpointDeps{StartServer: metricsserver.StartServer},
-		zap.NewNop(),
+		logger,
 		"127.0.0.1:8080",
 		handler,
 	)
@@ -271,6 +276,8 @@ func TestStartEndpointNilContext(t *testing.T) {
 	if shutdown != nil || cancel != nil {
 		t.Fatalf("expected shutdown and cancel to be nil when context missing")
 	}
+
+	assertNoLogs(t, logs)
 }
 
 func TestStartEndpointBlankBindAddress(t *testing.T) {
@@ -353,6 +360,30 @@ func TestStartEndpointNilHandler(t *testing.T) {
 	}
 }
 
+func TestStartEndpointNilHandlerLogsNothing(t *testing.T) {
+	t.Parallel()
+
+	core, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	shutdown, cancel, err := metricsserver.StartEndpoint(
+		context.Background(),
+		metricsserver.EndpointDeps{StartServer: metricsserver.StartServer},
+		logger,
+		bindAddrDefault,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+
+	if shutdown != nil || cancel != nil {
+		t.Fatalf("expected nil shutdown and cancel when handler is nil")
+	}
+
+	assertNoLogs(t, logs)
+}
+
 func TestStartEndpointRequiresContext(t *testing.T) {
 	t.Parallel()
 
@@ -383,6 +414,140 @@ func TestStartEndpointRequiresContext(t *testing.T) {
 
 	if called {
 		t.Fatal("expected start server not to be called when context is nil")
+	}
+}
+
+func TestStartEndpointStartServerErrorCancelsContext(t *testing.T) {
+	t.Parallel()
+
+	core, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+
+	handler := http.NewServeMux()
+	handler.HandleFunc("/", func(http.ResponseWriter, *http.Request) {})
+
+	ctxCh := make(chan context.Context, 1)
+	canceled := make(chan struct{})
+
+	shutdown, cancel, err := metricsserver.StartEndpoint(
+		context.Background(),
+		metricsserver.EndpointDeps{StartServer: failingStartServer(t, ctxCh, canceled)},
+		logger,
+		bindAddrDefault,
+		handler,
+	)
+
+	assertStartServerError(t, err)
+	assertNilShutdownAndCancel(t, shutdown, cancel)
+
+	startCtx := receiveStartContext(t, ctxCh)
+
+	assertContextCanceled(t, canceled)
+	assertStartLog(t, logs, bindAddrDefault)
+	assertContextNotNil(startCtx, t)
+}
+
+func assertNoLogs(t *testing.T, logs *observer.ObservedLogs) {
+	t.Helper()
+
+	if entries := logs.All(); len(entries) != 0 {
+		t.Fatalf("expected no logs, got %d", len(entries))
+	}
+}
+
+func failingStartServer(
+	t *testing.T,
+	ctxCh chan<- context.Context,
+	canceled chan<- struct{},
+) func(context.Context, *zap.Logger, string, http.Handler) (metricsserver.ShutdownFunc, error) {
+	t.Helper()
+
+	return func(
+		ctx context.Context,
+		_ *zap.Logger,
+		addr string,
+		startHandler http.Handler,
+	) (metricsserver.ShutdownFunc, error) {
+		if startHandler == nil {
+			t.Fatal("expected handler to be provided to StartServer")
+		}
+
+		if addr != bindAddrDefault {
+			t.Fatalf("unexpected bind address: %q", addr)
+		}
+
+		ctxCh <- ctx
+
+		go func() {
+			<-ctx.Done()
+			close(canceled)
+		}()
+
+		return nil, errStartEndpointFailure
+	}
+}
+
+func assertStartServerError(t *testing.T, err error) {
+	t.Helper()
+
+	if !errors.Is(err, errStartEndpointFailure) {
+		t.Fatalf("expected start error, got %v", err)
+	}
+}
+
+func assertNilShutdownAndCancel(
+	t *testing.T,
+	shutdown metricsserver.ShutdownFunc,
+	cancel context.CancelFunc,
+) {
+	t.Helper()
+
+	if shutdown != nil || cancel != nil {
+		t.Fatalf("expected nil shutdown and cancel when start server fails")
+	}
+}
+
+func receiveStartContext(t *testing.T, ctxCh <-chan context.Context) context.Context {
+	t.Helper()
+
+	select {
+	case ctx := <-ctxCh:
+		return ctx
+	case <-time.After(time.Second):
+		t.Fatal("expected StartServer to receive a context")
+	}
+
+	return nil
+}
+
+func assertContextCanceled(t *testing.T, canceled <-chan struct{}) {
+	t.Helper()
+
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		t.Fatal("expected derived context to be canceled when start fails")
+	}
+}
+
+func assertStartLog(t *testing.T, logs *observer.ObservedLogs, bindAddr string) {
+	t.Helper()
+
+	entries := logs.FilterMessage("starting metrics server").All()
+	if len(entries) != 1 {
+		t.Fatalf("expected a single start log entry, got %d", len(entries))
+	}
+
+	if bind := entries[0].ContextMap()["bind"]; bind != bindAddr {
+		t.Fatalf("expected bind address %q in logs, got %v", bindAddr, bind)
+	}
+}
+
+func assertContextNotNil(ctx context.Context, t *testing.T) {
+	t.Helper()
+
+	if ctx == nil {
+		t.Fatal("expected non-nil context passed to StartServer")
 	}
 }
 
