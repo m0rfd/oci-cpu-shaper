@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -31,8 +32,24 @@ type Pool struct {
 	paused              atomic.Uint32
 }
 
+//nolint:gochecknoglobals // test hook override for sched_idle initialization
+var (
+	trySchedIdleHookMu sync.RWMutex
+	trySchedIdleHook   = trySchedIdle
+)
+
 //nolint:gochecknoglobals // overridable in tests to observe sched_idle warnings
 var defaultWorkerStartErrorHandler = func(error) {}
+
+func runTrySchedIdleHook() error {
+	trySchedIdleHookMu.RLock()
+
+	hook := trySchedIdleHook
+
+	trySchedIdleHookMu.RUnlock()
+
+	return hook()
+}
 
 // DefaultQuantum bounds the busy loop to a responsive interval.
 const DefaultQuantum = time.Millisecond
@@ -75,7 +92,7 @@ func NewPool(workers int, quantum time.Duration) (*Pool, error) {
 	poolInstance.SetTarget(0)
 	poolInstance.SetPauseThresholds(0, 0)
 
-	err := trySchedIdle()
+	err := runTrySchedIdleHook()
 	if err != nil {
 		poolInstance.workerStartErrorHandler(err)
 	}
