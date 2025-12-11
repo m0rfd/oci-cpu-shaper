@@ -220,6 +220,196 @@ func TestHTTPClientContextCanceledBeforeCallWrapsError(t *testing.T) {
 	requireEqual(t, "attempts", attempts.Load(), int32(1))
 }
 
+func TestHTTPClientWaitsBetweenRetryableAttempts(t *testing.T) {
+	t.Parallel()
+
+	const backoff = 50 * time.Millisecond
+
+	var (
+		attempts      atomic.Int32
+		firstAttempt  time.Time
+		secondAttempt time.Time
+	)
+
+	httpClient := newHTTPClient(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requireIMDSAuthHeader(t, req)
+
+		switch attempts.Add(1) {
+		case 1:
+			firstAttempt = time.Now()
+
+			return newHTTPResponse(
+				http.StatusServiceUnavailable,
+				io.NopCloser(strings.NewReader("retryable")),
+				req,
+			), nil
+		case 2:
+			secondAttempt = time.Now()
+
+			return newHTTPResponse(
+				http.StatusOK,
+				io.NopCloser(strings.NewReader("us-phoenix-1")),
+				req,
+			), nil
+		default:
+			t.Fatalf("unexpected attempt: %d", attempts.Load())
+
+			return nil, errUnexpectedRoundTrip
+		}
+	}))
+
+	client := imds.NewClient(
+		httpClient,
+		imds.WithBaseURL("http://metadata.local/opc/v2"),
+		imds.WithMaxAttempts(2),
+		imds.WithBackoff(backoff),
+	)
+
+	region, err := client.Region(context.Background())
+	requireNoError(t, err, "Region()")
+	requireEqual(t, "Region()", region, "us-phoenix-1")
+
+	if secondAttempt.Sub(firstAttempt) < backoff {
+		t.Fatalf("retry waited %v, want at least %v", secondAttempt.Sub(firstAttempt), backoff)
+	}
+
+	requireEqual(t, "attempts", attempts.Load(), int32(2))
+}
+
+func TestHTTPClientNonRetryableStatusSkipsBackoff(t *testing.T) {
+	t.Parallel()
+
+	const backoff = 200 * time.Millisecond
+
+	var attempts atomic.Int32
+
+	httpClient := newHTTPClient(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requireIMDSAuthHeader(t, req)
+
+		attempts.Add(1)
+
+		return newHTTPResponse(
+			http.StatusBadRequest,
+			io.NopCloser(strings.NewReader("bad request")),
+			req,
+		), nil
+	}))
+
+	client := imds.NewClient(
+		httpClient,
+		imds.WithBaseURL("http://metadata.local/opc/v2"),
+		imds.WithMaxAttempts(3),
+		imds.WithBackoff(backoff),
+	)
+
+	start := time.Now()
+
+	_, err := client.Region(context.Background())
+	if err == nil {
+		t.Fatal("Region() expected error, got nil")
+	}
+
+	elapsed := time.Since(start)
+	if elapsed >= backoff {
+		t.Fatalf("Region() elapsed %v, want less than backoff %v", elapsed, backoff)
+	}
+
+	requireEqual(t, "attempts", attempts.Load(), int32(1))
+}
+
+func TestHTTPClientContextCanceledDuringBackoff(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+
+	attemptCh := make(chan struct{}, 1)
+
+	httpClient := newHTTPClient(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requireIMDSAuthHeader(t, req)
+
+		if attempts.Add(1) > 1 {
+			t.Fatalf("unexpected retry attempt: %d", attempts.Load())
+		}
+
+		select {
+		case attemptCh <- struct{}{}:
+		default:
+		}
+
+		return newHTTPResponse(
+			http.StatusServiceUnavailable,
+			io.NopCloser(strings.NewReader("retryable")),
+			req,
+		), nil
+	}))
+
+	client := imds.NewClient(
+		httpClient,
+		imds.WithBaseURL("http://metadata.local/opc/v2"),
+		imds.WithMaxAttempts(2),
+		imds.WithBackoff(500*time.Millisecond),
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	errCh := startRegionRequest(ctx, t, client)
+
+	<-attemptCh
+	time.AfterFunc(10*time.Millisecond, cancel)
+
+	err := waitForRegionError(t, errCh, "Region() during backoff")
+	if err == nil {
+		t.Fatal("Region() expected error, got nil")
+	}
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Region() error = %v, want wrapped context cancellation", err)
+	}
+
+	if !strings.Contains(err.Error(), "retry wait for region") {
+		t.Fatalf("Region() error = %v, want retry wait cancellation", err)
+	}
+
+	requireEqual(t, "attempts", attempts.Load(), int32(1))
+}
+
+func TestHTTPClientRetryBudgetExhaustedWrapsLastError(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int32
+
+	httpClient := newHTTPClient(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requireIMDSAuthHeader(t, req)
+
+		attempts.Add(1)
+
+		return nil, errDialFailure
+	}))
+
+	client := imds.NewClient(
+		httpClient,
+		imds.WithBaseURL("http://metadata.local/opc/v2"),
+		imds.WithMaxAttempts(2),
+		imds.WithBackoff(10*time.Millisecond),
+	)
+
+	_, err := client.Region(context.Background())
+	if err == nil {
+		t.Fatal("Region() expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "exhausted retry budget") {
+		t.Fatalf("Region() error = %v, want exhausted retry budget", err)
+	}
+
+	if !errors.Is(err, errDialFailure) {
+		t.Fatalf("Region() error = %v, want wrapped dial failure", err)
+	}
+
+	requireEqual(t, "attempts", attempts.Load(), int32(2))
+}
+
 func TestHTTPClientReadFailureIncludesCloseError(t *testing.T) {
 	t.Parallel()
 
