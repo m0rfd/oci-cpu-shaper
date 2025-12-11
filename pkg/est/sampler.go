@@ -44,6 +44,11 @@ type FileSource struct {
 	Path string
 }
 
+//nolint:gochecknoglobals // overridden in tests to simulate file behaviours
+var openStatFile = func(path string) (io.ReadCloser, error) {
+	return os.Open(path)
+}
+
 // Snapshot implements the Source interface.
 func (f FileSource) Snapshot(ctx context.Context) (Snapshot, error) {
 	err := ctx.Err()
@@ -56,7 +61,7 @@ func (f FileSource) Snapshot(ctx context.Context) (Snapshot, error) {
 		path = "/proc/stat"
 	}
 
-	file, err := os.Open(path)
+	file, err := openStatFile(path)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("open %s: %w", path, err)
 	}
