@@ -22,6 +22,9 @@ KEEP_E2E_COVERAGE ?= 0
 RUN_E2E_TESTS ?= 0
 CHECK_INCLUDE_CODEQL ?= 1
 PYTHON ?= python3
+SKIP_INTEGRATION_TESTS ?= 0
+TESTCONTAINERS_RYUK_DISABLED ?= 1
+TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE ?= /var/run/docker.sock
 
 MODULE := $(shell $(GO) list -m 2>/dev/null)
 PKGS := $(shell $(GO) list ./... 2>/dev/null)
@@ -119,7 +122,7 @@ HADOLINT ?= $(HADOLINT_BIN)
 HADOLINT_DOCKERFILE ?= $(ROOT_DIR)/Dockerfile
 HADOLINT_ARGS ?= --no-fail
 
-.PHONY: actionlint agents bench build check clean codeql-actions codeql-all codeql-clean codeql-go codeql-setup coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-hadolint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-dockerfile lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools update-hook-template-checksum verify-git-hooks verify-go-version verify-hook-template
+.PHONY: actionlint agents bench build cgroup check clean codeql-actions codeql-all codeql-clean codeql-go codeql-setup coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-hadolint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-dockerfile lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version requires setup suite test tidy tools update-hook-template-checksum v2 verify-git-hooks verify-go-version verify-hook-template
 HELP_TARGETS := lint lint-makefile lint-workflows lint-dockerfile test coverage build check govulncheck integration e2e agents actionlint codeql-setup codeql-actions codeql-go codeql-all codeql-clean help clean verify-git-hooks verify-hook-template update-hook-template-checksum
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-hadolint ensure-mbake
@@ -373,10 +376,10 @@ coverage: go-mod-download
 	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -covermode=atomic $(COVERAGE_TAG_ARGS) -coverpkg="$$coverage_csv" -coverprofile="$$unit_profile" $(COVERAGE_PKGS); \
 	coverage_profiles+=("$$unit_profile"); \
 	cleanup_profiles+=("$$unit_profile"); \
-	if [ -n "$(strip $(INTEGRATION_PKGS))" ]; then \
-		integration_profile="$(strip $(INTEGRATION_COVERAGE_PROFILE))"; \
-		if [ -z "$$integration_profile" ]; then \
-			integration_profile="coverage-integration.out"; \
+if [ "$(strip $(SKIP_INTEGRATION_TESTS))" != "1" ] && [ -n "$(strip $(INTEGRATION_PKGS))" ]; then \
+integration_profile = "$(strip $(INTEGRATION_COVERAGE_PROFILE))"; \
+if [ -z "$$integration_profile" ]; then \
+integration_profile = "coverage-integration.out"; \
 		fi; \
 	reuse_integration="$(strip $(REUSE_INTEGRATION_COVERAGE))"; \
 	if [ "$$reuse_integration" = "1" ]; then \
@@ -541,12 +544,17 @@ integration: verify-go-version
 		exit 1; \
 	fi; \
 	if ! docker info >/dev/null 2>&1; then \
-		echo "failed to communicate with the Docker daemon"; \
-		exit 1; \
+	echo "failed to communicate with the Docker daemon"; \
+	exit 1; \
 	fi; \
-	cgroup_version="$$(docker info --format '{{.CgroupVersion}}' 2>/dev/null || true)"; \
-	if [ "$$cgroup_version" != "2" ]; then \
-		echo "integration suite requires cgroup v2 (detected $${cgroup_version:-unknown})"; \
+socket_override = "$(TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE)"; \
+if [ ! -S "$$socket_override" ]; then \
+echo "docker socket $$socket_override unavailable; ensure nested containers are enabled"; \
+exit 1; \
+fi; \
+cgroup_version = "$$(docker info --format '{{.CgroupVersion}}' 2>/dev/null || true)"; \
+if [ "$$cgroup_version" != "2" ]; then \
+echo "integration suite requires cgroup v2 (detected $${cgroup_version:-unknown})"; \
 		exit 1; \
 	fi; \
 	echo "Docker cgroup version: $$cgroup_version"; \
@@ -593,9 +601,9 @@ integration: verify-go-version
 	trap 'cleanup' EXIT; \
 	touch "$$log_file"; \
 	if [ "$$coverage_enabled" -eq 1 ]; then \
-		GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -tags=integration -covermode=atomic -coverpkg="$$coverage_csv" -coverprofile="$$coverage_profile" -v ./tests/integration/... | tee "$$log_file"; \
+		TESTCONTAINERS_RYUK_DISABLED = "$(TESTCONTAINERS_RYUK_DISABLED)" TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="$$socket_override" GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -tags=integration -covermode=atomic -coverpkg="$$coverage_csv" -coverprofile="$$coverage_profile" -v ./tests/integration/... | tee "$$log_file"; \
 	else \
-		GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -tags=integration -v ./tests/integration/... | tee "$$log_file"; \
+		TESTCONTAINERS_RYUK_DISABLED = "$(TESTCONTAINERS_RYUK_DISABLED)" TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="$$socket_override" GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -race -tags=integration -v ./tests/integration/... | tee "$$log_file"; \
 	fi
 
 e2e:
@@ -605,7 +613,7 @@ e2e:
 		exit 0; \
 	fi; \
 	mkdir -p "$(GOCACHE_DIR)" "$(GOMODCACHE_DIR)"; \
-	GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -tags=e2e -v $$e2e_pkgs
+TESTCONTAINERS_RYUK_DISABLED = "$(TESTCONTAINERS_RYUK_DISABLED)" TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="$(TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE)" GOCACHE="$(GOCACHE_DIR)" GOMODCACHE="$(GOMODCACHE_DIR)" $(GO) test -tags=e2e -v $$e2e_pkgs
 
 setup: install-git-hooks ensure-dev-deps ensure-go maintenance
 	@if ! command -v go >/dev/null 2>&1; then \
@@ -644,8 +652,8 @@ ensure-dev-deps:
 			exit 1; \
 		fi; \
 	fi; \
-	DEBIAN_FRONTEND=noninteractive $$APT_GET_CMD update -y; \
-	DEBIAN_FRONTEND=noninteractive $$APT_GET_CMD install -y --no-install-recommends ca-certificates curl git tar gzip build-essential;
+DEBIAN_FRONTEND = noninteractive $$APT_GET_CMD update -y; \
+DEBIAN_FRONTEND = noninteractive $$APT_GET_CMD install -y --no-install-recommends ca-certificates curl git tar gzip build-essential uidmap dbus-user-session slirp4netns fuse-overlayfs docker.io;
 
 ensure-go:
 	if command -v $(GO) >/dev/null 2>&1; then \

@@ -5,6 +5,7 @@ package integration
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +16,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/client"
+	tc "github.com/testcontainers/testcontainers-go"
 )
 
 const (
@@ -28,11 +34,10 @@ func TestCPUWeightResponsiveness(t *testing.T) {
 		t.Skip("integration test requires a Linux host")
 	}
 
-	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skipf("docker CLI not available: %v", err)
-	}
-
 	ensureCgroupV2(t)
+
+	dockerClient := dockerAPI(t)
+	ctx := t.Context()
 
 	repoRoot := repositoryRoot(t)
 	hogBinary := buildHogBinary(t, repoRoot)
@@ -50,17 +55,17 @@ func TestCPUWeightResponsiveness(t *testing.T) {
 	for _, variant := range variants {
 		variant := variant
 		t.Run(variant.name, func(t *testing.T) {
-			assertCPUWeightRatio(t, hogBinary, variant.name, variant.image)
+			assertCPUWeightRatio(t, ctx, dockerClient, hogBinary, variant.name, variant.image)
 		})
 	}
 }
 
-func assertCPUWeightRatio(t *testing.T, hogBinary, variantName, lowWeightImage string) {
+func assertCPUWeightRatio(t *testing.T, ctx context.Context, dockerClient *client.Client, hogBinary, variantName, lowWeightImage string) {
 	helperSuffix := fmt.Sprintf("cpu-weight-high-%s", variantName)
 	highWeightName := containerName(helperSuffix)
 	lowWeightName := containerName(fmt.Sprintf("cpu-weight-low-%s", variantName))
 
-	runContainer(t, containerConfig{
+	highWeight := runContainer(t, ctx, dockerClient, containerConfig{
 		name:       highWeightName,
 		image:      "alpine:3.20",
 		cpuShares:  1024,
@@ -68,7 +73,7 @@ func assertCPUWeightRatio(t *testing.T, hogBinary, variantName, lowWeightImage s
 		duration:   45 * time.Second,
 		cpuWorkers: 1,
 	})
-	runContainer(t, containerConfig{
+	lowWeight := runContainer(t, ctx, dockerClient, containerConfig{
 		name:       lowWeightName,
 		image:      lowWeightImage,
 		cpuShares:  2,
@@ -79,8 +84,8 @@ func assertCPUWeightRatio(t *testing.T, hogBinary, variantName, lowWeightImage s
 
 	time.Sleep(10 * time.Second)
 
-	highWeightStats := readCPUStats(t, highWeightName)
-	lowWeightStats := readCPUStats(t, lowWeightName)
+	highWeightStats := readCPUStats(t, ctx, dockerClient, highWeight)
+	lowWeightStats := readCPUStats(t, ctx, dockerClient, lowWeight)
 
 	t.Logf("[%s] high-weight container usage: %d µs (weight=%d)", variantName, highWeightStats.usageMicros, highWeightStats.weight)
 	t.Logf("[%s] low-weight container usage: %d µs (weight=%d)", variantName, lowWeightStats.usageMicros, lowWeightStats.weight)
@@ -170,57 +175,82 @@ func buildHogBinary(t *testing.T, repoRoot string) string {
 func buildIntegrationImage(t *testing.T, repoRoot, target, tag string) {
 	t.Helper()
 
-	cmd := exec.Command(
-		"docker", "build",
-		"--target", target,
-		"-t", tag,
-		"-f", "Dockerfile",
-		".",
-	)
-	cmd.Dir = repoRoot
+	repo := tag
+	imageTag := ""
+	if splitRepo, splitTag, ok := strings.Cut(tag, ":"); ok {
+		repo = splitRepo
+		imageTag = splitTag
+	}
 
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build integration image (target=%s tag=%s): %v\n%s", target, tag, err, output)
+	provider, err := tc.NewDockerProvider()
+	if err != nil {
+		t.Fatalf("create docker provider: %v", err)
+	}
+	defer provider.Close()
+
+	ctx := t.Context()
+
+	_, err = provider.BuildImage(ctx, &tc.ContainerRequest{ //nolint:contextcheck
+		FromDockerfile: tc.FromDockerfile{
+			Context:       repoRoot,
+			Dockerfile:    "Dockerfile",
+			Repo:          repo,
+			Tag:           imageTag,
+			PrintBuildLog: true,
+			KeepImage:     true,
+			BuildOptionsModifier: func(options *types.ImageBuildOptions) {
+				options.Target = target
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("build integration image (target=%s tag=%s): %v", target, tag, err)
 	}
 }
 
-func runContainer(t *testing.T, cfg containerConfig) {
+func runContainer(t *testing.T, ctx context.Context, dockerClient *client.Client, cfg containerConfig) tc.Container {
 	t.Helper()
 
-	args := []string{
-		"run",
-		"--detach",
-		"--name", cfg.name,
-		"--cpuset-cpus=0",
-		"--cpu-shares", strconv.Itoa(cfg.cpuShares),
-		"-v", fmt.Sprintf("%s:/hog:ro", cfg.hogBinary),
-		"--entrypoint", "/hog",
-		cfg.image,
-		fmt.Sprintf("-duration=%ds", int(cfg.duration.Seconds())),
-		fmt.Sprintf("-workers=%d", cfg.cpuWorkers),
+	request := tc.ContainerRequest{
+		Name:       cfg.name,
+		Image:      cfg.image,
+		Entrypoint: []string{"/hog"},
+		Cmd: []string{
+			fmt.Sprintf("-duration=%ds", int(cfg.duration.Seconds())),
+			fmt.Sprintf("-workers=%d", cfg.cpuWorkers),
+		},
+		SkipReaper: true,
+		HostConfigModifier: func(config *container.HostConfig) {
+			config.CPUShares = int64(cfg.cpuShares)
+			config.CpusetCpus = "0"
+			config.Binds = append(config.Binds, fmt.Sprintf("%s:/hog:ro", cfg.hogBinary))
+		},
 	}
 
-	run := exec.Command("docker", args...)
-	output, err := run.CombinedOutput()
+	cont, err := tc.GenericContainer(ctx, tc.GenericContainerRequest{ContainerRequest: request, Started: true})
 	if err != nil {
-		t.Fatalf("start container %s: %v\n%s", cfg.name, err, output)
+		t.Fatalf("start container %s: %v", cfg.name, err)
 	}
+
+	waitForRunning(t, ctx, dockerClient, cfg.name, cont, 10*time.Second)
 
 	t.Cleanup(func() {
-		_ = exec.Command("docker", "rm", "-f", cfg.name).Run()
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_ = cont.Terminate(cleanupCtx) // best effort cleanup
 	})
 
-	waitForRunning(t, cfg.name, 10*time.Second)
+	return cont
 }
 
-func waitForRunning(t *testing.T, name string, timeout time.Duration) {
+func waitForRunning(t *testing.T, ctx context.Context, dockerClient *client.Client, name string, cont tc.Container, timeout time.Duration) {
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		inspect := exec.Command("docker", "inspect", "-f", "{{.State.Running}}", name)
-		output, err := inspect.CombinedOutput()
-		if err == nil && strings.TrimSpace(string(output)) == "true" {
+		inspect, err := dockerClient.ContainerInspect(ctx, cont.GetContainerID())
+		if err == nil && inspect.State != nil && inspect.State.Running {
 			return
 		}
 
@@ -230,10 +260,10 @@ func waitForRunning(t *testing.T, name string, timeout time.Duration) {
 	t.Fatalf("container %s did not report running state within %s", name, timeout)
 }
 
-func readCPUStats(t *testing.T, containerName string) cpuStats {
+func readCPUStats(t *testing.T, ctx context.Context, dockerClient *client.Client, cont tc.Container) cpuStats {
 	t.Helper()
 
-	pid := containerPID(t, containerName)
+	pid := containerPID(t, ctx, dockerClient, cont)
 	cgroupPath := cgroupPathForPID(t, pid)
 
 	statsPath := filepath.Join(cgroupPath, "cpu.stat")
@@ -241,12 +271,12 @@ func readCPUStats(t *testing.T, containerName string) cpuStats {
 
 	usage, err := parseUsageMicros(statsPath)
 	if err != nil {
-		t.Fatalf("parse cpu.stat for %s: %v", containerName, err)
+		t.Fatalf("parse cpu.stat for %s: %v", contName(cont), err)
 	}
 
 	weight, err := parseWeight(weightPath)
 	if err != nil {
-		t.Fatalf("parse cpu.weight for %s: %v", containerName, err)
+		t.Fatalf("parse cpu.weight for %s: %v", contName(cont), err)
 	}
 
 	return cpuStats{
@@ -255,22 +285,21 @@ func readCPUStats(t *testing.T, containerName string) cpuStats {
 	}
 }
 
-func containerPID(t *testing.T, name string) int {
+func containerPID(t *testing.T, ctx context.Context, dockerClient *client.Client, cont tc.Container) int { //nolint:unparam // container pid read is consistent
 	t.Helper()
 
-	inspect := exec.Command("docker", "inspect", "-f", "{{.State.Pid}}", name)
-	output, err := inspect.CombinedOutput()
+	inspect, err := dockerClient.ContainerInspect(ctx, cont.GetContainerID())
 	if err != nil {
-		t.Fatalf("inspect container %s pid: %v\n%s", name, err, output)
+		t.Fatalf("inspect container %s pid: %v", contName(cont), err)
 	}
 
-	pid, err := strconv.Atoi(strings.TrimSpace(string(output)))
-	if err != nil {
-		t.Fatalf("parse container %s pid: %v", name, err)
+	if inspect.State == nil {
+		t.Fatalf("container %s missing state", contName(cont))
 	}
 
+	pid := inspect.State.Pid
 	if pid <= 0 {
-		t.Fatalf("container %s reported invalid pid %d", name, pid)
+		t.Fatalf("container %s reported invalid pid %d", contName(cont), pid)
 	}
 
 	return pid
@@ -357,4 +386,30 @@ func parseWeight(path string) (uint64, error) {
 
 func containerName(prefix string) string {
 	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+}
+
+func dockerAPI(t *testing.T) *client.Client {
+	t.Helper()
+
+	clientOpts := []client.Opt{client.FromEnv, client.WithAPIVersionNegotiation()}
+
+	cli, err := client.NewClientWithOpts(clientOpts...)
+	if err != nil {
+		t.Fatalf("connect to docker api: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_ = cli.Close()
+	})
+
+	return cli
+}
+
+func contName(cont tc.Container) string {
+	name, err := cont.Name(context.Background())
+	if err != nil {
+		return cont.GetContainerID()
+	}
+
+	return strings.TrimPrefix(name, "/")
 }
