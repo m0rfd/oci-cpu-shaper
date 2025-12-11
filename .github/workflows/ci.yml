@@ -276,7 +276,7 @@ jobs:
     name: container smoke
     # Container build/scan flow wraps in ~2; limit to 5m to prevent runaway builds.
     timeout-minutes: 5
-    if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && github.event.pull_request.head.repo.fork == false)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     permissions:
       contents: read
       actions: write # required for GHA cache and SBOM uploads
@@ -286,6 +286,30 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - name: Inspect GITHUB_TOKEN scopes
+        id: token-perms
+        run: |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          header_file=$(mktemp)
+          curl -sD "$header_file" -o /dev/null -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/rate_limit
+
+          scopes=$(sed -n 's/^x-oauth-scopes: //pI' "$header_file" | tr -d '\r')
+          scopes=${scopes:-""}
+
+          has_actions_write=false
+          if printf '%s' "$scopes" | tr ',' '\n' | grep -iq '^actions:write$'; then
+            has_actions_write=true
+          fi
+
+          echo "Detected scopes: ${scopes:-<none>}"
+          {
+            echo "has-actions-write=${has_actions_write}"
+            echo "scopes=${scopes:-<none>}"
+          } >>"$GITHUB_OUTPUT"
 
       - name: Prepare build metadata
         id: build-meta
@@ -298,25 +322,40 @@ jobs:
       - name: Build container image
         env:
           RETRY_ATTEMPTS: "3"
+          CACHE_WRITE_ALLOWED: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) && steps.token-perms.outputs.has-actions-write == 'true' }}
         run: |
           set -o errexit
           set -o nounset
           set -o pipefail
 
+          cache_flags=()
+          if [ "${CACHE_WRITE_ALLOWED}" = "true" ]; then
+            cache_flags+=(--cache-from type=gha,scope=ci-container-smoke)
+            cache_flags+=(--cache-to type=gha,scope=ci-container-smoke,mode=max)
+          else
+            echo "[build] cache writes disabled (fork build or limited GITHUB_TOKEN scopes)"
+          fi
+
           attempt=1
           while [ "$attempt" -le "$RETRY_ATTEMPTS" ]; do
             echo "[build] attempt ${attempt}/${RETRY_ATTEMPTS}"
-            if docker buildx build \
-              --file Dockerfile \
-              --platform linux/amd64 \
-              --tag oci-cpu-shaper:test \
-              --load \
-              --cache-from type=gha,scope=ci-container-smoke \
-              --cache-to type=gha,scope=ci-container-smoke,mode=max \
-              --build-arg VERSION=dev \
-              --build-arg GIT_COMMIT="${{ github.sha }}" \
-              --build-arg BUILD_DATE="${{ steps.build-meta.outputs.build-date }}" \
-              .; then
+            build_args=(
+              --file Dockerfile
+              --platform linux/amd64
+              --tag oci-cpu-shaper:test
+              --load
+              --build-arg VERSION=dev
+              --build-arg GIT_COMMIT="${{ github.sha }}"
+              --build-arg BUILD_DATE="${{ steps.build-meta.outputs.build-date }}"
+            )
+
+            if [ "${#cache_flags[@]}" -gt 0 ]; then
+              build_args+=("${cache_flags[@]}")
+            fi
+
+            build_args+=(.)
+
+            if docker buildx build "${build_args[@]}"; then
               echo "[build] succeeded on attempt ${attempt}"
               break
             fi
@@ -350,6 +389,7 @@ jobs:
           rm smoke.log
 
       - name: Trivy SBOM + vulnerability scan
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
         uses: aquasecurity/trivy-action@0.33.1
         with:
           image-ref: oci-cpu-shaper:test
@@ -361,6 +401,7 @@ jobs:
           exit-code: "1" # non-zero when CRITICAL/HIGH found
 
       - name: Upload SBOM artifact
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) && steps.token-perms.outputs.has-actions-write == 'true'
         uses: actions/upload-artifact@v5
         with:
           name: container-sbom
