@@ -16,9 +16,11 @@ import (
 )
 
 type fakeMetricsExporter struct {
-	workerCount int
-	dutyCycle   time.Duration
-	serveCount  int
+	workerCount      int
+	dutyCycle        time.Duration
+	serveCount       int
+	workerCountCalls int
+	dutyCycleCalls   int
 }
 
 type panicPoolStarter struct{}
@@ -33,9 +35,15 @@ func (panicPoolStarter) SetWorkerStartErrorHandler(func(error)) {
 	panic("unexpected SetWorkerStartErrorHandler call")
 }
 
-func (f *fakeMetricsExporter) SetWorkerCount(count int) { f.workerCount = count }
+func (f *fakeMetricsExporter) SetWorkerCount(count int) {
+	f.workerCountCalls++
+	f.workerCount = count
+}
 
-func (f *fakeMetricsExporter) SetDutyCycle(duration time.Duration) { f.dutyCycle = duration }
+func (f *fakeMetricsExporter) SetDutyCycle(duration time.Duration) {
+	f.dutyCycleCalls++
+	f.dutyCycle = duration
+}
 
 func (f *fakeMetricsExporter) ServeHTTP(response http.ResponseWriter, _ *http.Request) {
 	f.serveCount++
@@ -66,6 +74,40 @@ func TestConfigureMetricsWarnsAndSkipsExporterWhenMissing(t *testing.T) {
 	requireLogFieldString(t, warnEntries[0], "reason", "no exporter configured")
 }
 
+func TestConfigureMetricsLogsWhenPoolMissing(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zapcore.DebugLevel)
+	logger := zap.New(core)
+	poollessExporter := new(fakeMetricsExporter)
+
+	handler := configureMetrics(logger, poollessExporter, nil, nil, nil)
+	if handler == nil {
+		t.Fatal("expected handler to be configured")
+	}
+
+	if poollessExporter.workerCountCalls != 0 {
+		t.Fatalf(
+			"expected no worker count updates without pool, got %d",
+			poollessExporter.workerCountCalls,
+		)
+	}
+
+	if poollessExporter.dutyCycleCalls != 0 {
+		t.Fatalf(
+			"expected no duty cycle updates without pool, got %d",
+			poollessExporter.dutyCycleCalls,
+		)
+	}
+
+	debugEntries := observed.FilterLevelExact(zapcore.DebugLevel).All()
+	if len(debugEntries) != 1 {
+		t.Fatalf("expected debug log for missing pool, got %+v", observed.All())
+	}
+
+	requireLogFieldString(t, debugEntries[0], "reason", "pool not configured")
+}
+
 func TestConfigureMetricsSkipsPoolWhenExporterMissing(t *testing.T) {
 	t.Parallel()
 
@@ -90,63 +132,82 @@ func TestConfigureMetricsSkipsPoolWhenExporterMissing(t *testing.T) {
 	}
 }
 
-func TestConfigureMetricsIntegratesWithWorkerPoolAndLogsWhenMissing(t *testing.T) {
+func TestConfigureMetricsRegistersWorkerPoolMetrics(t *testing.T) {
 	t.Parallel()
 
-	t.Run("registers worker metrics from pool", func(t *testing.T) {
-		t.Parallel()
+	exporter := new(fakeMetricsExporter)
+	pool := &stubPoolStarter{startCount: 0, workers: 7, quantum: 125 * time.Millisecond}
 
-		exporter := new(fakeMetricsExporter)
-		pool := &stubPoolStarter{startCount: 0, workers: 7, quantum: 125 * time.Millisecond}
+	handler := configureMetrics(zap.NewNop(), exporter, pool, nil, nil)
+	if handler == nil {
+		t.Fatal("expected handler to be configured")
+	}
 
-		handler := configureMetrics(zap.NewNop(), exporter, pool, nil, nil)
-		if handler == nil {
-			t.Fatal("expected handler to be configured")
-		}
+	if exporter.workerCount != pool.workers {
+		t.Fatalf("expected worker count %d, got %d", pool.workers, exporter.workerCount)
+	}
 
-		if exporter.workerCount != pool.workers {
-			t.Fatalf("expected worker count %d, got %d", pool.workers, exporter.workerCount)
-		}
+	if exporter.dutyCycle != pool.quantum {
+		t.Fatalf("expected duty cycle %v, got %v", pool.quantum, exporter.dutyCycle)
+	}
 
-		if exporter.dutyCycle != pool.quantum {
-			t.Fatalf("expected duty cycle %v, got %v", pool.quantum, exporter.dutyCycle)
-		}
+	recorder := serveGETRequest(t, handler, "/metrics")
 
-		recorder := serveGETRequest(t, handler, "/metrics")
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("expected HTTP 204 from metrics handler, got %d", recorder.Code)
+	}
 
-		if recorder.Code != http.StatusNoContent {
-			t.Fatalf("expected HTTP 204 from metrics handler, got %d", recorder.Code)
-		}
+	if exporter.serveCount != 1 {
+		t.Fatalf("expected metrics handler to be invoked once, got %d", exporter.serveCount)
+	}
+}
 
-		if exporter.serveCount != 1 {
-			t.Fatalf("expected metrics handler to be invoked once, got %d", exporter.serveCount)
-		}
-	})
+func TestConfigureMetricsRegistersMuxWithPoolAndController(t *testing.T) {
+	t.Parallel()
 
-	t.Run("logs when pool missing", func(t *testing.T) {
-		t.Parallel()
+	exporter := new(fakeMetricsExporter)
+	pool := &stubPoolStarter{startCount: 0, workers: 9, quantum: 333 * time.Millisecond}
+	controller := &stubController{
+		mode:        modeEnforce,
+		runErr:      nil,
+		runCalled:   false,
+		deadline:    time.Time{},
+		deadlineSet: false,
+		state:       adapt.StateNormal,
+		lastErr:     nil,
+		estErr:      nil,
+	}
 
-		exporter := new(fakeMetricsExporter)
-		core, observed := observer.New(zapcore.DebugLevel)
-		logger := zap.New(core)
+	handler := configureMetrics(zap.NewNop(), exporter, pool, controller, nil)
+	if handler == nil {
+		t.Fatal("expected handler to be configured")
+	}
 
-		handler := configureMetrics(logger, exporter, nil, nil, nil)
-		if handler == nil {
-			t.Fatal("expected handler to be configured")
-		}
+	if exporter.workerCountCalls != 1 {
+		t.Fatalf("expected worker count to be set once, got %d", exporter.workerCountCalls)
+	}
 
-		debugEntries := observed.FilterLevelExact(zapcore.DebugLevel).All()
-		if len(debugEntries) == 0 {
-			t.Fatalf("expected debug log entry for missing pool, got %+v", observed.All())
-		}
+	if exporter.dutyCycleCalls != 1 {
+		t.Fatalf("expected duty cycle to be set once, got %d", exporter.dutyCycleCalls)
+	}
 
-		entry := debugEntries[0]
-		if entry.Message != "worker pool metrics unavailable" {
-			t.Fatalf("expected worker pool unavailable message, got %q", entry.Message)
-		}
+	if exporter.workerCount != pool.workers {
+		t.Fatalf("expected worker count %d, got %d", pool.workers, exporter.workerCount)
+	}
 
-		requireLogFieldString(t, entry, "reason", "pool not configured")
-	})
+	if exporter.dutyCycle != pool.quantum {
+		t.Fatalf("expected duty cycle %v, got %v", pool.quantum, exporter.dutyCycle)
+	}
+
+	metricsRecorder := serveGETRequest(t, handler, "/metrics")
+	if metricsRecorder.Code != http.StatusNoContent {
+		t.Fatalf("expected metrics endpoint to use exporter, got status %d", metricsRecorder.Code)
+	}
+
+	healthRecorder := serveGETRequest(t, handler, "/healthz")
+	if healthRecorder.Code != http.StatusOK {
+		t.Fatalf("expected health handler to be registered, got %d", healthRecorder.Code)
+	}
 }
 
 func TestConfigureMetricsSetsWorkerMetrics(t *testing.T) {
