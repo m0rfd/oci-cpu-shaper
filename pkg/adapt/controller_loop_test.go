@@ -428,6 +428,47 @@ func TestAdaptiveControllerRunShortCircuitsWhenEstimatorChannelNil(t *testing.T)
 	}
 }
 
+func TestAdaptiveControllerRunReturnsNilEstimatorChannelError(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_001_500, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	estimator := new(nilReturningEstimator)
+
+	controller, err := NewAdaptiveController(cfg, metrics, estimator, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	runErr := controller.Run(t.Context())
+	if runErr == nil {
+		t.Fatal("expected controller run to fail when estimator returns nil channel")
+	}
+
+	if !errors.Is(runErr, errEstimatorNilChannel) {
+		t.Fatalf("unexpected run error: %v", runErr)
+	}
+
+	if !strings.Contains(runErr.Error(), "adaptive controller run") {
+		t.Fatalf("expected wrapped error context, got %v", runErr)
+	}
+
+	if metrics.CallCount() != 0 {
+		t.Fatalf(
+			"expected controller to stop before step, got %d metric calls",
+			metrics.CallCount(),
+		)
+	}
+
+	if !estimator.started.Load() {
+		t.Fatal("expected estimator to be invoked")
+	}
+}
+
 func TestRunControllerWithStepSurfacesNilEstimatorChannelError(t *testing.T) {
 	t.Parallel()
 
@@ -786,6 +827,53 @@ func TestAdaptiveControllerRunResetsTickerAndFallsBackOnInvalidIntervals(t *test
 	}
 }
 
+func TestRunControllerWithStepFallsBackAndResetsAfterNonPositiveIntervals(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_001_700, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+	cfg.Interval = 12 * time.Millisecond
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	intervals := []time.Duration{0, -5 * time.Millisecond, 2 * controller.cfg.Interval}
+
+	updates, resets, runErr := runControllerWithManualTicker(t, controller, intervals)
+
+	if !errors.Is(runErr, context.Canceled) {
+		t.Fatalf("runControllerWithStep error: %v", runErr)
+	}
+
+	expectedIntervals := []time.Duration{
+		controller.cfg.Interval,
+		controller.cfg.Interval,
+		2 * controller.cfg.Interval,
+	}
+	if len(updates) != len(expectedIntervals) {
+		t.Fatalf("expected %d interval updates, got %d", len(expectedIntervals), len(updates))
+	}
+
+	for index, expected := range expectedIntervals {
+		if updates[index] != expected {
+			t.Fatalf("expected interval %v at index %d, got %v", expected, index, updates[index])
+		}
+	}
+
+	if len(resets) != 1 {
+		t.Fatalf("expected one ticker reset, got %d", len(resets))
+	}
+
+	if resets[0] != expectedIntervals[2] {
+		t.Fatalf("expected ticker reset to %v, got %v", expectedIntervals[2], resets[0])
+	}
+}
+
 func TestAdaptiveControllerRunFallsBackOnNegativeIntervals(t *testing.T) {
 	t.Parallel()
 
@@ -865,6 +953,37 @@ func TestConsumeEstimatorStopsOnContextCancel(t *testing.T) {
 	}
 }
 
+func TestAdaptiveControllerRunWrapsContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.25, timestamp: time.Unix(1_700_003_160, 0), err: nil}},
+	)
+	shaper := newFakeShaper()
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, shaper, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	runErr := controller.Run(ctx)
+	if runErr == nil {
+		t.Fatal("expected controller run to wrap canceled context")
+	}
+
+	if !errors.Is(runErr, context.Canceled) {
+		t.Fatalf("expected wrapped context cancellation, got %v", runErr)
+	}
+
+	if !strings.Contains(runErr.Error(), "adaptive controller run") {
+		t.Fatalf("expected wrapped error to include context, got %v", runErr)
+	}
+}
+
 type channelEstimator struct {
 	ch <-chan est.Observation
 }
@@ -889,6 +1008,16 @@ func (c *closedChannelEstimator) Run(context.Context) <-chan est.Observation {
 	c.started.Store(true)
 
 	return c.ch
+}
+
+type nilReturningEstimator struct {
+	started atomic.Bool
+}
+
+func (n *nilReturningEstimator) Run(context.Context) <-chan est.Observation {
+	n.started.Store(true)
+
+	return nil
 }
 
 type controlledEstimatorChannel struct {
