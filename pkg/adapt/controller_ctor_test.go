@@ -107,6 +107,54 @@ func TestNewAdaptiveControllerRejectsNilDutyCycler(t *testing.T) {
 	}
 }
 
+func TestNewAdaptiveControllerRejectsInvalidConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.TargetMin = cfg.TargetMax
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.2, timestamp: time.Unix(1_700_000_480, 0), err: nil}},
+	)
+
+	controller, err := NewAdaptiveController(cfg, metrics, nil, newFakeShaper(), nil)
+	if err == nil {
+		t.Fatalf("expected validation error, got controller: %+v", controller)
+	}
+
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig, got %v", err)
+	}
+}
+
+func TestNewAdaptiveControllerMissingDependenciesWithNilRecorder(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+
+	controller, err := NewAdaptiveController(cfg, nil, nil, newFakeShaper(), nil)
+	if err == nil {
+		t.Fatalf("expected metrics error, got controller: %+v", controller)
+	}
+
+	if !errors.Is(err, errMetricsClientRequired) {
+		t.Fatalf("expected errMetricsClientRequired, got %v", err)
+	}
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.2, timestamp: time.Unix(1_700_000_540, 0), err: nil}},
+	)
+
+	controller, err = NewAdaptiveController(cfg, metrics, nil, nil, nil)
+	if err == nil {
+		t.Fatalf("expected duty cycler error, got controller: %+v", controller)
+	}
+
+	if !errors.Is(err, errDutyCyclerRequired) {
+		t.Fatalf("expected errDutyCyclerRequired, got %v", err)
+	}
+}
+
 func recorderCalls(recorder *stubMetricsRecorder) int {
 	recorder.mu.Lock()
 	defer recorder.mu.Unlock()
@@ -157,4 +205,27 @@ func TestNewAdaptiveControllerSetsFallbackTarget(t *testing.T) {
 
 	requireFloatApprox(t, "controllerTarget", controller.Target(), cfg.FallbackTarget)
 	requireFloatApprox(t, "shaperTarget", shaper.Target(), cfg.FallbackTarget)
+}
+
+func TestNewAdaptiveControllerEmbedsEstimatorAndPool(t *testing.T) {
+	t.Parallel()
+
+	metrics := newFakeMetrics(
+		[]metricResult{{value: 0.3, timestamp: time.Unix(1_700_000_600, 0), err: nil}},
+	)
+	sampler := new(fakeEstimator)
+	pool := newFakeShaper()
+
+	controller, err := NewAdaptiveController(DefaultConfig(), metrics, sampler, pool, nil)
+	if err != nil {
+		t.Fatalf("NewAdaptiveController: %v", err)
+	}
+
+	if controller.estimator != sampler {
+		t.Fatalf("expected estimator to be wired through constructor")
+	}
+
+	if controller.shaper != pool {
+		t.Fatalf("expected duty cycler to wrap provided pool")
+	}
 }
