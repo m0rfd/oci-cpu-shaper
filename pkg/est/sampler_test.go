@@ -1090,6 +1090,55 @@ func TestSamplerRunRejectsDoubleStart(t *testing.T) {
 	}
 }
 
+func TestSamplerRunPublishesAlreadyStartedObservation(t *testing.T) {
+	t.Parallel()
+
+	sam := NewSampler(
+		&fakeSource{
+			snapshots:     []Snapshot{{Idle: 1, Total: 2, Runnable: 0}},
+			err:           nil,
+			snapshotIndex: 0,
+		},
+		time.Hour,
+	)
+	sam.now = func() time.Time { return time.Unix(42, 0) }
+	sam.newTicker = func(time.Duration) ticker {
+		return manualTicker{ch: make(chan time.Time)}
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+
+	firstRun := sam.Run(ctx)
+	secondRun := sam.Run(t.Context())
+
+	observation, ok := <-secondRun
+	if !ok {
+		t.Fatalf("expected already started observation")
+	}
+
+	if !errors.Is(observation.Err, ErrSamplerAlreadyStarted) {
+		t.Fatalf("expected ErrSamplerAlreadyStarted, got %v", observation.Err)
+	}
+
+	if !observation.Timestamp.Equal(time.Unix(42, 0)) {
+		t.Fatalf(
+			"expected observation timestamp to use sampler time source, got %v",
+			observation.Timestamp,
+		)
+	}
+
+	if _, ok := <-secondRun; ok {
+		t.Fatalf("expected already started channel to be closed after publishing the error")
+	}
+
+	cancel()
+
+	for observation := range firstRun {
+		_ = observation
+	}
+}
+
 func TestSamplerRunNilSourceUsesDefaultFileSource(t *testing.T) {
 	t.Parallel()
 
@@ -1379,6 +1428,62 @@ func TestNewSamplerDefaultsInterval(t *testing.T) {
 			DefaultInterval,
 			negative.interval,
 		)
+	}
+}
+
+func TestSamplerRunUsesDefaultIntervalWhenNonPositive(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		interval time.Duration
+	}{
+		{name: "zero", interval: 0},
+		{name: "negative", interval: -time.Second},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			durationCh := make(chan time.Duration, 1)
+			ticks := make(chan time.Time)
+
+			sampler := NewSampler(
+				&fakeSource{
+					snapshots:     []Snapshot{{Idle: 0, Total: 1, Runnable: 0}},
+					err:           nil,
+					snapshotIndex: 0,
+				},
+				testCase.interval,
+			)
+			sampler.now = func() time.Time { return time.Unix(0, 0) }
+			sampler.newTicker = func(duration time.Duration) ticker {
+				durationCh <- duration
+
+				return manualTicker{ch: ticks}
+			}
+
+			ctx, cancel := context.WithCancel(t.Context())
+			t.Cleanup(cancel)
+
+			observations := sampler.Run(ctx)
+
+			select {
+			case duration := <-durationCh:
+				if duration != DefaultInterval {
+					t.Fatalf("expected default interval %s, got %s", DefaultInterval, duration)
+				}
+			case <-time.After(time.Second):
+				t.Fatalf("expected ticker to be created with default interval")
+			}
+
+			cancel()
+
+			for observation := range observations {
+				_ = observation
+			}
+		})
 	}
 }
 
