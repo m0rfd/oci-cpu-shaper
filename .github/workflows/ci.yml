@@ -330,8 +330,8 @@ jobs:
 
           cache_flags=()
           if [ "${CACHE_WRITE_ALLOWED}" = "true" ]; then
-            cache_flags+=(--cache-from type=gha,scope=ci-container-smoke)
-            cache_flags+=(--cache-to type=gha,scope=ci-container-smoke,mode=max)
+            cache_flags+=(--cache-from=type=gha,scope=ci-container-smoke)
+            cache_flags+=(--cache-to=type=gha,scope=ci-container-smoke,mode=max)
           else
             echo "[build] cache writes disabled (fork build or limited GITHUB_TOKEN scopes)"
           fi
