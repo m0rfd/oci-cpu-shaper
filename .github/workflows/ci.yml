@@ -127,21 +127,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Download integration coverage
-        if: needs.integration.outputs.integration-succeeded == 'true'
-        uses: actions/download-artifact@v5
-        with:
-          name: integration-coverage
-          path: artifacts
-
-      - name: Prepare integration coverage reuse
-        run: |
-          profile="artifacts/integration-coverage.out"
-          if [ -f "$profile" ]; then
-            echo "REUSE_INTEGRATION_COVERAGE=1" >>"$GITHUB_ENV"
-            echo "INTEGRATION_COVERAGE_PROFILE=$profile" >>"$GITHUB_ENV"
-          fi
-
       - name: Record golangci-lint version
         run: echo "GOLANGCI_LINT_VERSION=$(make -s print-golangci-lint-version)" >>"$GITHUB_ENV"
 
@@ -190,6 +175,8 @@ jobs:
           path: |
             coverage.out
             coverage.txt
+            coverage-integration.out
+            coverage-e2e.out
           if-no-files-found: error
 
       - name: Upload make check logs

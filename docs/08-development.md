@@ -19,8 +19,9 @@ The repository includes a `Makefile` that wraps the most common development task
 | `make tools` | Install pinned developer tooling (e.g., `golangci-lint` v2.6.1, Go 1.25.5 via `mise`/`asdf`). |
 | `make lint` | Run `golangci-lint` checks. |
 | `make lint-fix` | Run `golangci-lint` with autofix enabled. Prefer this when working locally. |
-| `make test` | Execute `go test -race ./...` across every package. |
-| `make check` | Run linting and race-enabled tests in one step. |
+| `make test` | Execute `go test -race ./...` across every package (unit focus; opt into tagged E2E with `RUN_E2E_TESTS=1`). |
+| `make test-all` | Run race-enabled unit, integration, and tagged E2E suites together, persist `coverage-integration.out`/`coverage-e2e.out`, and merge them into `coverage.out`/`coverage.txt` with `gocovmerge`. |
+| `make check` | Run linting/formatting plus the full `test-all` stack in one step. |
 | `make coverage` | Generate a race-enabled coverage profile for production packages, save `coverage.out`/`coverage.txt`, and print the total percentage (CI enforces ≥98%). |
 | `make bench` | Run `hack/check_benchmarks.sh`, which executes `go test -bench BenchmarkPoolDutyCycle ./pkg/shape`, captures the output under `artifacts/benchmarks/`, and fails when CPU duty-cycle drift, per-tick fairness, or scheduler variance exceed the §10 limits described below. |
 | `make integration` | Ensure Docker is reachable, validate the cgroup v2 CPU controller, build the distroless rootful/rootless images, and run the CPU weight responsiveness suite while teeing logs to `artifacts/integration.log` for post-run inspection (§§6, 11). |
@@ -48,7 +49,7 @@ The Makefile defines `GOCACHE_DIR` (`.cache/go`) and `GOLANGCI_LINT_CACHE_DIR` (
 - Inspect `git status` after linting and stage the generated edits before committing so reviewers see both the intentional changes and any formatter updates together (§14).
 - Auto-fixes often adjust imports and line wrapping; running `make lint-fix` after resolving merge conflicts keeps the workspace aligned with CI and avoids last-minute surprises.
 
-Running the `test` target enables the Go race detector by default, helping detect data races early during development. Use `make coverage` before pushing to confirm your changes keep statement coverage at or above the CI threshold; the command writes `coverage.out`, mirrors the console summary into `coverage.txt`, and reports the aggregate percentage across production code by skipping developer tooling packages such as `cmd/agentscheck`. CI currently requires at least 98 percent statement coverage, and the latest filtered run reports 98.6 percent. Override `COVERAGE_EXCLUDES` when invoking the target if you introduce additional non-production packages that should be omitted from the calculation. The `test` job in `.github/workflows/ci.yml` runs the same make target with the `MIN_COVERAGE` guard and publishes both coverage files as build artifacts so reviewers can audit the report without re-running the suite locally.
+Running the `test` target enables the Go race detector by default, helping detect data races early during development. Reach for `make test-all` when you need the merged view across unit, integration, and tagged E2E suites without re-plumbing coverage flags by hand. Use `make coverage` before pushing to confirm your changes keep statement coverage at or above the CI threshold; the command writes `coverage.out`, mirrors the console summary into `coverage.txt`, and reports the aggregate percentage across production code by skipping developer tooling packages such as `cmd/agentscheck`. CI currently requires at least 98 percent statement coverage, and the latest filtered run reports 98.6 percent. Override `COVERAGE_EXCLUDES` when invoking the target if you introduce additional non-production packages that should be omitted from the calculation. The `check` job in `.github/workflows/ci.yml` runs `make check` (which wraps `test-all`) with the `MIN_COVERAGE` guard and publishes all coverage files as build artifacts so reviewers can audit the merged report without re-running the suite locally.
 
 ## Suggested Workflow
 

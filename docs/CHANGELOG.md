@@ -4,6 +4,7 @@
 
 ### Added
 _Note coverage-impacting additions: mention new test suites or tooling that shift the CI ≥98% statement coverage budget (§11)._ 
+- `make test-all` helper that runs race-enabled unit, integration, and tagged E2E suites, merges `coverage-integration.out`/`coverage-e2e.out` into `coverage.out`/`coverage.txt`, and now powers the CI `check` job so the ≥98% guardrail accounts for every harness (§§11, 14).
 - Scheduled GitHub Actions workflow that opts into the tagged CLI end-to-end suite with `RUN_E2E_TESTS=1`, runs `make test` plus
   `make coverage` with `KEEP_E2E_COVERAGE=1`, uploads `coverage-e2e.out`, and merges the profile into the overall coverage
   report so the ≥98% guardrail reflects the e2e harness when enabled (§§11, 14).

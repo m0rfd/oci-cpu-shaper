@@ -119,8 +119,8 @@ HADOLINT ?= $(HADOLINT_BIN)
 HADOLINT_DOCKERFILE ?= $(ROOT_DIR)/Dockerfile
 HADOLINT_ARGS ?= --no-fail
 
-.PHONY: actionlint agents bench build check clean codeql-actions codeql-all codeql-clean codeql-go codeql-setup coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-hadolint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-dockerfile lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools update-hook-template-checksum verify-git-hooks verify-go-version verify-hook-template
-HELP_TARGETS := lint lint-makefile lint-workflows lint-dockerfile test coverage build check govulncheck integration e2e agents actionlint codeql-setup codeql-actions codeql-go codeql-all codeql-clean help clean verify-git-hooks verify-hook-template update-hook-template-checksum
+.PHONY: actionlint agents bench build check clean codeql-actions codeql-all codeql-clean codeql-go codeql-setup coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-hadolint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-dockerfile lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test test-all tidy tools update-hook-template-checksum verify-git-hooks verify-go-version verify-hook-template
+HELP_TARGETS := lint lint-makefile lint-workflows lint-dockerfile test test-all coverage build check govulncheck integration e2e agents actionlint codeql-setup codeql-actions codeql-go codeql-all codeql-clean help clean verify-git-hooks verify-hook-template update-hook-template-checksum
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-hadolint ensure-mbake
 
@@ -207,6 +207,7 @@ help:
 			update-hook-template-checksum) desc="Refresh tracked pre-commit template checksum";; \
 			test) desc="Run unit tests (excludes integration/e2e)";; \
 			coverage) desc="Run coverage with minimum threshold enforcement";; \
+			test-all) desc="Run unit, integration, and e2e suites with merged coverage";; \
 			build) desc="Compile all modules with cache isolation";; \
 			check) desc="Run lint, coverage, tests, CodeQL, and agent checks";; \
 			govulncheck) desc="Scan dependencies with govulncheck";; \
@@ -352,6 +353,34 @@ test: go-mod-download
 		echo "Skipping e2e tests; set RUN_E2E_TESTS=1 to enable."; \
 	fi
 
+test-all: go-mod-download
+	@integration_profile="$(strip $(INTEGRATION_COVERAGE_PROFILE))"; \
+	if [ -z "$$integration_profile" ]; then \
+		integration_profile="coverage-integration.out"; \
+	fi; \
+	e2e_profile="$(strip $(E2E_COVERAGE_PROFILE))"; \
+	if [ -z "$$e2e_profile" ]; then \
+		e2e_profile="coverage-e2e.out"; \
+	fi; \
+	echo "Running unit tests"; \
+	$(MAKE) test RUN_E2E_TESTS=0; \
+	integration_args="INTEGRATION_COVERAGE_PROFILE=\"$$integration_profile\""; \
+	integration_available=1; \
+	if command -v docker >/dev/null 2>&1; then \
+		echo "Running integration tests with coverage profile $$integration_profile"; \
+		$(MAKE) integration $$integration_args || integration_available=0; \
+	else \
+		echo "Skipping integration tests; docker CLI not available."; \
+		integration_available=0; \
+	fi; \
+	echo "Running merged coverage with e2e profile $$e2e_profile"; \
+	coverage_env="RUN_E2E_TESTS=1 KEEP_E2E_COVERAGE=1 E2E_COVERAGE_PROFILE=\"$$e2e_profile\""; \
+	if [ "$$integration_available" -eq 1 ] && [ -f "$$integration_profile" ]; then \
+		coverage_env="REUSE_INTEGRATION_COVERAGE=1 INTEGRATION_COVERAGE_PROFILE=\"$$integration_profile\" $$coverage_env"; \
+	else \
+		coverage_env="INTEGRATION_PKGS= $$coverage_env"; \
+	fi; \
+	eval $$coverage_env $(MAKE) coverage
 coverage: go-mod-download
 	@if [ -z "$(strip $(PKGS))" ]; then \
 		echo "No Go packages found; skipping coverage."; \
@@ -503,7 +532,7 @@ codeql-clean:
 	@echo "Removing CodeQL databases and artifacts..."
 	rm -rf "$(CODEQL_DATABASE_ROOT)" "$(CODEQL_ARTIFACT_DIR)"
 
-CHECK_TARGETS := go-mod-download verify-git-hooks verify-hook-template tidy lint lint-makefile lint-dockerfile lint-workflows test coverage
+CHECK_TARGETS := go-mod-download verify-git-hooks verify-hook-template tidy lint lint-makefile lint-dockerfile lint-workflows test-all
 ifeq ($(CHECK_INCLUDE_CODEQL),1)
 CHECK_TARGETS += codeql-all
 endif
