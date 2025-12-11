@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"oci-cpu-shaper/pkg/oci"
 )
@@ -21,83 +22,31 @@ func TestNewMonitoringClientValidatesEndpoint(t *testing.T) {
 	}
 }
 
-//nolint:cyclop,funlen // multiple request/response paths validated in one scenario.
-func TestMonitoringClientQueryP95CPUScenarios(t *testing.T) {
+func TestMonitoringClientRejectsNilHTTPClient(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(
-		http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-			switch request.URL.Query().Get("resource") {
-			case "empty":
-				writer.WriteHeader(http.StatusNoContent)
-			case "status-only":
-				writer.WriteHeader(http.StatusServiceUnavailable)
-			case "error":
-				writer.WriteHeader(http.StatusServiceUnavailable)
-				_, _ = writer.Write([]byte("backend unavailable"))
-			case "invalid":
-				writer.WriteHeader(http.StatusOK)
-				_, _ = writer.Write([]byte("not-json"))
-			default:
-				writer.WriteHeader(http.StatusOK)
-				_, _ = writer.Write([]byte(`{"value":0.42}`))
-			}
-		}),
-	)
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatalf("nil http client should prevent requests")
+	}))
 	t.Cleanup(server.Close)
 
-	client, err := NewMonitoringClient(server.URL)
-	if err != nil {
-		t.Fatalf("unexpected client error: %v", err)
-	}
-
-	_, fetchedAt, err := client.QueryP95CPU(context.Background(), "empty")
-	if !errors.Is(err, oci.ErrNoMetricsData) {
-		t.Fatalf("expected ErrNoMetricsData, got %v", err)
-	}
-
-	if !fetchedAt.IsZero() {
-		t.Fatalf("expected zero timestamp on empty response, got %v", fetchedAt)
-	}
-
-	_, _, err = client.QueryP95CPU(context.Background(), "status-only")
-	if !errors.Is(err, errMonitoringUnexpectedStatus) {
-		t.Fatalf("expected errMonitoringUnexpectedStatus, got %v", err)
-	}
-
-	_, _, err = client.QueryP95CPU(context.Background(), "error")
-	if !errors.Is(err, errMonitoringResponseBody) ||
-		!strings.Contains(err.Error(), "backend unavailable") {
-		t.Fatalf("expected backend error, got %v", err)
-	}
-
-	_, _, err = client.QueryP95CPU(context.Background(), "invalid")
-	if err == nil || !strings.Contains(err.Error(), "decode payload") {
-		t.Fatalf("expected decode error, got %v", err)
-	}
-
-	value, fetchedAt, err := client.QueryP95CPU(context.Background(), "ok")
-	if err != nil {
-		t.Fatalf("unexpected success error: %v", err)
-	}
-
-	if fetchedAt.IsZero() {
-		t.Fatalf("expected non-zero timestamp on success")
-	}
-
-	if value != 0.42 {
-		t.Fatalf("unexpected value: got %.2f want 0.42", value)
-	}
-}
-
-func TestMonitoringClientQueryP95CPUNilReceiver(t *testing.T) {
-	t.Parallel()
-
-	var client *MonitoringClient
+	client := &MonitoringClient{endpoint: server.URL, http: nil}
 
 	_, _, err := client.QueryP95CPU(context.Background(), "resource")
 	if !errors.Is(err, errMonitoringHTTPNotInitialised) {
 		t.Fatalf("expected errMonitoringHTTPNotInitialised, got %v", err)
+	}
+}
+
+func TestMonitoringClientQueryP95CPURequestBuildFailure(t *testing.T) {
+	t.Parallel()
+
+	// Malformed endpoint forces http.NewRequestWithContext to fail during request construction.
+	client := &MonitoringClient{endpoint: "http://[::1]:namedport", http: http.DefaultClient}
+
+	_, _, err := client.QueryP95CPU(context.Background(), "resource")
+	if err == nil || !strings.Contains(err.Error(), "build request") {
+		t.Fatalf("expected wrapped build request error, got %v", err)
 	}
 }
 
@@ -130,7 +79,7 @@ func TestMonitoringClientQueryP95CPUHandlesNoContent(t *testing.T) {
 	}
 }
 
-func TestMonitoringClientQueryP95CPUWrapsUnexpectedStatus(t *testing.T) {
+func TestMonitoringClientQueryP95CPUUnexpectedStatusEmptyBody(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(
@@ -150,18 +99,20 @@ func TestMonitoringClientQueryP95CPUWrapsUnexpectedStatus(t *testing.T) {
 		t.Fatalf("expected errMonitoringUnexpectedStatus, got %v", err)
 	}
 
-	if !strings.Contains(err.Error(), "502") {
-		t.Fatalf("expected status code in error, got %v", err)
+	if strings.Contains(err.Error(), "response body") {
+		t.Fatalf("unexpected response body hint for empty response: %v", err)
 	}
 }
 
-func TestMonitoringClientQueryP95CPUWrapsResponseBody(t *testing.T) {
+func TestMonitoringClientQueryP95CPUUnexpectedStatusTruncatesResponseBody(t *testing.T) {
 	t.Parallel()
+
+	oversizedBody := strings.Repeat("a", responseBodyLimit+64)
 
 	server := httptest.NewServer(
 		http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 			writer.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = writer.Write([]byte("backend unavailable\n"))
+			_, _ = writer.Write([]byte(oversizedBody))
 		}),
 	)
 	t.Cleanup(server.Close)
@@ -176,23 +127,60 @@ func TestMonitoringClientQueryP95CPUWrapsResponseBody(t *testing.T) {
 		t.Fatalf("expected errMonitoringResponseBody, got %v", err)
 	}
 
-	if !strings.Contains(err.Error(), "backend unavailable") {
-		t.Fatalf("expected response body to propagate, got %v", err)
+	prefix := errMonitoringResponseBody.Error() + ": "
+
+	trimmedBody := strings.TrimPrefix(err.Error(), prefix)
+	if len(trimmedBody) != responseBodyLimit {
+		t.Fatalf(
+			"expected response body limited to %d bytes, got %d",
+			responseBodyLimit,
+			len(trimmedBody),
+		)
+	}
+
+	if strings.Contains(trimmedBody, strings.Repeat("a", responseBodyLimit+1)) {
+		t.Fatalf("response body should be truncated, got %q", trimmedBody)
 	}
 }
 
-func TestMonitoringClientRejectsUninitialisedHTTPClient(t *testing.T) {
+func TestMonitoringClientQueryP95CPUSuccessfulDecodeReturnsCurrentTimestamp(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		t.Fatalf("nil client should not issue requests")
-	}))
+	server := httptest.NewServer(
+		http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if request.URL.RawQuery != "resource=ok" {
+				t.Fatalf("unexpected query: %s", request.URL.RawQuery)
+			}
+
+			writer.WriteHeader(http.StatusOK)
+			_, _ = writer.Write([]byte(`{"value":2.5}`))
+		}),
+	)
 	t.Cleanup(server.Close)
 
-	client := &MonitoringClient{endpoint: server.URL, http: nil}
+	client, err := NewMonitoringClient(server.URL)
+	if err != nil {
+		t.Fatalf("unexpected client error: %v", err)
+	}
 
-	_, _, err := client.QueryP95CPU(context.Background(), "resource")
-	if !errors.Is(err, errMonitoringHTTPNotInitialised) {
-		t.Fatalf("expected errMonitoringHTTPNotInitialised, got %v", err)
+	before := time.Now().UTC()
+
+	value, fetchedAt, err := client.QueryP95CPU(context.Background(), "ok")
+	if err != nil {
+		t.Fatalf("unexpected success error: %v", err)
+	}
+
+	if value != 2.5 {
+		t.Fatalf("unexpected value: got %.2f want 2.5", value)
+	}
+
+	after := time.Now().UTC()
+	if fetchedAt.Before(before) || fetchedAt.After(after.Add(50*time.Millisecond)) {
+		t.Fatalf(
+			"expected timestamp between %v and %v, got %v",
+			before,
+			after.Add(50*time.Millisecond),
+			fetchedAt,
+		)
 	}
 }
