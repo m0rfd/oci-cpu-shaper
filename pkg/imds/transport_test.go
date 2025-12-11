@@ -103,22 +103,116 @@ func TestHTTPClientRetriesOnTransportError(t *testing.T) {
 	requireEqual(t, "Region()", gotRegion, "us-sanjose-1")
 }
 
+func TestHTTPClientRetryableStatuses(t *testing.T) {
+	t.Parallel()
+
+	statuses := []struct {
+		name   string
+		status int
+	}{
+		{name: "request timeout", status: http.StatusRequestTimeout},
+		{name: "too many requests", status: http.StatusTooManyRequests},
+		{name: "internal server error", status: http.StatusInternalServerError},
+		{name: "generic 5xx", status: http.StatusBadGateway},
+	}
+
+	for _, tt := range statuses {
+		statusCase := tt
+
+		t.Run(statusCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			requireRetryableBudgetExhaustion(t, statusCase.status)
+		})
+	}
+}
+
+func TestHTTPClientNonRetryableStatuses(t *testing.T) {
+	t.Parallel()
+
+	statuses := []struct {
+		name   string
+		status int
+	}{
+		{name: "bad request", status: http.StatusBadRequest},
+		{name: "not implemented", status: http.StatusNotImplemented},
+	}
+
+	for _, tt := range statuses {
+		statusCase := tt
+
+		t.Run(statusCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			var attempts atomic.Int32
+
+			httpClient := newHTTPClient(
+				roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					requireIMDSAuthHeader(t, req)
+
+					attempts.Add(1)
+
+					return newHTTPResponse(
+						statusCase.status,
+						io.NopCloser(strings.NewReader(" not retryable  \n")),
+						req,
+					), nil
+				}),
+			)
+
+			client := imds.NewClient(
+				httpClient,
+				imds.WithBaseURL("http://metadata.local/opc/v2"),
+				imds.WithMaxAttempts(3),
+				imds.WithBackoff(5*time.Millisecond),
+			)
+
+			_, err := client.Region(context.Background())
+			if err == nil {
+				t.Fatalf("Region() expected error, got nil")
+			}
+
+			if strings.Contains(err.Error(), "exhausted retry budget") {
+				t.Fatalf("Region() error = %v, did not expect retry budget exhaustion", err)
+			}
+
+			if !strings.Contains(err.Error(), "unexpected status code") {
+				t.Fatalf("Region() error = %v, want unexpected status code", err)
+			}
+
+			if !strings.Contains(err.Error(), "body not retryable") {
+				t.Fatalf("Region() error = %v, want trimmed body", err)
+			}
+
+			requireEqual(t, "attempts", attempts.Load(), int32(1))
+		})
+	}
+}
+
 func TestHTTPClientRetryableStatusExhaustsBudgetWithFakeClient(t *testing.T) {
 	t.Parallel()
 
+	requireRetryableBudgetExhaustion(t, http.StatusServiceUnavailable)
+}
+
+func requireRetryableBudgetExhaustion(t *testing.T, status int) {
+	t.Helper()
+
 	var attempts atomic.Int32
 
-	httpClient := newHTTPClient(roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		requireIMDSAuthHeader(t, req)
+	httpClient := newHTTPClient(
+		roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requireIMDSAuthHeader(t, req)
 
-		attempts.Add(1)
+			attempts.Add(1)
 
-		return newHTTPResponse(
-			http.StatusServiceUnavailable,
-			io.NopCloser(strings.NewReader("retry later")),
-			req,
-		), nil
-	}))
+			return newHTTPResponse(
+				status,
+				io.NopCloser(strings.NewReader("retry later")),
+				req,
+			), nil
+		}),
+	)
 
 	client := imds.NewClient(
 		httpClient,
@@ -129,7 +223,7 @@ func TestHTTPClientRetryableStatusExhaustsBudgetWithFakeClient(t *testing.T) {
 
 	_, err := client.Region(context.Background())
 	if err == nil {
-		t.Fatal("Region() expected error, got nil")
+		t.Fatalf("Region() expected error, got nil")
 	}
 
 	if !strings.Contains(err.Error(), "exhausted retry budget") {
@@ -137,7 +231,7 @@ func TestHTTPClientRetryableStatusExhaustsBudgetWithFakeClient(t *testing.T) {
 	}
 
 	if !strings.Contains(err.Error(), "retryable status code") {
-		t.Fatalf("Region() error = %v, want retryable status", err)
+		t.Fatalf("Region() error = %v, want retryable status code", err)
 	}
 
 	requireEqual(t, "attempts", attempts.Load(), int32(3))
