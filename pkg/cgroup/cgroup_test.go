@@ -1,8 +1,10 @@
 package cgroup_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"oci-cpu-shaper/pkg/cgroup"
@@ -136,5 +138,103 @@ func TestReaderFailsWhenCgroupPathMissing(t *testing.T) {
 	_, err := reader.Detect()
 	if err == nil {
 		t.Fatal("expected error when cgroup path not found")
+	}
+}
+
+func TestReaderHandlesMalformedCgroupEntries(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	procPath := filepath.Join(tmpDir, "proc")
+
+	content := strings.Join([]string{
+		"malformed",        // not enough fields
+		"0:cpu:missing",    // missing leading slash
+		"1:name=cpu:/skip", // controllers populated, should be ignored
+		"2::   ",           // empty path after trimming
+	}, "\n") + "\n"
+
+	writeFile(t, procPath, content)
+
+	reader := cgroup.Reader{ProcPath: procPath, RootPath: tmpDir}
+
+	_, err := reader.Detect()
+	if err == nil {
+		t.Fatal("expected error for malformed cgroup entries")
+	}
+
+	if !strings.Contains(err.Error(), "cpu controller path not found") {
+		t.Fatalf("expected cpu controller path not found error, got %v", err)
+	}
+}
+
+func TestReaderHandlesEmptyControllerField(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	procPath := filepath.Join(tmpDir, "proc")
+	content := "0::\n" // controller field empty but path missing
+
+	writeFile(t, procPath, content)
+
+	reader := cgroup.Reader{ProcPath: procPath, RootPath: tmpDir}
+
+	_, err := reader.Detect()
+	if err == nil {
+		t.Fatal("expected error when controller field empty without path")
+	}
+
+	if !strings.Contains(err.Error(), "cpu controller path not found") {
+		t.Fatalf("expected cpu controller path not found error, got %v", err)
+	}
+}
+
+func TestReaderReportsScannerError(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	procDir := filepath.Join(tmpDir, "procdir")
+
+	mkdirAll(t, procDir)
+
+	reader := cgroup.Reader{ProcPath: procDir, RootPath: tmpDir}
+
+	_, err := reader.Detect()
+	if err == nil {
+		t.Fatal("expected scanner error when reading directory")
+	}
+
+	var pathError *os.PathError
+	if !errors.As(err, &pathError) {
+		t.Fatalf("expected wrapped path error, got %v", err)
+	}
+
+	if !strings.Contains(err.Error(), procDir) {
+		t.Fatalf("expected error to mention proc path, got %v", err)
+	}
+}
+
+func TestReaderReturnsErrCgroupPathNotFound(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	procPath := filepath.Join(tmpDir, "proc")
+
+	content := strings.Join([]string{
+		"0:cpu:/user.slice", // controllers populated, should be skipped
+		"1:memory:/mem",     // wrong controller set
+	}, "\n") + "\n"
+
+	writeFile(t, procPath, content)
+
+	reader := cgroup.Reader{ProcPath: procPath, RootPath: tmpDir}
+
+	_, err := reader.Detect()
+	if err == nil {
+		t.Fatal("expected cgroup path not found error")
+	}
+
+	if !strings.Contains(err.Error(), "cpu controller path not found") {
+		t.Fatalf("expected errCgroupPathNotFound, got %v", err)
 	}
 }
