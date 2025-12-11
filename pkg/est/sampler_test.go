@@ -1201,6 +1201,33 @@ func TestSamplerPublishObservationContextCancelled(t *testing.T) {
 	}
 }
 
+func TestSamplerPublishObservationContextCancelledBeforeBufferedSend(t *testing.T) {
+	t.Parallel()
+
+	sampler := new(Sampler)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	observations := make(chan Observation, 1)
+
+	if sampler.publishObservation(ctx, observations, Observation{
+		Timestamp:    time.Time{},
+		Utilisation:  0.5,
+		Runnable:     0,
+		BusyJiffies:  0,
+		TotalJiffies: 0,
+		Err:          nil,
+	}) {
+		t.Fatal("expected publishObservation to report cancellation")
+	}
+
+	select {
+	case observation := <-observations:
+		t.Fatalf("expected channel to remain empty, received %#v", observation)
+	default:
+	}
+}
+
 func TestSamplerTimeSourceFallbacksToNow(t *testing.T) {
 	t.Parallel()
 
