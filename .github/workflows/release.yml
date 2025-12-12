@@ -122,7 +122,7 @@ jobs:
         uses: ./.github/actions/setup-go-with-cache
 
       - name: Cache golangci-lint workspace
-        if: steps.ci-artifacts.outputs.coverage-available != '1'
+        if: steps.ci-artifacts.outputs.coverage-available != '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
         uses: actions/cache@v4
         with:
           path: .cache/golangci
@@ -131,7 +131,7 @@ jobs:
             ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-
 
       - name: Cache golangci-lint binary
-        if: steps.ci-artifacts.outputs.coverage-available != '1'
+        if: steps.ci-artifacts.outputs.coverage-available != '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
         uses: actions/cache@v4
         with:
           path: ${{ env.GOBIN }}/golangci-lint
@@ -144,7 +144,7 @@ jobs:
         uses: ./.github/actions/setup-lint-tools
 
       - name: Cache actionlint binary
-        if: steps.ci-artifacts.outputs.coverage-available != '1'
+        if: steps.ci-artifacts.outputs.coverage-available != '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
         uses: actions/cache@v4
         with:
           path: ${{ env.GOBIN }}/actionlint
@@ -256,6 +256,7 @@ jobs:
 
       - name: Restore Go build and module caches
         id: restore-go-cache
+        if: github.event.pull_request.head.repo.fork == false
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -374,6 +375,7 @@ jobs:
 
       - name: Restore Go build and module caches
         id: restore-go-cache
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -389,7 +391,7 @@ jobs:
         run: make check
 
       - name: Save Go build and module caches
-        if: steps.restore-go-cache.outputs.cache-hit != 'true'
+        if: steps.restore-go-cache.outputs.cache-hit != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
         uses: actions/cache/save@v4
         with:
           path: |
