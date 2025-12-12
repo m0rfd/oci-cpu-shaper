@@ -19,6 +19,8 @@ go.work.sum
 *.lcov
 *.prof
 coverage.*
+coverage-*.out
+coverage-*.txt
 
 # Dependency directories (remove the comment below to include it)
 vendor/
