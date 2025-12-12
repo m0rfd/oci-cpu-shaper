@@ -81,6 +81,7 @@ welcome! Please:
    - `make maintenance` (resumed container) to refresh Go modules and tooling without reinstalling the toolchain.
    - `make lint-fix` to run `golangci-lint` with autofix enabled.
    - `make lint` to run checks only.
+   - `make lint-fast` for a quick pass over locally changed Go files, Makefile edits, and workflow YAML using your already-installed `golangci-lint`, `mbake`, and `actionlint` binaries.
    - `make test` to execute the suite with the Go race detector enabled. Set `RUN_E2E_TESTS=1 make test` when you need the tagged CLI end-to-end harness that exercises the mock IMDS/Monitoring servers in `tests/e2e`. The environment flag stays unset in untrusted contexts (for example, pull requests from forks) so the suite only runs when explicitly requested.
    - `make coverage MIN_COVERAGE=98` to confirm the repository-wide coverage threshold documented in §11 of the implementation plan. The target now merges unit, integration, and optional tagged E2E profiles with `gocovmerge` so `coverage.out`/`coverage.txt` always reflect the combined results; use `RUN_E2E_TESTS=1 KEEP_E2E_COVERAGE=1 make coverage` when you need the E2E profile preserved as `coverage-e2e.out` for reuse in CI.
    - `make check` to run linting, tests, coverage enforcement, CodeQL, and agent verification in one pass. Set `CHECK_INCLUDE_CODEQL=0 make check` if you want to mirror CI’s faster path where CodeQL runs in its dedicated workflow.
