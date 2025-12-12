@@ -385,6 +385,8 @@ func requireDeadlineCaptured(t *testing.T, ctrl *stubController) {
 
 	if ctrl == nil {
 		t.Fatalf("controller stub is nil")
+
+		return
 	}
 
 	if !ctrl.deadlineSet {
