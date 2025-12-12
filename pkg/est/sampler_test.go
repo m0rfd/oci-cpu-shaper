@@ -34,6 +34,12 @@ type fakeSource struct {
 	snapshotIndex int
 }
 
+type alternatingSource struct {
+	snapshots []Snapshot
+	err       error
+	call      int
+}
+
 type firstErrorThenSuccessSource struct {
 	calls atomic.Int32
 }
@@ -65,6 +71,29 @@ func (m manualTicker) Stop() {}
 
 func newManualSampler(responses []snapshotResponse, ticks <-chan time.Time) *Sampler {
 	sampler := NewSampler(&sequenceSource{responses: responses, index: 0}, time.Hour)
+
+	start := time.Unix(0, 0)
+
+	var nowMu sync.Mutex
+
+	sampler.now = func() time.Time {
+		nowMu.Lock()
+		defer nowMu.Unlock()
+
+		start = start.Add(time.Millisecond)
+
+		return start
+	}
+
+	sampler.newTicker = func(time.Duration) ticker {
+		return manualTicker{ch: ticks}
+	}
+
+	return sampler
+}
+
+func newAlternatingSampler(source Source, ticks <-chan time.Time) *Sampler {
+	sampler := NewSampler(source, time.Hour)
 
 	start := time.Unix(0, 0)
 
@@ -121,6 +150,26 @@ func (f *fakeSource) Snapshot(_ context.Context) (Snapshot, error) {
 	f.snapshotIndex++
 
 	return snap, nil
+}
+
+func (a *alternatingSource) Snapshot(_ context.Context) (Snapshot, error) {
+	call := a.call
+	a.call++
+
+	if call == 0 {
+		return a.snapshots[0], nil
+	}
+
+	if call%2 == 1 {
+		return Snapshot{}, a.err
+	}
+
+	index := call / 2
+	if index >= len(a.snapshots) {
+		index = len(a.snapshots) - 1
+	}
+
+	return a.snapshots[index], nil
 }
 
 func (f *firstErrorThenSuccessSource) Snapshot(_ context.Context) (Snapshot, error) {
@@ -220,6 +269,103 @@ func TestSamplerPublishesErrorsAndContinuesSampling(t *testing.T) {
 
 	if second.Runnable <= 0 {
 		t.Fatalf("expected runnable count to be recorded, got %.2f", second.Runnable)
+	}
+}
+
+func TestSamplerAlternatesErrorsAndObservations(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	ticks := make(chan time.Time, 3)
+
+	cpuCount := runtime.NumCPU()
+	if cpuCount <= 0 {
+		t.Fatalf("invalid cpu count: %d", cpuCount)
+	}
+
+	runnableCount := uint64(cpuCount)
+	source := &alternatingSource{snapshots: []Snapshot{
+		{Idle: 0, Total: 10, Runnable: 0},
+		{Idle: 1, Total: 20, Runnable: runnableCount},
+		{Idle: 2, Total: 40, Runnable: 4},
+	}, err: errTestBoom, call: 0}
+
+	sampler := newAlternatingSampler(source, ticks)
+
+	observations := sampler.Run(ctx)
+
+	tick := func() { ticks <- time.Time{} }
+
+	tick()
+
+	errorObservation := receiveObservation(t, observations, "first error observation")
+
+	tick()
+
+	recovered := receiveObservation(t, observations, "recovered observation")
+
+	if !errors.Is(errorObservation.Err, errTestBoom) {
+		t.Fatalf("expected alternating error to propagate, got %v", errorObservation.Err)
+	}
+
+	if recovered.Err != nil {
+		t.Fatalf("unexpected error after recovery: %v", recovered.Err)
+	}
+
+	const tolerance = 1e-9
+
+	if diff := math.Abs(recovered.Utilisation - 0.9); diff > tolerance {
+		t.Fatalf("unexpected utilisation after alternating error: %.2f", recovered.Utilisation)
+	}
+
+	if recovered.Runnable <= 0 {
+		t.Fatalf(
+			"expected runnable count to be recorded after recovery, got %.2f",
+			recovered.Runnable,
+		)
+	}
+}
+
+func TestSamplerCancelsDuringAlternatingSequence(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	ticks := make(chan time.Time, 1)
+
+	cpuCount := runtime.NumCPU()
+	if cpuCount <= 0 {
+		t.Fatalf("invalid cpu count: %d", cpuCount)
+	}
+
+	runnableCount := uint64(cpuCount)
+	source := &alternatingSource{snapshots: []Snapshot{
+		{Idle: 0, Total: 10, Runnable: 0},
+		{Idle: 1, Total: 20, Runnable: runnableCount},
+	}, err: errTestBoom, call: 0}
+
+	sampler := newAlternatingSampler(source, ticks)
+
+	observations := sampler.Run(ctx)
+
+	ticks <- time.Time{}
+
+	errorObservation := receiveObservation(t, observations, "alternating error observation")
+
+	if !errors.Is(errorObservation.Err, errTestBoom) {
+		t.Fatalf("expected alternating error to propagate, got %v", errorObservation.Err)
+	}
+
+	cancel()
+
+	select {
+	case observation, ok := <-observations:
+		if ok {
+			t.Fatalf("expected sampler to stop after cancellation, received %+v", observation)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("timed out waiting for sampler shutdown after cancellation")
 	}
 }
 
