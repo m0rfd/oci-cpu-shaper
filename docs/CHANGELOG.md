@@ -113,6 +113,10 @@ _Record coverage reductions or mitigations so reviewers can audit the CI ≥98% 
   `codeql-clean` to prune generated databases and SARIF artifacts while leaving
   the cached CLI and packs intact. CodeQL analyses now run with `--threads=0` and
   respect the configured pack cache search path (§14).
+- CodeQL runs now populate `.cache/gomod` ahead of Go analysis (skipping the
+  download when vendored modules are available) and pass `-mod=readonly
+  -trimpath` to the build so CodeQL reuses the prefetched module cache without
+  touching `go.mod` (§14).
 - Raised the module `go` directive, `.tool-versions` pin, and container build ARG to Go 1.25.5 so CI, local builds, and release images stay on the latest patched toolchain (§14).
 - Release workflow pins Cosign installs to `v3.0.2` for predictable signing output; bump the pin and release docs together when upgrading (§14).
 - Documented the controller interval selection (normal, relaxed, fallback) plus the relaxed confirmation hysteresis and refreshed the metrics/`/healthz` field names in §§4–5 so the docs mirror the current defaults and telemetry exports.
