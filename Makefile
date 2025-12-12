@@ -120,8 +120,8 @@ HADOLINT ?= $(HADOLINT_BIN)
 HADOLINT_DOCKERFILE ?= $(ROOT_DIR)/Dockerfile
 HADOLINT_ARGS ?= --no-fail
 
-.PHONY: actionlint agents bench build check clean codeql-actions codeql-all codeql-clean codeql-go codeql-setup coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-hadolint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-dockerfile lint-fix lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools update-hook-template-checksum verify-git-hooks verify-go-version verify-hook-template
-HELP_TARGETS := lint lint-makefile lint-workflows lint-dockerfile test coverage build check govulncheck integration e2e agents actionlint codeql-setup codeql-actions codeql-go codeql-all codeql-clean help clean verify-git-hooks verify-hook-template update-hook-template-checksum
+.PHONY: actionlint agents bench build check clean codeql-actions codeql-all codeql-clean codeql-go codeql-setup coverage e2e echo ensure-actionlint ensure-codeql ensure-dev-deps ensure-go ensure-golangci-lint ensure-hadolint ensure-mbake format go-mod-download govulncheck help install-git-hooks integration lint lint-autofix lint-dockerfile lint-fix lint-fast lint-makefile lint-workflows maintenance mbake print-golangci-lint-version setup test tidy tools update-hook-template-checksum verify-git-hooks verify-go-version verify-hook-template
+HELP_TARGETS := lint lint-fast lint-makefile lint-workflows lint-dockerfile test coverage build check govulncheck integration e2e agents actionlint codeql-setup codeql-actions codeql-go codeql-all codeql-clean help clean verify-git-hooks verify-hook-template update-hook-template-checksum
 
 tools: verify-go-version ensure-golangci-lint ensure-actionlint ensure-hadolint ensure-mbake
 
@@ -173,6 +173,37 @@ lint: go-mod-download ensure-golangci-lint
 	@echo "Running golangci-lint..."
 	@GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE_DIR)" $(GOLANGCI_LINT) run
 
+lint-fast:
+	@git rev-parse --is-inside-work-tree >/dev/null
+	@changed_all="$$(git diff --name-only --diff-filter=ACMRTUXB HEAD -- .)"; \
+		changed_staged="$$(git diff --name-only --cached --diff-filter=ACMRTUXB HEAD -- .)"; \
+		changed="$$(printf "%s\n%s\n" "$$changed_all" "$$changed_staged" | sed '/^$$/d' | sort -u)"; \
+		if [ -z "$$changed" ]; then \
+			echo "No changed files detected; skipping lint-fast."; \
+			exit 0; \
+		fi; \
+		go_files="$$(printf "%s\n" $$changed | grep -E '\\.(go)$$' || true)"; \
+		makefile_files="$$(printf "%s\n" $$changed | grep -E '(^|/)Makefile$$' || true)"; \
+		workflow_files="$$(printf "%s\n" $$changed | grep -E '^\\.github/workflows/.*\\.ya?ml$$' || true)"; \
+		if [ -n "$$go_files" ]; then \
+			echo "Running golangci-lint on changed Go files..."; \
+			GOLANGCI_LINT_CACHE="$(GOLANGCI_LINT_CACHE_DIR)" $(GOLANGCI_LINT) run $$go_files; \
+		else \
+			echo "No Go file changes detected; skipping golangci-lint."; \
+		fi; \
+		if [ -n "$$makefile_files" ]; then \
+			echo "Running mbake format --check..."; \
+			$(MBAKE) format --check $(MBAKE_FORMAT_PATHS); \
+		else \
+			echo "No Makefile changes detected; skipping mbake format check."; \
+		fi; \
+		if [ -n "$$workflow_files" ]; then \
+			echo "Running actionlint on changed workflows..."; \
+			$(ACTIONLINT) $(strip $(ACTIONLINT_FLAGS)) $$workflow_files; \
+		else \
+			echo "No workflow changes detected; skipping actionlint."; \
+		fi
+
 lint-makefile: ensure-mbake
 	@echo "Running mbake validate..."
 	@$(MBAKE) validate $(MBAKE_FORMAT_PATHS)
@@ -199,6 +230,7 @@ help:
 	@for target in $(HELP_TARGETS); do \
 		case $$target in \
 			lint) desc="Run golangci-lint";; \
+			lint-fast) desc="Run quick linting on changed files with existing tools";; \
 			lint-makefile) desc="Run mbake validate and check";; \
 			lint-dockerfile) desc="Run hadolint against the Dockerfile";; \
 			lint-workflows) desc="Run actionlint against GitHub workflows";; \
