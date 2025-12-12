@@ -103,6 +103,8 @@ func assertWorkerPoolTracking(t *testing.T, pool *trackingPoolStarter) {
 
 	if pool == nil {
 		t.Fatal("expected worker pool to be initialized")
+
+		return
 	}
 
 	if pool.handlerSet != 1 {

@@ -28,6 +28,21 @@ func (r errReader) Read([]byte) (int, error) {
 	return 0, r.err
 }
 
+type closeErrorPipe struct {
+	reader *os.File
+}
+
+func (p closeErrorPipe) Read(buf []byte) (int, error) {
+	//nolint:wrapcheck // passthrough to pipe for test simulation
+	return p.reader.Read(buf)
+}
+
+func (p closeErrorPipe) Close() error {
+	_ = p.reader.Close()
+
+	return errTestBoom
+}
+
 type fakeSource struct {
 	snapshots     []Snapshot
 	err           error
@@ -220,6 +235,83 @@ func TestSamplerPublishesErrorsAndContinuesSampling(t *testing.T) {
 
 	if second.Runnable <= 0 {
 		t.Fatalf("expected runnable count to be recorded, got %.2f", second.Runnable)
+	}
+}
+
+func TestNewSamplerAppliesDefaultInterval(t *testing.T) {
+	t.Parallel()
+
+	sampler := NewSampler(nil, 0)
+
+	if sampler.interval != DefaultInterval {
+		t.Fatalf("expected default interval %s, got %s", DefaultInterval, sampler.interval)
+	}
+}
+
+func TestNewSamplerKeepsProvidedInterval(t *testing.T) {
+	t.Parallel()
+
+	wanted := 250 * time.Millisecond
+	sampler := NewSampler(nil, wanted)
+
+	if sampler.interval != wanted {
+		t.Fatalf("expected interval %s, got %s", wanted, sampler.interval)
+	}
+}
+
+func TestPublishObservationRespectsContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	sampler := new(Sampler)
+	observations := make(chan Observation)
+
+	observation := Observation{
+		Timestamp:    time.Unix(0, 0),
+		Utilisation:  1,
+		Runnable:     0,
+		BusyJiffies:  0,
+		TotalJiffies: 0,
+		Err:          nil,
+	}
+
+	if sampler.publishObservation(ctx, observations, observation) {
+		t.Fatalf("expected publishObservation to stop when context is cancelled")
+	}
+
+	if len(observations) != 0 {
+		t.Fatalf("expected no observations to be published when context is cancelled")
+	}
+}
+
+func TestTimeSourceDefaultsToTimeNow(t *testing.T) {
+	t.Parallel()
+
+	sampler := new(Sampler)
+	nowFn := sampler.timeSource()
+
+	before := time.Now()
+	got := nowFn()
+
+	if got.Before(before) {
+		t.Fatalf("expected time source to return current time, got %v before %v", got, before)
+	}
+}
+
+func TestTickerSourceDefaultsToTimeTicker(t *testing.T) {
+	t.Parallel()
+
+	sampler := new(Sampler)
+
+	ticker := sampler.tickerSource()(5 * time.Millisecond)
+	defer ticker.Stop()
+
+	select {
+	case <-ticker.C():
+	case <-time.After(100 * time.Millisecond):
+		t.Fatalf("expected ticker to emit within deadline")
 	}
 }
 
@@ -949,6 +1041,28 @@ func TestFileSourceSnapshotContextCancelled(t *testing.T) {
 	}
 }
 
+func TestFileSourceSnapshotDeadlineExceeded(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	t.Cleanup(cancel)
+
+	source := FileSource{Path: filepath.Join(t.TempDir(), "ignored")}
+
+	_, err := source.Snapshot(ctx)
+	if err == nil {
+		t.Fatal("expected deadline error")
+	}
+
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline exceeded, got %v", err)
+	}
+
+	if !strings.Contains(err.Error(), "file source context") {
+		t.Fatalf("expected error context to be wrapped, got %v", err)
+	}
+}
+
 func TestFileSourceSnapshotReadsProvidedPath(t *testing.T) {
 	t.Parallel()
 
@@ -1399,6 +1513,25 @@ func TestFileSourceSnapshotOpenFailure(t *testing.T) {
 	}
 }
 
+func TestFileSourceSnapshotMissingProcStatPath(t *testing.T) {
+	t.Parallel()
+
+	missingPath := filepath.Join(t.TempDir(), "proc", "stat")
+
+	_, err := (FileSource{Path: missingPath}).Snapshot(context.Background())
+	if err == nil {
+		t.Fatal("expected error when /proc/stat path is missing")
+	}
+
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected wrapped not-exist error, got %v", err)
+	}
+
+	if !strings.Contains(err.Error(), missingPath) {
+		t.Fatalf("expected error to mention missing path, got %v", err)
+	}
+}
+
 func TestNewSamplerDefaultsInterval(t *testing.T) {
 	t.Parallel()
 
@@ -1500,6 +1633,69 @@ func TestFileSourceSnapshotParseError(t *testing.T) {
 	_, snapshotErr := (FileSource{Path: path}).Snapshot(context.Background())
 	if snapshotErr == nil || !strings.Contains(snapshotErr.Error(), "parse") {
 		t.Fatalf("expected parse error, got %v", snapshotErr)
+	}
+}
+
+func TestFileSourceSnapshotParseErrorWrapsUnexpectedFormat(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "stat")
+
+	err := os.WriteFile(path, []byte("invalid cpu line\n"), 0o600)
+	if err != nil {
+		t.Fatalf("write temp stat file: %v", err)
+	}
+
+	_, snapshotErr := (FileSource{Path: path}).Snapshot(context.Background())
+	if snapshotErr == nil {
+		t.Fatal("expected parse error")
+	}
+
+	if !errors.Is(snapshotErr, ErrUnexpectedProcStatFormat) {
+		t.Fatalf("expected wrapped unexpected format error, got %v", snapshotErr)
+	}
+
+	if !strings.Contains(snapshotErr.Error(), "parse "+path) {
+		t.Fatalf("expected parse error to mention path, got %v", snapshotErr)
+	}
+}
+
+func TestFileSourceSnapshotCloseError(t *testing.T) { //nolint:paralleltest // mutates global opener
+	readPipe, writePipe, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create pipe: %v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "stat")
+
+	go func() {
+		defer func() {
+			_ = writePipe.Close()
+		}()
+
+		_, _ = writePipe.WriteString("cpu  1 2 3 4 5 6 7 8 9 10\n")
+		_, _ = writePipe.WriteString("procs_running 1\n")
+	}()
+
+	originalOpener := openStatFile
+
+	t.Cleanup(func() { openStatFile = originalOpener })
+
+	openStatFile = func(string) (io.ReadCloser, error) {
+		return closeErrorPipe{reader: readPipe}, nil
+	}
+
+	_, snapshotErr := (FileSource{Path: path}).Snapshot(context.Background())
+	if snapshotErr == nil {
+		t.Fatal("expected close error")
+	}
+
+	if !errors.Is(snapshotErr, errTestBoom) {
+		t.Fatalf("expected wrapped close error, got %v", snapshotErr)
+	}
+
+	if !strings.Contains(snapshotErr.Error(), "close "+path) {
+		t.Fatalf("expected close error to mention path, got %v", snapshotErr)
 	}
 }
 
