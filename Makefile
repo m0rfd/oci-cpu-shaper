@@ -96,6 +96,7 @@ CODEQL_ARTIFACT_DIR ?= $(ROOT_DIR)/artifacts/codeql
 CODEQL_TOOLCACHE_DIR ?= $(ROOT_DIR)/.cache/tools/codeql
 CODEQL_INSTALL_DIR ?= $(CODEQL_TOOLCACHE_DIR)/$(CODEQL_VERSION_STRIPPED)/$(GO_DL_ARCH)
 CODEQL_CLI_DIR ?= $(CODEQL_INSTALL_DIR)
+CODEQL_REUSE_DB ?= 0
 CODEQL_SARIF_CHECK ?= $(ROOT_DIR)/hack/check_codeql_sarif.py
 CODEQL_ACTIONS_QUERY_PACK ?= codeql/actions-queries:codeql-suites/actions-security-and-quality.qls
 CODEQL_GO_QUERY_PACK ?= codeql/go-queries:codeql-suites/go-security-and-quality.qls
@@ -478,9 +479,31 @@ codeql-actions: ensure-codeql
 	DB_DIR="$(CODEQL_DATABASE_ROOT)/actions"; \
 	SARIF_FILE="$(CODEQL_ARTIFACT_DIR)/actions.sarif"; \
 	SEARCH_PATH="$(CODEQL_PACK_CACHE_DIR)"; \
-	rm -rf "$$DB_DIR"; \
-	echo "Creating CodeQL database for GitHub Actions..."; \
-	"$(CODEQL_BIN)" database create "$$DB_DIR" --language=actions --source-root "$(ROOT_DIR)" --search-path "$$SEARCH_PATH"; \
+	STAMP_FILE="$$DB_DIR/.inputs.stamp"; \
+	STAMP_CONTENT="codeql $(CODEQL_VERSION_STRIPPED) actions $(strip $(CODEQL_ACTIONS_QUERY_PACK)) $(strip $(CODEQL_ACTIONS_IGNORE_RULES)) $(strip $(CODEQL_ACTIONS_IGNORE_PATHS)) $$(git -C "$(ROOT_DIR)" rev-parse HEAD)"; \
+	if git -C "$(ROOT_DIR)" diff-index --quiet HEAD --; then \
+		STAMP_CONTENT="$$STAMP_CONTENT clean"; \
+	else \
+		STAMP_CONTENT="$$STAMP_CONTENT dirty"; \
+	fi; \
+	rebuild=1; \
+	if [ "$(strip $(CODEQL_REUSE_DB))" = "1" ] && [ -d "$$DB_DIR" ] && [ -f "$$STAMP_FILE" ]; then \
+		existing_stamp="$$(cat "$$STAMP_FILE")"; \
+		if [ "$$existing_stamp" = "$$STAMP_CONTENT" ]; then \
+			rebuild=0; \
+			echo "CodeQL inputs unchanged; reusing GitHub Actions database at $$DB_DIR"; \
+		fi; \
+	fi; \
+	if [ "$$rebuild" = "1" ]; then \
+		rm -rf "$$DB_DIR"; \
+		echo "Creating CodeQL database for GitHub Actions..."; \
+		"$(CODEQL_BIN)" database create "$$DB_DIR" --language=actions --source-root "$(ROOT_DIR)" --search-path "$$SEARCH_PATH"; \
+		echo "$$STAMP_CONTENT" > "$$STAMP_FILE"; \
+	else \
+		echo "Skipping GitHub Actions database rebuild; run CODEQL_REUSE_DB=0 make codeql-actions to force a refresh."; \
+	fi; \
+	echo "Cleaning CodeQL database before analysis..."; \
+	"$(CODEQL_BIN)" database cleanup "$$DB_DIR"; \
 	echo "Analyzing GitHub Actions CodeQL database..."; \
 	"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --threads=0 --output "$$SARIF_FILE" --search-path "$$SEARCH_PATH" $(strip $(CODEQL_ACTIONS_QUERY_PACK)); \
 	SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="GitHub Actions" CODEQL_REPO_ROOT="$(ROOT_DIR)" CODEQL_IGNORE_RULES="$(strip $(CODEQL_ACTIONS_IGNORE_RULES))" CODEQL_IGNORE_PATHS="$(strip $(CODEQL_ACTIONS_IGNORE_PATHS))" $(PYTHON) "$(CODEQL_SARIF_CHECK)"
@@ -491,9 +514,31 @@ codeql-go: ensure-codeql
 	DB_DIR="$(CODEQL_DATABASE_ROOT)/go"; \
 	SARIF_FILE="$(CODEQL_ARTIFACT_DIR)/go.sarif"; \
 	SEARCH_PATH="$(CODEQL_PACK_CACHE_DIR)"; \
-	rm -rf "$$DB_DIR"; \
-	echo "Creating CodeQL database for Go..."; \
-	CODEQL_EXTRACTOR_GO_BUILD_TRACING=off "$(CODEQL_BIN)" database create "$$DB_DIR" --language=go --source-root "$(ROOT_DIR)" --command "env GOCACHE=$(GOCACHE_DIR) GOMODCACHE=$(GOMODCACHE_DIR) GOFLAGS=-mod=readonly $(GO) build ./..." --search-path "$$SEARCH_PATH"; \
+	STAMP_FILE="$$DB_DIR/.inputs.stamp"; \
+	STAMP_CONTENT="codeql $(CODEQL_VERSION_STRIPPED) go $(strip $(CODEQL_GO_QUERY_PACK)) $(strip $(CODEQL_GO_IGNORE_RULES)) $(strip $(CODEQL_GO_IGNORE_PATHS)) $$(git -C "$(ROOT_DIR)" rev-parse HEAD) $$( $(GO) env GOVERSION )"; \
+	if git -C "$(ROOT_DIR)" diff-index --quiet HEAD --; then \
+		STAMP_CONTENT="$$STAMP_CONTENT clean"; \
+	else \
+		STAMP_CONTENT="$$STAMP_CONTENT dirty"; \
+	fi; \
+	rebuild=1; \
+	if [ "$(strip $(CODEQL_REUSE_DB))" = "1" ] && [ -d "$$DB_DIR" ] && [ -f "$$STAMP_FILE" ]; then \
+		existing_stamp="$$(cat "$$STAMP_FILE")"; \
+		if [ "$$existing_stamp" = "$$STAMP_CONTENT" ]; then \
+			rebuild=0; \
+			echo "CodeQL inputs unchanged; reusing Go database at $$DB_DIR"; \
+		fi; \
+	fi; \
+	if [ "$$rebuild" = "1" ]; then \
+		rm -rf "$$DB_DIR"; \
+		echo "Creating CodeQL database for Go..."; \
+		CODEQL_EXTRACTOR_GO_BUILD_TRACING=off "$(CODEQL_BIN)" database create "$$DB_DIR" --language=go --source-root "$(ROOT_DIR)" --command "env GOCACHE=$(GOCACHE_DIR) GOMODCACHE=$(GOMODCACHE_DIR) GOFLAGS=-mod=readonly $(GO) build ./..." --search-path "$$SEARCH_PATH"; \
+		echo "$$STAMP_CONTENT" > "$$STAMP_FILE"; \
+	else \
+		echo "Skipping Go database rebuild; run CODEQL_REUSE_DB=0 make codeql-go to force a refresh."; \
+	fi; \
+	echo "Cleaning CodeQL database before analysis..."; \
+	"$(CODEQL_BIN)" database cleanup "$$DB_DIR"; \
 	echo "Analyzing Go CodeQL database..."; \
 	"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --threads=0 --output "$$SARIF_FILE" --search-path "$$SEARCH_PATH" $(strip $(CODEQL_GO_QUERY_PACK)); \
 	SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="Go" CODEQL_REPO_ROOT="$(ROOT_DIR)" CODEQL_GOMODCACHE="$(GOMODCACHE_DIR)" CODEQL_IGNORE_RULES="$(strip $(CODEQL_GO_IGNORE_RULES))" CODEQL_IGNORE_PATHS="$(strip $(CODEQL_GO_IGNORE_PATHS))" $(PYTHON) "$(CODEQL_SARIF_CHECK)"

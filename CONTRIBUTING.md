@@ -35,8 +35,11 @@ Run the following helpers from the repository root before every pull request:
   overrides, emit SARIF files to `artifacts/codeql/`, and rely on the baked-in
   Go build command so no manual build steps are required. Override the query
   packs with `CODEQL_ACTIONS_QUERY_PACK` or `CODEQL_GO_QUERY_PACK` when testing
-  variants, and use `make codeql-clean` to drop generated databases and SARIF
-  outputs without touching the cached CLI or packs.
+  variants. Set `CODEQL_REUSE_DB=1` to reuse matching databases for the current
+  commit (the helper stamps the inputs and cleans the database before analysis)
+  and flip it back to `0` or run `make codeql-clean` when switching branches or
+  query packs so the databases rebuild without disturbing the cached CLI or
+  packs.
 
 Use `make check` when you want linting and race-enabled tests in one step. Run
 `make integration`, `make e2e`, or `make bench` whenever you touch the packages
