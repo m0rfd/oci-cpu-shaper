@@ -167,6 +167,8 @@ func assertInfoLogEntry(
 
 	if infoEntry == nil {
 		t.Fatalf("expected info log entry, got %+v", entries)
+
+		return
 	}
 
 	if got := fieldString(infoEntry.Context, "version"); got != version {

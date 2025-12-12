@@ -377,6 +377,8 @@ func requireRunInvoked(t *testing.T, ctrl *stubController) {
 
 	if ctrl == nil || !ctrl.runCalled {
 		t.Fatalf("expected controller Run to be invoked")
+
+		return
 	}
 }
 
@@ -385,6 +387,8 @@ func requireDeadlineCaptured(t *testing.T, ctrl *stubController) {
 
 	if ctrl == nil {
 		t.Fatalf("controller stub is nil")
+
+		return
 	}
 
 	if !ctrl.deadlineSet {
