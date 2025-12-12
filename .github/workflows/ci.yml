@@ -44,6 +44,10 @@ jobs:
       - name: Set up Go with cache
         id: setup-go
         uses: ./.github/actions/setup-go-with-cache
+        with:
+          cache-dependency-path: |
+            go.sum
+            .github/workflows/ci.yml
 
       - name: Cache Python tools
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
