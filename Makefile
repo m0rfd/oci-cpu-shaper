@@ -493,7 +493,7 @@ codeql-go: ensure-codeql
 	SEARCH_PATH="$(CODEQL_PACK_CACHE_DIR)"; \
 	rm -rf "$$DB_DIR"; \
 	echo "Creating CodeQL database for Go..."; \
-	CODEQL_EXTRACTOR_GO_BUILD_TRACING=off "$(CODEQL_BIN)" database create "$$DB_DIR" --language=go --source-root "$(ROOT_DIR)" --command "env GOCACHE=$(GOCACHE_DIR) GOMODCACHE=$(GOMODCACHE_DIR) GOFLAGS=-mod=readonly $(GO) build ./..." --search-path "$$SEARCH_PATH"; \
+	CODEQL_EXTRACTOR_GO_BUILD_TRACING=off "$(CODEQL_BIN)" database create "$$DB_DIR" --language=go --source-root "$(ROOT_DIR)" --command "env GOCACHE=$(GOCACHE_DIR) GOMODCACHE=$(GOMODCACHE_DIR) GOFLAGS=-mod=readonly $(GO) build -trimpath ./..." --search-path "$$SEARCH_PATH"; \
 	echo "Analyzing Go CodeQL database..."; \
 	"$(CODEQL_BIN)" database analyze "$$DB_DIR" --format=sarifv2.1.0 --threads=0 --output "$$SARIF_FILE" --search-path "$$SEARCH_PATH" $(strip $(CODEQL_GO_QUERY_PACK)); \
 	SARIF_FILE="$$SARIF_FILE" CODEQL_SCOPE="Go" CODEQL_REPO_ROOT="$(ROOT_DIR)" CODEQL_GOMODCACHE="$(GOMODCACHE_DIR)" CODEQL_IGNORE_RULES="$(strip $(CODEQL_GO_IGNORE_RULES))" CODEQL_IGNORE_PATHS="$(strip $(CODEQL_GO_IGNORE_PATHS))" $(PYTHON) "$(CODEQL_SARIF_CHECK)"

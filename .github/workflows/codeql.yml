@@ -77,6 +77,21 @@ jobs:
       if: matrix.language == 'go'
       uses: ./.github/actions/setup-go-with-cache
 
+    - name: Prefill Go module cache
+      if: matrix.language == 'go'
+      shell: bash
+      env:
+        GOCACHE: ${{ github.workspace }}/.cache/go
+        GOMODCACHE: ${{ github.workspace }}/.cache/gomod
+      run: |
+        if [ -d vendor ]; then
+          echo "Vendor directory detected; skipping module download."
+          exit 0
+        fi
+
+        go mod download -mod=readonly
+        go mod verify -mod=readonly
+
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v4
       with:
@@ -106,7 +121,7 @@ jobs:
         GOFLAGS: -mod=readonly
       run: |
         # Leave CODEQL_EXTRACTOR_GO_BUILD_TRACING to the action so the Go build remains traced.
-        go build ./...
+        go build -trimpath ./...
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4
