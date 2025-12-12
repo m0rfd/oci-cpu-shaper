@@ -107,6 +107,37 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
+  changes:
+    name: detect documentation-only changes
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.filter.outputs.docs == 'true' && steps.filter.outputs.non_docs != 'true' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect docs-only updates
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            docs:
+              - 'docs/**'
+              - '**/*.md'
+              - '**/*.rst'
+              - '**/*.adoc'
+            non_docs:
+              - '**'
+              - '!docs/**'
+              - '!**/*.md'
+              - '!**/*.rst'
+              - '!**/*.adoc'
+
   check:
     name: make check
     timeout-minutes: 10
@@ -494,6 +525,8 @@ jobs:
       actions: write
     needs:
       - agents
+      - changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     outputs:
       e2e-succeeded: ${{ steps.e2e-status.outputs.succeeded }}

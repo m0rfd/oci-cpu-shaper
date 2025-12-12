@@ -68,6 +68,13 @@ docker compose -f docker-compose.rendered.yaml up -d
   the rendered CPU cap before deploying.
 - `docs/` – Living documentation; begin with [`00-overview.md`](docs/00-overview.md).
 
+## Test tiers and coverage expectations
+
+- **Unit tests** run by default via `make test` with the race detector enabled; they require no special host capabilities and serve as the fast signal for CLI and library changes.
+- **Integration tests** (`make integration`) assume Docker is available with cgroup v2 and the CPU controller mounted; the CI job fails early when those prerequisites are missing so contributors can verify the same locally.
+- **End-to-end tests** reuse the mock IMDS and Monitoring servers in `tests/e2e` and only run when `RUN_E2E_TESTS=1` is set, keeping tagged coverage opt-in for trusted runs.
+- **Coverage** (`make coverage MIN_COVERAGE=98`) merges the unit, integration, and optional tagged E2E profiles into `coverage.out`/`coverage.txt` with `gocovmerge`, and CI reuses previously uploaded integration/E2E profiles to avoid rerunning long suites when upstream jobs already produced them.
+
 ## Contribution Guidelines
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the complete tooling workflow,
