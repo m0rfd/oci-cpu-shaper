@@ -238,6 +238,83 @@ func TestSamplerPublishesErrorsAndContinuesSampling(t *testing.T) {
 	}
 }
 
+func TestNewSamplerAppliesDefaultInterval(t *testing.T) {
+	t.Parallel()
+
+	sampler := NewSampler(nil, 0)
+
+	if sampler.interval != DefaultInterval {
+		t.Fatalf("expected default interval %s, got %s", DefaultInterval, sampler.interval)
+	}
+}
+
+func TestNewSamplerKeepsProvidedInterval(t *testing.T) {
+	t.Parallel()
+
+	wanted := 250 * time.Millisecond
+	sampler := NewSampler(nil, wanted)
+
+	if sampler.interval != wanted {
+		t.Fatalf("expected interval %s, got %s", wanted, sampler.interval)
+	}
+}
+
+func TestPublishObservationRespectsContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	sampler := new(Sampler)
+	observations := make(chan Observation)
+
+	observation := Observation{
+		Timestamp:    time.Unix(0, 0),
+		Utilisation:  1,
+		Runnable:     0,
+		BusyJiffies:  0,
+		TotalJiffies: 0,
+		Err:          nil,
+	}
+
+	if sampler.publishObservation(ctx, observations, observation) {
+		t.Fatalf("expected publishObservation to stop when context is cancelled")
+	}
+
+	if len(observations) != 0 {
+		t.Fatalf("expected no observations to be published when context is cancelled")
+	}
+}
+
+func TestTimeSourceDefaultsToTimeNow(t *testing.T) {
+	t.Parallel()
+
+	sampler := new(Sampler)
+	nowFn := sampler.timeSource()
+
+	before := time.Now()
+	got := nowFn()
+
+	if got.Before(before) {
+		t.Fatalf("expected time source to return current time, got %v before %v", got, before)
+	}
+}
+
+func TestTickerSourceDefaultsToTimeTicker(t *testing.T) {
+	t.Parallel()
+
+	sampler := new(Sampler)
+
+	ticker := sampler.tickerSource()(5 * time.Millisecond)
+	defer ticker.Stop()
+
+	select {
+	case <-ticker.C():
+	case <-time.After(100 * time.Millisecond):
+		t.Fatalf("expected ticker to emit within deadline")
+	}
+}
+
 func TestSamplerPublishesWrappedErrorAndResumesSampling(t *testing.T) {
 	t.Parallel()
 
