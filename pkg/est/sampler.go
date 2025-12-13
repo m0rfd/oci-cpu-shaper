@@ -204,6 +204,12 @@ func (s *Sampler) publishObservation(
 	observation Observation,
 ) bool {
 	select {
+	case <-ctx.Done():
+		return false
+	default:
+	}
+
+	select {
 	case observations <- observation:
 		return true
 	case <-ctx.Done():
