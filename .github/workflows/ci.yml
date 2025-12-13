@@ -229,14 +229,55 @@ jobs:
           mkdir -p artifacts
           make check 2>&1 | tee artifacts/make-check.log
 
-      - name: Publish coverage summary
-        if: success() && hashFiles('coverage.txt') != ''
+      - name: Publish coverage summaries
+        if: success()
         run: |
-          {
-            echo '### Coverage results';
-            echo;
-            cat coverage.txt;
-          } >> "$GITHUB_STEP_SUMMARY"
+          append_summary() {
+            local title="$1" file="$2"
+            if [ -f "$file" ]; then
+              {
+                echo "### ${title} coverage";
+                echo;
+                cat "$file";
+                echo;
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          }
+
+          append_summary "Unit" "coverage-unit.txt"
+          append_summary "Integration" "coverage-integration.txt"
+          append_summary "E2E" "coverage-e2e.txt"
+          append_summary "Merged" "coverage.txt"
+
+      - name: Upload unit coverage artifacts
+        if: success() && hashFiles('coverage-unit.out') != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: unit-coverage
+          path: |
+            coverage-unit.out
+            coverage-unit.txt
+          if-no-files-found: error
+
+      - name: Upload integration coverage artifacts
+        if: success() && hashFiles('coverage-integration.out') != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: integration-coverage-merged
+          path: |
+            coverage-integration.out
+            coverage-integration.txt
+          if-no-files-found: error
+
+      - name: Upload e2e coverage artifacts
+        if: success() && hashFiles('coverage-e2e.out') != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: e2e-coverage-merged
+          path: |
+            coverage-e2e.out
+            coverage-e2e.txt
+          if-no-files-found: error
 
       - name: Upload merged coverage artifacts
         if: success() && hashFiles('coverage.out') != ''
@@ -508,6 +549,19 @@ jobs:
             sleep "$backoff"
           done
 
+      - name: Summarize integration coverage
+        if: success() && hashFiles('artifacts/integration-coverage.out') != ''
+        run: |
+          filtered_profile="artifacts/integration-coverage-filtered.out"
+          { IFS= read -r mode_line || true; echo "$mode_line"; tail -n +2 artifacts/integration-coverage.out | grep -vE '_test\\.go:'; } > "$filtered_profile" < artifacts/integration-coverage.out
+          go tool cover -func="$filtered_profile" | tee artifacts/integration-coverage.txt
+          {
+            echo '### Integration coverage';
+            echo;
+            cat artifacts/integration-coverage.txt;
+            echo;
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Record integration status
         id: integration-status
         run: echo "succeeded=true" >> "$GITHUB_OUTPUT"
@@ -523,7 +577,10 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: integration-coverage
-          path: artifacts/integration-coverage.out
+          path: |
+            artifacts/integration-coverage.out
+            artifacts/integration-coverage.txt
+            artifacts/integration-coverage-filtered.out
           if-no-files-found: error
 
   e2e:
@@ -588,10 +645,25 @@ jobs:
         id: e2e-status
         run: echo "succeeded=true" >> "$GITHUB_OUTPUT"
 
-      - name: Publish coverage summary
-        if: success() && hashFiles('coverage.txt') != ''
+      - name: Publish coverage summaries
+        if: success()
         run: |
-          { echo '### Coverage results'; echo; cat coverage.txt; } >> "$GITHUB_STEP_SUMMARY"
+          append_summary() {
+            local title="$1" file="$2"
+            if [ -f "$file" ]; then
+              {
+                echo "### ${title} coverage";
+                echo;
+                cat "$file";
+                echo;
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          }
+
+          append_summary "Unit" "coverage-unit.txt"
+          append_summary "Integration" "coverage-integration.txt"
+          append_summary "E2E" "coverage-e2e.txt"
+          append_summary "Merged" "coverage.txt"
 
       - name: Upload merged coverage artifacts
         if: success() && hashFiles('coverage.out') != ''
@@ -601,7 +673,12 @@ jobs:
           path: |
             coverage.out
             coverage.txt
+            coverage-unit.out
+            coverage-unit.txt
+            coverage-integration.out
+            coverage-integration.txt
             coverage-e2e.out
+            coverage-e2e.txt
           if-no-files-found: error
 
       - name: Upload e2e logs
