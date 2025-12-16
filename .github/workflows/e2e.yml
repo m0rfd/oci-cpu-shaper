@@ -53,7 +53,7 @@ jobs:
 
       - name: Upload coverage artifacts
         if: success()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: e2e-coverage
           path: |
@@ -64,7 +64,7 @@ jobs:
 
       - name: Upload e2e logs
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: e2e-logs
           path: artifacts/e2e
