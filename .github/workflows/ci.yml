@@ -51,7 +51,7 @@ jobs:
 
       - name: Cache Python tools
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-pyflakes-${{ env.PYFLAKES_VERSION }}
@@ -207,7 +207,7 @@ jobs:
 
       - name: Cache golangci-lint workspace
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .cache/golangci
           key: ${{ runner.os }}-golangci-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/.golangci.yml', '**/go.sum') }}
@@ -216,7 +216,7 @@ jobs:
 
       - name: Cache golangci-lint binary
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.GOBIN }}/golangci-lint
           key: ${{ runner.os }}-golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('Makefile') }}
@@ -285,7 +285,7 @@ jobs:
 
       - name: Cache govulncheck database
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .cache/govulncheck
           key: ${{ runner.os }}-govulncheck-go-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
