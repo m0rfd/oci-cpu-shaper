@@ -261,6 +261,16 @@ same listener as `/metrics`. The handler reports the controller mode (`"noop"`,
 can poll the endpoint to surface degraded Monitoring connectivity, estimator
 stalls, or cgroup drift while the process continues to run.
 
+Distroless images now bundle `/usr/local/bin/oci-cpu-shaper-healthcheck`, a
+small probe built from `cmd/healthcheck` that hits the `/healthz` endpoint
+without shelling out to curl/busybox. Flags allow the expected controller mode,
+comma-separated healthy states, and timeout to be customised. The primary
+`Dockerfile` wires this binary into the container `HEALTHCHECK` stanza, and the
+Compose stacks in §6 call the same command explicitly so operators can tune
+retry/interval settings without rebuilding images. A standalone
+`healthcheck.dockerfile` mirrors the probe build for orchestrators that want a
+dedicated healthcheck image.
+
 The response mirrors this structure:
 
 ```json

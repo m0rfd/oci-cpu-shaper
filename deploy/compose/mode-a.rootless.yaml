@@ -19,6 +19,15 @@ services:
       - /tmp
     ports:
       - ${SHAPER_METRICS_BIND:-127.0.0.1:9108}:9108
+    healthcheck:
+      test:
+        - "/usr/local/bin/oci-cpu-shaper-healthcheck"
+        - "--url"
+        - "http://127.0.0.1:9108/healthz"
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
     security_opt:
       - no-new-privileges:true
     cpu_shares: ${SHAPER_CPU_SHARES:-128}

@@ -45,11 +45,13 @@ docker compose -f docker-compose.rendered.yaml up -d
 | Mode A (rootless) | Ships as the default Compose stack with `cpu.weight` 128, non-root distroless images, and loopback metrics publishing so Oracle Cloud VM operators can stay within managed-host guardrails. |
 | Mode B (rootful) | Adds `SYS_NICE` for optional `SCHED_IDLE`, host networking, and Quadlet units so privileged tuning can be evaluated without rewriting manifests when deeper host control is required. |
 | Metrics endpoint | The container exposes Prometheus metrics on `:9108` by default, covering controller state, OCI P95 samples, and cgroup discoveries for parity checks with the VM’s own telemetry. |
+| Health checks | Distroless images ship `/usr/local/bin/oci-cpu-shaper-healthcheck` plus a baked-in Docker `HEALTHCHECK` and Compose probes that hit `/healthz` without extra dependencies; a dedicated `healthcheck.dockerfile` builds the probe on its own for other orchestrators. |
 | Release verification | Distroless container images and SBOM attestations are signed with Cosign; detached signatures + certificates accompany every GitHub release for offline validation prior to pulling onto an OCI VM. |
 
 ## Repository Structure
 
 - `cmd/shaper/` – CLI entry point split across `app.go`/`app_run.go` for signal-safe wiring, controller factories in `controller_helpers.go`, flag parsing in `options.go`, runtime metadata logging in `logging_metadata.go`, and metrics wiring in `metrics_handlers.go`/`metrics_server.go`.
+- `cmd/healthcheck/` – Distroless-friendly probe that validates `/healthz` responses for Docker health checks, Compose bundles, or standalone builds using `healthcheck.dockerfile`.
 - `pkg/runtimeconfig/` – Shared runtime configuration defaults (`defaults.go`), YAML/env loaders (`loader.go`, `merge.go`, `env.go`), validation (`validate.go`), and helpers that translate manifests into adaptive-controller structs consumed by the CLI.
 - `pkg/adapt/` – Adaptive controller and mode handling kept in `controller_loop.go`, `controller_step.go`, `controller_state.go`, `suppression.go`, `config.go`, and the dry-run adapter in `noop_controller.go`.
 - `pkg/shape/` – Worker pool, pause thresholds, and busy-wait helpers implemented in `pool.go`, `worker.go`, `pause.go`, and `busywait.go` (plus the rootful-only stubs/tests).
