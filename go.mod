@@ -3,7 +3,7 @@ module oci-cpu-shaper
 go 1.25.5
 
 require (
-	github.com/oracle/oci-go-sdk/v65 v65.105.0
+	github.com/oracle/oci-go-sdk/v65 v65.108.0
 	go.uber.org/zap v1.27.1
 	golang.org/x/sys v0.38.0
 	golang.org/x/tools v0.24.0
