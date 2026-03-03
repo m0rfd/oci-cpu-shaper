@@ -406,7 +406,7 @@ jobs:
           rm smoke.log
 
       - name: Trivy SBOM + vulnerability scan
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@0.34.2
         with:
           image-ref: oci-cpu-shaper:test
           format: "spdx-json"
