@@ -170,14 +170,14 @@ jobs:
 
       - name: Download integration coverage
         if: needs.integration.outputs.integration-succeeded == 'true'
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: integration-coverage
           path: artifacts
 
       - name: Download e2e coverage
         if: needs.e2e.outputs.e2e-succeeded == 'true'
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: e2e-coverage
           path: artifacts/e2e
