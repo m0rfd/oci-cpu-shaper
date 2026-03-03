@@ -51,7 +51,7 @@ jobs:
         run: go test -tags=load ./pkg/shape -run TestPoolLoad24hEquivalent -count=1 -v
 
       - name: Upload load test log
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: load-test-log
