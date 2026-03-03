@@ -163,7 +163,7 @@ jobs:
 
       - name: Upload lint logs
         if: steps.ci-artifacts.outputs.coverage-available != '1'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: lint-logs
           path: artifacts/make-lint.log
@@ -179,7 +179,7 @@ jobs:
 
       - name: Upload actionlint logs
         if: steps.ci-artifacts.outputs.coverage-available != '1'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: actionlint-logs-release
           path: artifacts/release-actionlint.log
@@ -227,7 +227,7 @@ jobs:
 
       - name: Upload merged coverage artifacts
         if: success() && hashFiles('coverage.out') != '' && hashFiles('coverage.txt') != ''
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: |
@@ -675,7 +675,7 @@ jobs:
           output: "sbom-rootless.spdx.json"
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-rootless-${{ github.ref_name }}
           path: sbom-rootless.spdx.json
@@ -688,7 +688,7 @@ jobs:
           output: "sbom-rootful.spdx.json"
 
       - name: Upload SBOM artifact for rootful
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-rootful-${{ github.ref_name }}
           path: sbom-rootful.spdx.json
