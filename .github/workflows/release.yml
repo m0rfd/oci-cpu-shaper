@@ -329,7 +329,7 @@ jobs:
       # Trivy scan on PR (local image) + SARIF upload
       - name: Scan PR image with Trivy (SARIF)
         id: trivy_scan_pr
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@0.35.0
         continue-on-error: true
         with:
           image-ref: pr-local/${{ github.repository }}:${{ github.sha }}
@@ -448,7 +448,7 @@ jobs:
       # Trivy scan on merge queue image (local image, no SARIF upload)
       - name: Scan merge queue image with Trivy
         id: trivy_scan_merge_group
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@0.35.0
         continue-on-error: true
         with:
           image-ref: pr-local/${{ github.repository }}:${{ github.sha }}
@@ -641,7 +641,7 @@ jobs:
 
       - name: Scan rootless image with Trivy (SARIF)
         id: trivy_scan_rootless
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@0.35.0
         continue-on-error: true
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
@@ -668,7 +668,7 @@ jobs:
       # ------ Explicit SBOM artifact (on top of SBOM attestation) ------
 
       - name: Generate SBOM (SPDX JSON) for rootless
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
           format: "spdx-json"
@@ -681,7 +681,7 @@ jobs:
           path: sbom-rootless.spdx.json
 
       - name: Generate SBOM (SPDX JSON) for rootful
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-rootful
           format: "spdx-json"
